@@ -1,4 +1,8 @@
-backend/node_modules
-backend/prisma/*.db
-backend/prisma/*.db-journal
-*.env.dev
+backend
+dashboard
+clicksign_exemplo
+SEI_database
+3cplus-integration
+docs
+.claude
+.remember
