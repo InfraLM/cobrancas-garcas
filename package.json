@@ -10,7 +10,7 @@
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "postinstall": "cd backend && npm install"
+    "postinstall": "if [ -z \"$VERCEL\" ]; then cd backend && npm install; fi"
   },
   "dependencies": {
     "@react-oauth/google": "^0.13.5",
