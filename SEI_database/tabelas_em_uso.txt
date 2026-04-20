@@ -1,0 +1,24 @@
+GUIA:
+nomedatable = webservice para requisisão http
+
+contareceber = SEIcontareceber
+matricula = SEImatricula
+matriculaperiodo = SEImatriculaperiodo
+pessoa = SEIpessoa
+turma = SEIturma
+curso = SEIcurso
+contarecebernegociacaorecebimento = SEIcontarecebernegociacaorecebimento
+negociacaorecebimento = SEInegociacaorecebimento
+contareceberrecebimento = SEIcontareceberrecebimento
+formapagamentonegociacaorecebimento = SEIformapagamentonegociacaorecebimento
+formapagamento = SEIformapagamento
+cartaocreditodebitorecorrenciapessoa = SEIcartaocreditodebitorecorrenciapessoa
+negociacaocontareceber = SEInegociacaocontareceber
+documentoassinadopessoa = SEIdocumentoassinadopessoa
+documentoassinado = SEIdocumentoassinado
+condicaopagamentoplanofinanceirocurso = SEIcondicaopagamentoplanofinanceirocurso
+planodescontocontareceber = SEIplanodescontocontareceber
+planodesconto = SEIplanodesconto
+funcionario = SEIfuncionario
+negociacaocontareceber = SEInegociacaocontareceber
+contarecebernegociado = SEIcontarecebernegociado

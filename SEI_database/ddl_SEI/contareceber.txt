@@ -1,0 +1,245 @@
+contareceber
+
+-- public.contareceber definição
+
+-- Drop table
+
+-- DROP TABLE public.contareceber;
+
+CREATE TABLE public.contareceber (
+	descontoprogressivo int4 NULL,
+	origemnegociacaoreceber int4 NULL,
+	contacorrente int4 NULL,
+	funcionario int4 NULL,
+	pessoa int4 NULL,
+	matriculaaluno varchar(20) NULL,
+	centroreceita int4 NOT NULL,
+	parcela varchar(30) NOT NULL,
+	codigobarra varchar(50) NULL,
+	nrdocumento varchar(50) NULL,
+	multaporcentagem float4 NULL,
+	multa numeric(20, 2) DEFAULT 0.0 NULL,
+	juroporcentagem float4 NULL,
+	juro numeric(20, 2) DEFAULT 0.0 NULL,
+	valordesconto numeric(20, 2) NULL,
+	valor numeric(20, 2) NOT NULL,
+	datavencimento timestamp NOT NULL,
+	descricaopagamento text NULL,
+	situacao varchar(5) NOT NULL,
+	tipoorigem varchar(50) NULL,
+	codorigem varchar(50) NULL,
+	"data" timestamp NOT NULL,
+	candidato int4 NULL,
+	tipopessoa varchar(5) NULL,
+	codigo serial4 NOT NULL,
+	valorrecebido numeric(20, 2) NULL,
+	tipodesconto varchar(2) NULL,
+	unidadeensino int4 NULL,
+	valordescontorecebido numeric(20, 2) NULL,
+	descontoinstituicao numeric(20, 2) DEFAULT 0.0 NULL,
+	descontoconvenio numeric(20, 2) NULL,
+	convenio int4 NULL,
+	tipoboleto varchar(3) NULL,
+	linhadigitavelcodigobarras varchar(100) NULL,
+	beneficiario int4 NULL,
+	nossonumero varchar(25) NULL,
+	parceiro int4 NULL,
+	matriculaperiodo int4 NULL,
+	valordescontoprogressivo numeric(20, 2) NULL,
+	tituloimportadosistemalegado bool NULL,
+	recebimentobancario bool NULL,
+	ordemdescontoaluno int4 NULL,
+	ordemdescontoalunovalorcheio bool NULL,
+	ordemplanodesconto int4 NULL,
+	ordemplanodescontovalorcheio bool NULL,
+	ordemconvenio int4 NULL,
+	ordemconveniovalorcheio bool NULL,
+	ordemdescontoprogressivo int4 NULL,
+	ordemdescontoprogressivovalorcheio bool NULL,
+	justificativadesconto text NULL,
+	codigoantsei int4 NULL,
+	impressaoboletorealizada bool NULL,
+	descontoprogressivoutilizado varchar(10) NULL,
+	valordescontocalculadoprimeirafaixadescontos numeric(20, 2) NULL,
+	valordescontocalculadosegundafaixadescontos numeric(20, 2) NULL,
+	valordescontocalculadoterceirafaixadescontos numeric(20, 2) NULL,
+	valordescontocalculadoquartafaixadescontos numeric(20, 2) NULL,
+	valordescontolancadorecebimento numeric(20, 2) NULL,
+	valorcalculadodescontolancadorecebimento numeric(20, 2) NULL,
+	tipodescontolancadorecebimento varchar(2) NULL,
+	valordescontoalunojacalculado numeric(20, 2) NULL,
+	dataarquivoremessa date NULL,
+	updated timestamp DEFAULT now() NOT NULL,
+	acrescimo numeric(20, 2) DEFAULT 0.0 NULL,
+	linha varchar(2) NULL,
+	usadescontocompostoplanodesconto bool DEFAULT false NULL,
+	codigorenegociacao int4 NULL,
+	nossonumerobanco varchar(25) NULL,
+	responsavelfinanceiro int4 NULL,
+	taxaboleto numeric(20, 2) DEFAULT 0.0 NULL,
+	contareceberjaenviadaaluno bool DEFAULT false NULL,
+	turma int4 NULL,
+	duplicidadetratada bool DEFAULT false NULL,
+	fornecedor int4 NULL,
+	dataprocessamentovalorreceber date NULL,
+	valorrecebercalculado numeric(20, 2) NULL,
+	valorjurocalculado numeric(20, 2) NULL,
+	valormultacalculado numeric(20, 2) NULL,
+	valordescontocalculado numeric(20, 2) NULL,
+	contareceberagrupada int4 NULL,
+	codigoant int4 NULL,
+	tabelaant varchar(30) NULL,
+	valorcusteadocontareceber numeric(20, 2) NULL,
+	valorbasecontareceber numeric(20, 2) NULL,
+	nossonumeroantigo varchar(25) NULL,
+	codigotempexcluir int4 NULL,
+	datacompetencia date NULL,
+	nossonumerotemp varchar(25) NULL,
+	valorbasecontareceberant numeric NULL,
+	sequencialnossonumero int8 NULL,
+	usuariodesbloqueoudescontorecebimento int4 NULL,
+	datausuariodesbloqueoudescontorecebimento timestamp NULL,
+	processamentointegracaofinanceiradetalhe int4 NULL,
+	possuipendenciasfinanceirasexternas bool DEFAULT false NULL,
+	motivocancelamento text NULL,
+	datacancelamento timestamp NULL,
+	responsavelcancelamento int4 NULL,
+	notafiscalsaidaservico int4 NULL,
+	valordescontorateio numeric(20, 2) DEFAULT 0.00 NULL,
+	identificacaotitulobanco varchar(50) NULL,
+	contaremetidacomalteracao bool DEFAULT false NULL,
+	pagocomdcc bool DEFAULT false NULL,
+	contaremetidacomalteracao_datadescprogressivo bool DEFAULT false NULL,
+	contaremetidacomalteracao_datavencimento bool DEFAULT false NULL,
+	contaremetidacomalteracao_valorbase bool DEFAULT false NULL,
+	contaremetidacomalteracao_valorcomabatimentoadicionadooumodific bool DEFAULT false NULL,
+	contaremetidacomalteracao_valorcomabatimentoremovido bool DEFAULT false NULL,
+	contaremetidacomalteracao_valordescprogressivo bool DEFAULT false NULL,
+	unidadeensinofinanceira int4 NOT NULL,
+	valorindicereajuste numeric(20, 2) NULL,
+	valorreajustediferencaparcelarecebidaouenviadaremessa numeric(20, 2) NULL,
+	registrocobrancacontareceber int4 NULL,
+	contaeditadamanualmente bool DEFAULT false NULL,
+	utilizardescontoprogressivomanual bool DEFAULT false NULL,
+	dialimite1 int4 NULL,
+	dialimite2 int4 NULL,
+	dialimite3 int4 NULL,
+	dialimite4 int4 NULL,
+	possuifiesintegracaofinanceiras bool DEFAULT false NULL,
+	valorindicereajusteporatraso numeric(20, 2) NULL,
+	indicereajustepadraoporatraso int4 NULL,
+	liberadodoindicereajusteporatraso bool DEFAULT false NULL,
+	contageradaapartirvalormulta_phl bool NULL,
+	datalimiteprimeirafaixadescontos timestamp NULL,
+	datalimitesegundafaixadescontos timestamp NULL,
+	datalimiteterceirafaixadescontos timestamp NULL,
+	datalimitequartafaixadescontos timestamp NULL,
+	nomesacado text NULL,
+	created timestamp NULL,
+	codigocreated int4 NULL,
+	nomecreated varchar(255) NULL,
+	codigoupdated int4 NULL,
+	nomeupdated varchar(255) NULL,
+	valortaxarepassecartao numeric(20, 2) NULL,
+	valorestornadocartao numeric(20, 2) NULL,
+	origeminclusao varchar(50) NULL,
+	"token" uuid DEFAULT uuid_generate_v4() NULL,
+	datacorrecaolancamentocontabil timestamp NULL,
+	empresafinanceira varchar(50) NULL,
+	codigointegracaoempresafinanceira varchar(50) NULL,
+	notafiscalsap int4 NULL,
+	urlboletoempresafinanceira varchar(250) NULL,
+	parcelabloqueadaempresafinanceira bool DEFAULT false NULL,
+	motivobloqueadaempresafinanceira text NULL,
+	pagoparcialmenteempresafinanceira bool DEFAULT false NULL,
+	valorpagoparcialmenteempresafinanceira numeric(20, 2) DEFAULT 0.0 NULL,
+	pagoemacordoempresafinanceira bool DEFAULT false NULL,
+	codigoprotheus varchar(255) NULL,
+	codigoprodutoprotheus varchar(255) NULL,
+	codigopedidoprotheus varchar(255) NULL,
+	codigonaturezaoperacaoprotheus varchar(255) NULL,
+	mensagemnotaprotheus varchar(255) NULL,
+	pagoiesempresafinanceira bool DEFAULT false NULL,
+	CONSTRAINT check_validar_unidadeensino_conta_receber CHECK (fn_validarunidadeensinocontareceber(unidadeensinofinanceira, codorigem, tipoorigem, tipopessoa, pessoa, fornecedor, parceiro, responsavelfinanceiro, funcionario)) NOT VALID,
+	CONSTRAINT contareceber_pkey PRIMARY KEY (codigo),
+	CONSTRAINT unique_contareceber_codigobarra UNIQUE (codigobarra),
+	CONSTRAINT unique_contareceber_nossonumero_contacorrente UNIQUE (nossonumero, contacorrente),
+	CONSTRAINT contareceber_indicereajustepadraoporatraso_fkey FOREIGN KEY (indicereajustepadraoporatraso) REFERENCES public.indicereajuste(codigo) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT contareceber_registrocobrancacontareceber_fkey FOREIGN KEY (registrocobrancacontareceber) REFERENCES public.registronegativacaocobrancacontareceber(codigo),
+	CONSTRAINT contareceber_responsavelcancelamento FOREIGN KEY (responsavelcancelamento) REFERENCES public.usuario(codigo),
+	CONSTRAINT fk_contareceber_candidato FOREIGN KEY (candidato) REFERENCES public.pessoa(codigo) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_contareceber_centroreceita FOREIGN KEY (centroreceita) REFERENCES public.centroreceita(codigo) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_contareceber_contacorrente FOREIGN KEY (contacorrente) REFERENCES public.contacorrente(codigo) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_contareceber_descontoprogressivo FOREIGN KEY (descontoprogressivo) REFERENCES public.descontoprogressivo(codigo) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_contareceber_fornecedor FOREIGN KEY (fornecedor) REFERENCES public.fornecedor(codigo) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_contareceber_funcionario FOREIGN KEY (funcionario) REFERENCES public.funcionario(codigo) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_contareceber_matriculaaluno FOREIGN KEY (matriculaaluno) REFERENCES public.matricula(matricula) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_contareceber_notafiscalsaidaservico FOREIGN KEY (notafiscalsaidaservico) REFERENCES public.notafiscalsaidaservico(codigo) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_contareceber_pessoa FOREIGN KEY (pessoa) REFERENCES public.pessoa(codigo) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_contareceber_processamentointegracaofinanceiradetalhe FOREIGN KEY (processamentointegracaofinanceiradetalhe) REFERENCES public.processamentointegracaofinanceiradetalhe(codigo),
+	CONSTRAINT fk_contareceber_responsavelfinanceiro FOREIGN KEY (responsavelfinanceiro) REFERENCES public.pessoa(codigo),
+	CONSTRAINT fk_contareceber_unidadeensinofinanceira FOREIGN KEY (unidadeensinofinanceira) REFERENCES public.unidadeensino(codigo) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_contareceber_usuariodesbdescrecebimento FOREIGN KEY (usuariodesbloqueoudescontorecebimento) REFERENCES public.usuario(codigo) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_parceiro FOREIGN KEY (parceiro) REFERENCES public.parceiro(codigo) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT pk_contareceber_turma FOREIGN KEY (turma) REFERENCES public.turma(codigo) ON DELETE RESTRICT ON UPDATE RESTRICT
+);
+CREATE INDEX ch_contareceber_candidato ON public.contareceber USING btree (candidato);
+CREATE INDEX ch_contareceber_datavencimento ON public.contareceber USING btree (datavencimento);
+CREATE INDEX ch_contareceber_funcionario ON public.contareceber USING btree (funcionario);
+CREATE INDEX ch_contareceber_matriculaaluno ON public.contareceber USING btree (matriculaaluno);
+CREATE INDEX ch_contareceber_mp_parcela ON public.contareceber USING btree (matriculaperiodo, parcela);
+CREATE INDEX ch_contareceber_parceiro ON public.contareceber USING btree (parceiro);
+CREATE INDEX ch_contareceber_pessoa ON public.contareceber USING btree (pessoa);
+CREATE INDEX ch_contareceber_tipoorigem ON public.contareceber USING btree (tipoorigem);
+CREATE INDEX ch_contareceber_unidadeensino ON public.contareceber USING btree (unidadeensino);
+CREATE INDEX ch_contareceber_unidadeensinofinanceira ON public.contareceber USING btree (unidadeensinofinanceira);
+CREATE INDEX contareceber_matriculaperiodo ON public.contareceber USING btree (matriculaperiodo);
+CREATE INDEX idx_contareceber_codigorenegociacao ON public.contareceber USING btree (codigorenegociacao);
+CREATE INDEX idx_contareceber_contareceberagrupada ON public.contareceber USING btree (contareceberagrupada);
+CREATE INDEX idx_contareceber_nomesacado_sem_acentos ON public.contareceber USING gin (f_sem_acentos(nomesacado) gin_trgm_ops);
+CREATE INDEX idx_contareceber_nossonumero_func_gin ON public.contareceber USING gin (nossonumero gin_trgm_ops);
+CREATE INDEX idx_contareceber_nossonumeroantigo ON public.contareceber USING btree (nossonumeroantigo);
+CREATE INDEX idx_contareceber_notafiscalsaidaservico ON public.contareceber USING btree (notafiscalsaidaservico);
+CREATE INDEX idx_contareceber_nrdocumento ON public.contareceber USING btree (nrdocumento);
+CREATE INDEX idx_contareceber_nrdocumento_func_gin ON public.contareceber USING gin (nrdocumento gin_trgm_ops);
+CREATE INDEX idx_contareceber_responsavelfinanceiro ON public.contareceber USING btree (responsavelfinanceiro);
+CREATE INDEX idx_contareceber_sit_datacomp_tporigem_unidade ON public.contareceber USING btree (tipoorigem, situacao, datacompetencia, unidadeensino);
+CREATE INDEX idx_contareceber_sit_datavenc_tporigem_unidade ON public.contareceber USING btree (tipoorigem, situacao, datavencimento, unidadeensino);
+CREATE INDEX idx_contareceber_token ON public.contareceber USING btree (token);
+CREATE INDEX idx_contareceber_turma ON public.contareceber USING btree (turma);
+CREATE INDEX idx_contareceber_unidade_sit_tp_dtv ON public.contareceber USING btree (unidadeensino, situacao, tipopessoa, datavencimento);
+CREATE INDEX idx_contareceber_venc_situacao_dataproc ON public.contareceber USING btree (datavencimento, dataprocessamentovalorreceber, situacao, COALESCE(processamentointegracaofinanceiradetalhe, 0));
+CREATE UNIQUE INDEX unq_contareceber_codorigem_tipoorigem_parcela_pessoa_matricu ON public.contareceber USING btree (codorigem, tipoorigem, parcela, pessoa, matriculaaluno) WHERE (((tipoorigem)::text <> 'BCC'::text) AND ((tipoorigem)::text <> 'OUT'::text));
+
+-- Table Triggers
+
+create trigger audit_trigger_row after
+insert
+    or
+delete
+    or
+update
+    on
+    public.contareceber for each row execute function audit.if_modified_func('true');
+create trigger audit_trigger_stm after
+truncate
+    on
+    public.contareceber for each statement execute function audit.if_modified_func('true');
+create trigger tg_persistirnomesacadocontareceber before
+insert
+    or
+update
+    on
+    public.contareceber for each row execute function fn_persistirnomesacadocontareceber();
+create trigger tg_validar_situacaocontareceber before
+update
+    on
+    public.contareceber for each row execute function fn_validarsituacaocontareceber();
+create trigger verificarcriacaonossonumero after
+insert
+    on
+    public.contareceber for each row
+    when (((new.tipoorigem)::text <> all (array[('IPS'::character varying)::text,
+    ('NCR'::character varying)::text,
+    ('MAT'::character varying)::text,
+    ('MEN'::character varying)::text]))) execute function inserirnossonumero();

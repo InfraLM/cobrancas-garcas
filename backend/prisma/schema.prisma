@@ -1,0 +1,2132 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// =============================================
+// Usuarios e Autenticacao
+// =============================================
+
+model User {
+  id        Int      @id @default(autoincrement())
+  email     String   @unique
+  nome      String
+  role      String   @default("AGENTE") // ADMIN, SUPERVISOR, AGENTE
+  ativo     Boolean  @default(true)
+
+  googleId  String?  @unique
+  avatarUrl String?
+
+  threecplusUserId      Int?
+  threecplusAgentId     Int?
+  threecplusAgentToken  String?
+  threecplusExtension   String?
+
+  instanciaWhatsappId   String?
+  instanciaWhatsappNome String?
+  grupoCanaisId         String?
+  grupoCanaisNome       String?
+
+  campanhaId            Int?
+  campanhaNome          String?
+
+  criadoEm   DateTime @default(now())
+  atualizadoEm DateTime @updatedAt
+
+  @@map("users")
+}
+
+model ErrorLog {
+  id        Int      @id @default(autoincrement())
+  metodo    String
+  url       String
+  status    Int
+  mensagem  String
+  stack     String?
+  userId    Int?
+  criadoEm  DateTime @default(now())
+
+  @@index([criadoEm(sort: Desc)])
+  @@map("error_logs")
+}
+
+model RegraSegmentacao {
+  id                String    @id @default(uuid())
+  nome              String
+  descricao         String?
+  condicoes         Json
+  ativa             Boolean   @default(true)
+  criadoPor         Int
+  criadoPorNome     String?
+  criadoEm          DateTime  @default(now())
+  atualizadoEm      DateTime  @updatedAt
+  ultimaExecucao    DateTime?
+  totalAlunos       Int?
+  valorInadimplente Decimal?  @db.Decimal(12, 2)
+
+  @@index([ativa])
+  @@map("regra_segmentacao")
+}
+
+// =============================================
+// CLONE DAS TABELAS DO SEI
+// PKs sem autoincrement (IDs vem da API do SEI)
+// Todos os campos (exceto PK) sao opcionais (?)
+// Sem @relation para facilitar UPSERT
+// Sem @db.* (incompativel com SQLite)
+// =============================================
+
+// -----------------------------------------------
+// TABELAS PRINCIPAIS (Financeiro + Cadastro)
+// -----------------------------------------------
+
+model Contareceber {
+  codigo                                                         Int       @id
+  descontoprogressivo                                            Int?
+  origemnegociacaoreceber                                        Int?
+  contacorrente                                                  Int?
+  funcionario                                                    Int?
+  pessoa                                                         Int?
+  matriculaaluno                                                 String?
+  centroreceita                                                  Int?
+  parcela                                                        String?
+  codigobarra                                                    String?   @unique
+  nrdocumento                                                    String?
+  multaporcentagem                                               Float?
+  multa                                                          Decimal?
+  juroporcentagem                                                Float?
+  juro                                                           Decimal?
+  valordesconto                                                  Decimal?
+  valor                                                          Decimal?
+  datavencimento                                                 DateTime?
+  descricaopagamento                                             String?
+  situacao                                                       String?
+  tipoorigem                                                     String?
+  codorigem                                                      String?
+  data                                                           DateTime?
+  candidato                                                      Int?
+  tipopessoa                                                     String?
+  valorrecebido                                                  Decimal?
+  tipodesconto                                                   String?
+  unidadeensino                                                  Int?
+  valordescontorecebido                                          Decimal?
+  descontoinstituicao                                            Decimal?
+  descontoconvenio                                               Decimal?
+  convenio                                                       Int?
+  tipoboleto                                                     String?
+  linhadigitavelcodigobarras                                     String?
+  beneficiario                                                   Int?
+  nossonumero                                                    String?
+  parceiro                                                       Int?
+  matriculaperiodo                                               Int?
+  valordescontoprogressivo                                       Decimal?
+  tituloimportadosistemalegado                                   Boolean?
+  recebimentobancario                                            Boolean?
+  ordemdescontoaluno                                             Int?
+  ordemdescontoalunovalorcheio                                   Boolean?
+  ordemplanodesconto                                             Int?
+  ordemplanodescontovalorcheio                                   Boolean?
+  ordemconvenio                                                  Int?
+  ordemconveniovalorcheio                                        Boolean?
+  ordemdescontoprogressivo                                       Int?
+  ordemdescontoprogressivovalorcheio                              Boolean?
+  justificativadesconto                                          String?
+  codigoantsei                                                   Int?
+  impressaoboletorealizada                                       Boolean?
+  descontoprogressivoutilizado                                   String?
+  valordescontocalculadoprimeirafaixadescontos                   Decimal?
+  valordescontocalculadosegundafaixadescontos                    Decimal?
+  valordescontocalculadoterceirafaixadescontos                   Decimal?
+  valordescontocalculadoquartafaixadescontos                     Decimal?
+  valordescontolancadorecebimento                                Decimal?
+  valorcalculadodescontolancadorecebimento                       Decimal?
+  tipodescontolancadorecebimento                                 String?
+  valordescontoalunojacalculado                                  Decimal?
+  dataarquivoremessa                                             DateTime?
+  updated                                                        DateTime?
+  acrescimo                                                      Decimal?
+  linha                                                          String?
+  usadescontocompostoplanodesconto                               Boolean?
+  codigorenegociacao                                             Int?
+  nossonumerobanco                                               String?
+  responsavelfinanceiro                                          Int?
+  taxaboleto                                                     Decimal?
+  contareceberjaenviadaaluno                                     Boolean?
+  turma                                                          Int?
+  duplicidadetratada                                             Boolean?
+  fornecedor                                                     Int?
+  dataprocessamentovalorreceber                                  DateTime?
+  valorrecebercalculado                                          Decimal?
+  valorjurocalculado                                             Decimal?
+  valormultacalculado                                            Decimal?
+  valordescontocalculado                                         Decimal?
+  contareceberagrupada                                           Int?
+  codigoant                                                      Int?
+  tabelaant                                                      String?
+  valorcusteadocontareceber                                      Decimal?
+  valorbasecontareceber                                          Decimal?
+  nossonumeroantigo                                              String?
+  codigotempexcluir                                              Int?
+  datacompetencia                                                DateTime?
+  nossonumerotemp                                                String?
+  valorbasecontareceberant                                       Decimal?
+  sequencialnossonumero                                          BigInt?
+  usuariodesbloqueoudescontorecebimento                          Int?
+  datausuariodesbloqueoudescontorecebimento                      DateTime?
+  processamentointegracaofinanceiradetalhe                       Int?
+  possuipendenciasfinanceirasexternas                            Boolean?
+  motivocancelamento                                             String?
+  datacancelamento                                               DateTime?
+  responsavelcancelamento                                        Int?
+  notafiscalsaidaservico                                         Int?
+  valordescontorateio                                            Decimal?
+  identificacaotitulobanco                                       String?
+  contaremetidacomalteracao                                      Boolean?
+  pagocomdcc                                                     Boolean?
+  contaremetidacomalteracao_datadescprogressivo                  Boolean?
+  contaremetidacomalteracao_datavencimento                       Boolean?
+  contaremetidacomalteracao_valorbase                            Boolean?
+  contaremetidacomalteracao_valorcomabatimentoadicionadooumodific Boolean?
+  contaremetidacomalteracao_valorcomabatimentoremovido           Boolean?
+  contaremetidacomalteracao_valordescprogressivo                 Boolean?
+  unidadeensinofinanceira                                        Int?
+  valorindicereajuste                                            Decimal?
+  valorreajustediferencaparcelarecebidaouenviadaremessa          Decimal?
+  registrocobrancacontareceber                                   Int?
+  contaeditadamanualmente                                        Boolean?
+  utilizardescontoprogressivomanual                              Boolean?
+  dialimite1                                                     Int?
+  dialimite2                                                     Int?
+  dialimite3                                                     Int?
+  dialimite4                                                     Int?
+  possuifiesintegracaofinanceiras                                Boolean?
+  valorindicereajusteporatraso                                   Decimal?
+  indicereajustepadraoporatraso                                  Int?
+  liberadodoindicereajusteporatraso                              Boolean?
+  contageradaapartirvalormulta_phl                               Boolean?
+  datalimiteprimeirafaixadescontos                               DateTime?
+  datalimitesegundafaixadescontos                                DateTime?
+  datalimiteterceirafaixadescontos                               DateTime?
+  datalimitequartafaixadescontos                                 DateTime?
+  nomesacado                                                     String?
+  created                                                        DateTime?
+  codigocreated                                                  Int?
+  nomecreated                                                    String?
+  codigoupdated                                                  Int?
+  nomeupdated                                                    String?
+  valortaxarepassecartao                                         Decimal?
+  valorestornadocartao                                           Decimal?
+  origeminclusao                                                 String?
+  token                                                          String?
+  datacorrecaolancamentocontabil                                 DateTime?
+  empresafinanceira                                              String?
+  codigointegracaoempresafinanceira                              String?
+  notafiscalsap                                                  Int?
+  urlboletoempresafinanceira                                     String?
+  parcelabloqueadaempresafinanceira                              Boolean?
+  motivobloqueadaempresafinanceira                               String?
+  pagoparcialmenteempresafinanceira                              Boolean?
+  valorpagoparcialmenteempresafinanceira                         Decimal?
+  pagoemacordoempresafinanceira                                  Boolean?
+  codigoprotheus                                                 String?
+  codigoprodutoprotheus                                          String?
+  codigopedidoprotheus                                           String?
+  codigonaturezaoperacaoprotheus                                 String?
+  mensagemnotaprotheus                                           String?
+  pagoiesempresafinanceira                                       Boolean?
+
+  @@unique([nossonumero, contacorrente])
+  @@map("contareceber")
+}
+
+model Pessoa {
+  codigo                                                         Int       @id
+  necessidadesespeciais                                          String?
+  tituloeleitoral                                                String?
+  orgaoemissor                                                   String?
+  estadoemissaorg                                                String?
+  dataemissaorg                                                  DateTime?
+  certificadomilitar                                             String?
+  rg                                                             String?
+  cpf                                                            String?   @unique
+  nacionalidade                                                  Int?
+  naturalidade                                                   Int?
+  datanasc                                                       DateTime?
+  email                                                          String?
+  celular                                                        String?
+  telefonerecado                                                 String?
+  telefoneres                                                    String?
+  estadocivil                                                    String?
+  sexo                                                           String?
+  cidade                                                         Int?
+  complemento                                                    String?
+  cep                                                            String?
+  numero                                                         String?
+  setor                                                          String?
+  endereco                                                       String?
+  nome                                                           String?
+  aluno                                                          Boolean?
+  professor                                                      Boolean?
+  funcionario                                                    Boolean?
+  candidato                                                      Boolean?
+  membrocomunidade                                               Boolean?
+  paginapessoal                                                  String?
+  csspadrao                                                      String?
+  perfileconomico                                                Int?
+  atuacomodocente                                                String?
+  ativo                                                          Boolean?
+  idalunoinep                                                    String?
+  corraca                                                        String?
+  deficiencia                                                    String?
+  passaporte                                                     String?
+  nomefiador                                                     String?
+  enderecofiador                                                 String?
+  telefonefiador                                                 String?
+  cpffiador                                                      String?
+  tiponecessidadesespeciais                                      String?
+  celularfiador                                                  String?
+  valorcsstopologo                                               String?
+  valorcssbackground                                             String?
+  valorcssmenu                                                   String?
+  arquivoimagem                                                  Int?
+  codigoantsei                                                   Int?
+  email2                                                         String?
+  dataultimaalteracao                                            DateTime?
+  reponsavelultimaalteracao                                      Int?
+  coordenador                                                    Boolean?
+  enviarcomunicadopessoa                                         Boolean?
+  access                                                         Boolean?
+  autocad                                                        Boolean?
+  coreldraw                                                      Boolean?
+  espanhol                                                       Boolean?
+  espanholnivel                                                  String?
+  excel                                                          Boolean?
+  frances                                                        Boolean?
+  francesnivel                                                   String?
+  ingles                                                         Boolean?
+  inglesnivel                                                    String?
+  internet                                                       Boolean?
+  microsiga                                                      Boolean?
+  outrosidiomas                                                  String?
+  outrosidiomasnivel                                             String?
+  outrossoftwares                                                String?
+  photoshop                                                      Boolean?
+  powerpoint                                                     Boolean?
+  sap                                                            Boolean?
+  windows                                                        Boolean?
+  word                                                           Boolean?
+  telefonecomer                                                  String?
+  nomeempresa                                                    String?
+  enderecoempresa                                                String?
+  cargopessoaempresa                                             String?
+  cepempresa                                                     String?
+  complementoempresa                                             String?
+  setorempresa                                                   String?
+  cidadeempresa2                                                 Int?
+  cidadeempresa3                                                 String?
+  cidadeempresa                                                  Int?
+  possuifilho                                                    Boolean?
+  qtdfilhos                                                      Int?
+  participabancocurriculum                                       Boolean?
+  informacoesverdadeiras                                         Boolean?
+  divulgarmeusdados                                              Boolean?
+  certidaonascimento                                             String?
+  informacoesadicionais                                          String?
+  codprospect                                                    Int?
+  gerenciapreinscricao                                           Boolean?
+  curriculoatualizado                                            Boolean?
+  seraza                                                         Boolean?
+  responsavellancamentoseraza                                    Int?
+  datalancamentoseraza                                           DateTime?
+  pispasep                                                       String?
+  cepfiador                                                      String?
+  complementofiador                                              String?
+  numeroendfiador                                                String?
+  possuiacessovisaopais                                          Boolean?
+  setorfiador                                                    String?
+  cepficador                                                     String?
+  cidadefiador                                                   Int?
+  codigofiliacao                                                 Int?
+  requisitante                                                   Boolean?
+  isentartaxaboleto                                              Boolean?
+  ocultardadoscrm                                                Boolean?
+  gravida                                                        Boolean?
+  canhoto                                                        Boolean?
+  portadornecessidadeespecial                                    Boolean?
+  disciplinas                                                    String?
+  qtdvagascandidatou                                             Int?
+  dataexpedicaotituloeleitoral                                   DateTime?
+  zonaeleitoral                                                  String?
+  dataexpedicaocertificadomilitar                                DateTime?
+  orgaoexpedidorcertificadomilitar                               String?
+  codigoantresponsavelfinanceiro                                 String?
+  codigoant                                                      Int?
+  tabelaant                                                      String?
+  situacaomilitar                                                String?
+  dadospessoaisatualizado                                        Boolean?
+  nomecenso                                                      String?
+  dataultimaatualizacaocadatral                                  DateTime?
+  grauparentesco                                                 String?
+  permiteenviarremessa                                           Boolean?
+  senhacertificadoparadocumento                                  String?
+  estadocivilfiador                                              String?
+  datanascimentofiador                                           DateTime?
+  profissaofiador                                                String?
+  rgfiador                                                       String?
+  paisfiador                                                     Int?
+  secaozonaeleitoral                                             String?
+  tipomidiacaptacao                                              Int?
+  nomebatismo                                                    String?
+  possuicadastrominhabiblioteca                                  Boolean?
+  created                                                        DateTime?
+  codigocreated                                                  Int?
+  nomecreated                                                    String?
+  updated                                                        DateTime?
+  codigoupdated                                                  Int?
+  nomeupdated                                                    String?
+  falecido                                                       Boolean?
+  residecomresponsavel                                           Boolean?
+  datahoravencimentocodigoautenticacao                           DateTime?
+  codigoautenticacao                                             Int?
+  idcrmeducacional                                               String?
+  nomemedico                                                     String?
+  telefonemedico                                                 String?
+  planosaude                                                     String?
+  telefoneplanosaude                                             String?
+  tiposanguineo                                                  String?
+  alergia                                                        String?
+  doencagrave                                                    String?
+  remedioespecial                                                String?
+  diagnostico                                                    String?
+  apoiorecurso                                                   String?
+  tempoestendidoprova                                            Boolean?
+  bloquearcontatocrm                                             Boolean?
+  emancipado                                                     Boolean?
+  atualizardatacadastral                                         Boolean?
+  autorizodivulgacaoinformacoesterceiros                         Boolean?
+  codigopessoasap                                                String?
+  codigoautenticacaonavegador                                    String?
+  tipoassinaturadocumentoenum                                    String?
+  token                                                          String?
+  numerodocumentoestrangeiro                                     String?
+  utilizardocumentoestrangeiro                                   Boolean?
+  tipodocumentoestrangeiro                                       String?
+  codigoplataformaa                                              Int?
+  resideexterior                                                 Boolean?
+  paisresideexterior                                             Int?
+  cidaderesideexterior                                           String?
+  estadoresideexterior                                           String?
+  codigopostal                                                   String?
+  codigointegracaopergamum                                       String?
+  situacaointegracaopergamum                                     String?
+  descricaosituacaointegracaopergamum                            String?
+  idcrmrdstation                                                 String?
+  idempresafinanceira                                            String?
+  discalculia                                                    Boolean?
+  disgrafia                                                      Boolean?
+  dislalia                                                       Boolean?
+  dislexia                                                       Boolean?
+  transtornodeficitatencaohiperatividade                         Boolean?
+  transtornoprocessamentoauditivocentral                         Boolean?
+  recursoavaliacaoinepauxilioledor                               Boolean?
+  recursoavaliacaoinepauxiliotranscricao                         Boolean?
+  recursoavaliacaoinepauxiliointerprete                          Boolean?
+  recursoavaliacaoinepauxiliotradutorinterpretelibras            Boolean?
+  recursoavaliacaoinepauxilioleituralabial                       Boolean?
+  recursoavaliacaoinepauxilioprovaampliada                       Boolean?
+  recursoavaliacaoinepauxilioprovasuperampliada                  Boolean?
+  recursoavaliacaoinepauxiliocdcomaudioparadeficientevisual      Boolean?
+  recursoavaliacaoinepauxilioprovaportuguesasegundalinguasurdos   Boolean?
+  recursoavaliacaoinepauxilioprovaemvideoemlibras                Boolean?
+  recursoavaliacaoinepauxiliomaterialdidaticoembraille           Boolean?
+  recursoavaliacaoinepauxilioprovaembraille                      Boolean?
+  recursoavaliacaoinepauxiliotempoadicional                      Boolean?
+  recursoavaliacaoinepauxilionenhum                              Boolean?
+  codigod2l                                                      Int?
+  registroacademico                                              String?
+  codigointegracao                                               String?
+  origemintegracao                                               String?
+  idintegracao                                                   String?
+  cnpj                                                           String?   @unique
+  tipodocumento                                                  String?
+  inscricaomunicipal                                             String?
+  inscricaoestadual                                              String?
+  codigootm                                                      Int?
+  codigoprotheus                                                 String?
+
+  @@map("pessoa")
+}
+
+model Matricula {
+  matricula                                                      String    @id
+  tipomidiacaptacao                                              Int?
+  turno                                                          Int?
+  usuario                                                        Int?
+  inscricao                                                      Int?
+  situacaofinanceira                                             String?
+  situacao                                                       String?
+  data                                                           DateTime?
+  curso                                                          Int?
+  unidadeensino                                                  Int?
+  aluno                                                          Int?
+  tranferenciaentrada                                            Int?
+  responsavelliberacaodesconto                                   Int?
+  formaingresso                                                  String?
+  programareservavaga                                            String?
+  financiamentoestudantil                                        String?
+  apoiosocial                                                    String?
+  atividadecomplementar                                          String?
+  anoingresso                                                    String?
+  semestreingresso                                               String?
+  anoconclusao                                                   String?
+  semestreconclusao                                              String?
+  disciplinasprocseletivo                                        String?
+  fezenade                                                       Boolean?
+  dataenade                                                      DateTime?
+  notaenade                                                      Float?
+  horascomplementares                                            Int?
+  enade                                                          Int?
+  alunoabandonoucurso                                            Boolean?
+  nomemonografia                                                 String?
+  datainiciocurso                                                DateTime?
+  dataconclusaocurso                                             DateTime?
+  observacaocomplementar                                         String?
+  localarmazenamentodocumentosmatricula                          String?
+  descontochancela                                               Boolean?
+  notamonografia                                                 String?
+  formacaoacademica                                              Int?
+  updated                                                        DateTime?
+  autorizacaocurso                                               Int?
+  consultor                                                      Int?
+  tipomatricula                                                  String?
+  extensao                                                       Boolean?
+  matriculasuspensa                                              Boolean?
+  databasesuspensao                                              DateTime?
+  dataenvionotificacao1                                          DateTime?
+  dataenvionotificacao2                                          DateTime?
+  dataenvionotificacao3                                          DateTime?
+  matriculaserasa                                                Boolean?
+  dataatualizacaomatriculaformada                                DateTime?
+  responsavelatualizacaomatriculaformada                         Int?
+  naoenviarmensagemcobranca                                      Boolean?
+  qtddisciplinasextensao                                         Int?
+  dataliberacaopendenciafinanceira                               DateTime?
+  responsavelliberacaopendenciafinanceira                        Int?
+  formou                                                         Boolean?
+  alunoconcluiudisciplinasregulares                              Boolean?
+  dataalunoconcluiudisciplinasregulares                          DateTime?
+  datacolacaograu                                                DateTime?
+  dataenvionotificacaopendenciadocumento                         DateTime?
+  qtddiasadiarbloqueio                                           Int?
+  adesivoinstituicaoentregue                                     Boolean?
+  dataalteracaomatriculaserasa                                   DateTime?
+  usuariorespalteracaomatriculaserasa                            Int?
+  mesingresso                                                    String?
+  matriculaverificadaserasa                                      Boolean?
+  liberarbloqueioalunoinadimplente                               Boolean?
+  datanotifcalunoinadimplente                                    DateTime?
+  dataprimeiranotinadimplencia                                   DateTime?
+  datasegundanotinadimplencia                                    DateTime?
+  dataterceiranotinadimplencia                                   DateTime?
+  codigoant                                                      Int?
+  tabelaant                                                      String?
+  statusimp                                                      String?
+  datacadastro                                                   DateTime?
+  totalpontoprocseletivo                                         Decimal?
+  naoapresentarcenso                                             Boolean?
+  dataprocessoseletivo                                           DateTime?
+  gradecurricularatual                                           Int?
+  dataquartanotinadimplencia                                     DateTime?
+  dataenvionotificacao4                                          DateTime?
+  tipotrabalhoconclusaocurso                                     String?
+  notaenem                                                       Decimal?
+  observacaodiploma                                              String?
+  canceladofinanceiro                                            Boolean?
+  codigofinanceiromatricula                                      String?
+  classificacaoingresso                                          String?
+  semestreanoingressocenso                                       String?
+  renovacaoreconhecimento                                        Int?
+  bloquearemissaoboletomatmenvisaoaluno                          Boolean?
+  localprocessoseletivo                                          String?
+  motivomatriculabloqueada                                       String?
+  responsavelsuspensaomatricula                                  Int?
+  responsavelcancelamentosuspensaomatricula                      Int?
+  datacancelamentosuspensaomatricula                             DateTime?
+  motivocancelamentosuspensaomatricula                           String?
+  responsaveladiamentosuspensaomatricula                         Int?
+  dataadiamentosuspensaomatricula                                DateTime?
+  motivoadiamentosuspensaomatricula                              String?
+  codigoinscricaoovg                                             String?
+  dataemissaohistorico                                           DateTime?
+  permiteexecucaoreajustepreco                                   Boolean?
+  motivocancelamentoreajustepreco                                String?
+  datacancelamentoreajustepreco                                  DateTime?
+  responsavelcancelamentoreajustepreco                           Int?
+  orientadormonografia                                           String?
+  proficiencialinguaestrangeira                                  String?
+  situacaoproficiencialinguaestrangeira                          String?
+  bloqueioporsolicitacaoliberacaomatricula                       Boolean?
+  considerarparcelasmaterialdidaticoreajustepreco                Boolean?
+  permitirinclusaoexclusaodisciplinasrenovacao                   Boolean?
+  cargahorariamonografia                                         Int?
+  titulacaoorientadormonografia                                  String?
+  created                                                        DateTime?
+  codigocreated                                                  Int?
+  nomecreated                                                    String?
+  codigoupdated                                                  Int?
+  nomeupdated                                                    String?
+  escolapublica                                                  Boolean?
+  datamonografia                                                 DateTime?
+  ingressantecota                                                String?
+  bolsasauxilios                                                 Boolean?
+  autodeclaracaopretopardoindigena                               Boolean?
+  normasmatricula                                                Boolean?
+  financiamentoestudantilcenso                                   String?
+  justificativacenso                                             String?
+  tipomobilidadeacademica                                        String?
+  mobilidadeacademicanacionaliesdestino                          String?
+  mobilidadeacademicainternacionalpaisdestino                    String?
+  idcrmeducacional                                               String?
+  informacoescensorelativoano                                    String?
+  datadefesatcc                                                  DateTime?
+  datapublicacaoartigo                                           DateTime?
+  cargahorariamatrizcurricular                                   Int?
+  areaconcentracaomestrado                                       String?
+  datarealizacaoprovamestrado                                    DateTime?
+  dataexamequalificacaomestrado                                  DateTime?
+  matriculaanterior                                              String?
+  origem                                                         String?
+  permitirassinarcontratopendenciadocumentacao                   Boolean?
+  codigoregistrocertifikedu                                      String?
+  erroregistrocertifikedu                                        String?
+  cupomdesconto                                                  Int?
+  codigoplataformaa                                              Int?
+  unidadeensinopolo                                              Int?
+  idnegociacaordstationcrm                                       String?
+  motivobloqueiorenovacaomatricula                               String?
+  bloquearrenovacaomatricula                                     Boolean?
+
+  @@map("matricula")
+}
+
+model Matriculaperiodo {
+  codigo                                                         Int       @id
+  responsavelliberacaomatricula                                  Int?
+  responsavelemissaoboletomatricula                              Int?
+  dataemissaoboletomatricula                                     DateTime?
+  dataliberacaomatricula                                         DateTime?
+  turma                                                          Int?
+  responsavelrenovacaomatricula                                  Int?
+  periodoletivomatricula                                         Int?
+  gradecurricular                                                Int?
+  matricula                                                      String?
+  situacao                                                       String?
+  data                                                           DateTime?
+  contareceber                                                   Int?
+  nrdocumento                                                    String?
+  unidadeensinocurso                                             Int?
+  turmaperiodo                                                   Int?
+  semestre                                                       String?
+  ano                                                            String?
+  responsavelmatriculaforaprazo                                  Int?
+  situacaomatriculaperiodo                                       String?
+  processomatricula                                              Int?
+  transferenciaentrada                                           Int?
+  contratomatricula                                              Int?
+  planofinanceirocurso                                           Int?
+  condicaopagamentoplanofinanceirocurso                          Int?
+  matriculaperiodoprematricula                                   Int?
+  nrdisciplinasincluidas                                         Int?
+  nrdisciplinasexcluidas                                         Int?
+  financeiromanual                                               Boolean?
+  contratofiador                                                 Int?
+  reconheceudivida                                               Boolean?
+  carneentregue                                                  Boolean?
+  codigoantsei                                                   Int?
+  datafechamentomatriculaperiodo                                 DateTime?
+  origemfechamentomatriculaperiodo                               String?
+  codigoorigemfechamentomatriculaperiodo                         Int?
+  usuarioresponsavelconfirmacaooucancelamentoprematricula        Int?
+  bolsista                                                       Boolean?
+  contratoextensao                                               Int?
+  alunotransferidounidade                                        Boolean?
+  responsavelativacaofinanceiromanual                            Int?
+  dataativacaofinanceiromanual                                   DateTime?
+  aceitoutermocontratorenovacaoonline                            Boolean?
+  datanotificacaoabandonocurso                                   DateTime?
+  codigoant                                                      Int?
+  tabelaant                                                      String?
+  statusimp                                                      String?
+  motivoliberacaopgtomatricula                                   String?
+  matriculaespecial                                               Boolean?
+  observacaocriterioavaliacao                                    String?
+  sequencialcodmatperalternativoboleto                           Int?
+  matriculaperiodoincluidaparacorrecaohistoricoforagrade         Boolean?
+  deveatualizarnovaunidadeensinocurso                            Boolean?
+  dataaceitoutermocontratorenovacaoonline                        DateTime?
+  categoriacondicaopagamento                                     String?
+  databasegeracaoparcelas                                        DateTime?
+  datavencimentomatriculaespecifico                              DateTime?
+  created                                                        DateTime?
+  codigocreated                                                  Int?
+  nomecreated                                                    String?
+  updated                                                        DateTime?
+  codigoupdated                                                  Int?
+  nomeupdated                                                    String?
+  nrparcelasperiodocalculo                                       Int?
+  registroemmanutencao                                           Boolean?
+  turnomatriculaanterior                                         Int?
+  identificadoralteracaodados                                    String?
+  geracaoparcelaautomatica                                       Boolean?
+  alunoregular                                                   Boolean?
+  contratoaditivo                                                Int?
+  codigoplataformaa                                              Int?
+
+  @@map("matriculaperiodo")
+}
+
+model Turma {
+  codigo                                                         Int       @id
+  situacao                                                       String?
+  curso                                                          Int?
+  periodoletivo                                                  Int?
+  turno                                                          Int?
+  unidadeensino                                                  Int?
+  gradecurricular                                                Int?
+  nrminimomatricula                                              Int?
+  nrmaximomatricula                                              Int?
+  nrvagas                                                        Int?
+  identificadorturma                                             String?   @unique
+  sala                                                           String?
+  turmaagrupada                                                  Boolean?
+  semestral                                                      Boolean?
+  anual                                                          Boolean?
+  configuracaoacademico                                          Int?
+  planofinanceirocurso                                           Int?
+  turmaprematricula                                              Boolean?
+  tipochancela                                                   String?
+  porcentagemchancela                                            Float?
+  valorfixochancela                                              Decimal?
+  valorporaluno                                                  Boolean?
+  codigoantsei                                                   Int?
+  databasegeracaoparcelas                                        DateTime?
+  grupodestinatarios                                             Int?
+  chancela                                                       Int?
+  contacorrente                                                  Int?
+  qtdalunosestimado                                              Int?
+  customedioaluno                                                Float?
+  receitamediaaluno                                              Float?
+  exigeniveladministrativoplanoorcamentario                      Boolean?
+  exigenivelacademicoplanoorcamentario                           Boolean?
+  exigecentrocustorequisitante                                   Boolean?
+  utilizardadosmatrizboleto                                      Boolean?
+  dataprevistafinalizacao                                        DateTime?
+  dataprevisaofinalizacao                                        DateTime?
+  observacao                                                     String?
+  codigoant                                                      Int?
+  tabelaant                                                      String?
+  identificadoturmatemporario                                    String?
+  subturma                                                       Boolean?
+  turmaprincipal                                                 Int?
+  configuracaoead                                                Int?
+  avaliacaoonline                                                Int?
+  tiposubturma                                                   String?
+  apresentarrenovacaoonline                                      Boolean?
+  abreviaturacurso                                               String?
+  nrvagasinclusaoreposicao                                       Int?
+  datacriacao                                                    DateTime?
+  categoriacondicaopagamento                                     String?
+  dataultimaalteracao                                            DateTime?
+  indicereajuste                                                 Int?
+  centroresultado                                                Int?
+  digitoturma                                                    String?
+  codigoturnoapresentarcenso                                     Int?
+  considerarturmaavaliacaoinstitucional                          Boolean?
+  created                                                        DateTime?
+  codigocreated                                                  Int?
+  nomecreated                                                    String?
+  updated                                                        DateTime?
+  codigoupdated                                                  Int?
+  nomeupdated                                                    String?
+  nrvagasenriquecimento                                          Int?
+  estruturacurricularcensoformacaogeralbasica                    Boolean?
+  estruturacurricularcensoitinerarioformativo                    Boolean?
+  unidadecurriculareletivas                                      Boolean?
+  unidadecurricularlibras                                        Boolean?
+  unidadecurricularlinguaindigena                                Boolean?
+  unidadecurricularlingualiteraturaestrangeiraespanhol           Boolean?
+  unidadecurricularlingualiteraturaestrangeirafrances            Boolean?
+  unidadecurricularlingualiteraturaestrangeiraoutra              Boolean?
+  unidadecurricularprojetovida                                   Boolean?
+  unidadecurriculartrilhasaprofundamentoaprendizagens            Boolean?
+  modalidadeturma                                                Int?
+  unidadecurricularoutras                                        String?
+  nrvagasextensao                                                Int?
+  incompany                                                      Boolean?
+  tutorblackboard                                                Int?
+  identificadorhierarquiablackboard                              String?
+  integracaosap                                                  Boolean?
+  areaitinerarioformativolinguagens                              Boolean?
+  areaitinerarioformativomatematica                              Boolean?
+  areaitinerarioformativocienciasnatureza                        Boolean?
+  areaitinerarioformativocienciahumanas                          Boolean?
+  areaitinerarioformativoformacaotecnicaprofissinal              Boolean?
+
+  @@map("turma")
+}
+
+model Curso {
+  codigo                                                         Int       @id
+  configuracaoacademico                                          Int?
+  areaconhecimento                                               Int?
+  regime                                                         String?
+  regimeaprovacao                                                String?
+  periodicidade                                                  String?
+  datacriacao                                                    DateTime?
+  nrregistrointerno                                              String?
+  datapublicacaodo                                               DateTime?
+  nrperiodoletivo                                                Int?
+  baselegal                                                      String?
+  niveleducacional                                               String?
+  perfilegresso                                                  String?
+  publicoalvo                                                    String?
+  descricao                                                      String?
+  objetivos                                                      String?
+  nome                                                           String?
+  idcursoinep                                                    Int?
+  habilitacao                                                    String?
+  titulo                                                         String?
+  abreviatura                                                    String?
+  codigoantsei                                                   Int?
+  titulacaodoformando                                            String?
+  numeroexemplaresbibliograficobasica                             Int?
+  tempodefasagempadraocatalogobibliograficabasica                Int?
+  numeroexemplaresbibliograficocomplementar                       Int?
+  tempodefasagempadraocatalogobibliograficacomplementar          Int?
+  limitardiasdownload                                            Boolean?
+  qtdediaslimitedownload                                         Int?
+  funcionarioresppreinscricao                                    Int?
+  quantidadedisciplinasoptativasexpedicaodiploma                 Int?
+  liberarregistroaulaentreperiodo                                Boolean?
+  apresentarhomepreinscricao                                     Boolean?
+  codigoant                                                      Int?
+  tabelaant                                                      String?
+  configuracaotcc                                                Int?
+  titulacaodoformandofeminino                                    String?
+  anomudancalegislacao                                           String?
+  percentualevolucaoacademicaingressanteenade                    Int?
+  percentualevolucaoacademicaconcluinteenade                     Int?
+  preposicaonomecurso                                            String?
+  nomedocumentacao                                               String?
+  titulacaomasculinoapresentardiploma                            String?
+  titulacaofemininoapresentardiploma                             String?
+  codigocontabil                                                 String?
+  nomecontabil                                                   String?
+  apresentarcursobiblioteca                                      Boolean?
+  dataultimaalteracao                                            DateTime?
+  nivelcontabil                                                  String?
+  modalidadecurso                                                String?
+  utilizarrecursoavaterceiros                                    Boolean?
+  questionario                                                   Int?
+  created                                                        DateTime?
+  codigocreated                                                  Int?
+  nomecreated                                                    String?
+  updated                                                        DateTime?
+  codigoupdated                                                  Int?
+  nomeupdated                                                    String?
+  textodeclaracaoppi                                             String?
+  textodeclaracaoescolaridadepublica                             String?
+  textoconfirmacaonovamatricula                                  String?
+  urldeclaracaonormasmatricula                                   String?
+  textodeclaracaobolsasauxilios                                  String?
+  permitirassinarcontratopendenciadocumentacao                   Boolean?
+  ativarprematriculaaposentregadocumentosobrigatorios            Boolean?
+  possuicodigoemec                                               Boolean?
+  codigoemec                                                     Int?
+  numeroprocessoemec                                             Int?
+  tipoprocessoemec                                               String?
+  datacadastroemec                                               DateTime?
+  dataprotocoloemec                                              DateTime?
+  tipoautorizacaocursoenum                                       String?
+  numeroautorizacao                                              String?
+  criterioavaliacao                                              String?
+  idcrmeducacional                                               String?
+  apresentarcursoappaluno                                        Boolean?
+  permitirmultiplasmatriculas                                    Boolean?
+  datacredenciamento                                             DateTime?
+  veiculopublicacao                                              String?
+  secaopublicacao                                                Int?
+  paginapublicacao                                               Int?
+  numerodou                                                      Int?
+  funcionarioresptermoestagio                                    Int?
+  grupopessoaanaliserelatorioestagio                             Int?
+  grupopessoaanaliseaproveitamentoestagio                        Int?
+  grupopessoaanalisetermoaditivoestagio                          Int?
+  grupopessoaanalisetermorecisaoestagio                          Int?
+  configuracaoestagio                                            Int?
+  ativarmatriculaaposassinaturacontrato                          Boolean?
+  considerarentreguedocumentosdeferidos                          Boolean?
+  autorizacaoresolucaoemtramitacao                               Boolean?
+  numeroprocessoautorizacaoresolucao                             String?
+  tipoprocessoautorizacaoresolucao                               String?
+  datacadastroautorizacaoresolucao                               DateTime?
+  dataprotocoloautorizacaoresolucao                              DateTime?
+  grupopessoaanalisetermoestagio                                 Int?
+  datahabilitacao                                                DateTime?
+  codigoplataformaa                                              Int?
+  produtordstation                                               String?
+  etapareferenciacampocustomizavelrdstation                      String?
+  idprodutordstation                                             String?
+  formulacalculoaprovacaovestibularingressantesenem              String?
+  apresentarareasitinerarias                                     Boolean?
+  areasitinerarioformativo                                       String?
+  tipocursoitinerarioformacaotecnicaprofissional                 String?
+  codigocursoitinerariotecnico                                   Int?
+
+  @@unique([nome, habilitacao])
+  @@map("curso")
+}
+
+// -----------------------------------------------
+// TABELAS DE NEGOCIACAO / RENEGOCIACAO
+// -----------------------------------------------
+
+model Negociacaocontareceber {
+  codigo                                                         Int       @id
+  intervaloparcela                                               Int?
+  nrparcela                                                      Int?
+  valorentrada                                                   Decimal?
+  contacorrente                                                  Int?
+  centroreceita                                                  Int?
+  valortotal                                                     Decimal?
+  desconto                                                       Decimal?
+  multa                                                          Float?
+  juro                                                           Float?
+  valor                                                          Decimal?
+  funcionario                                                    Int?
+  matriculaaluno                                                 String?
+  pessoa                                                         Int?
+  tipopessoa                                                     String?
+  unidadeensino                                                  Int?
+  responsavel                                                    Int?
+  data                                                           DateTime?
+  justificativa                                                  String?
+  descontoprogressivo                                            Int?
+  parceiro                                                       Int?
+  tipodesconto                                                   String?
+  tiporenegociacao                                               String?
+  condicaorenegociacao                                           Int?
+  itemcondicaorenegociacao                                       Int?
+  liberarrenovacaoapospagamentoprimeiraparcela                   Boolean?
+  liberarrenovacaoapospagamentotodasparcelas                     Boolean?
+  fornecedor                                                     Int?
+  acrescimo                                                      Decimal?
+  codigoant                                                      Int?
+  tabelaant                                                      String?
+  tipointervaloparcelaenum                                       String?
+  databaseparcela                                                DateTime?
+  acrescimogeral                                                 Decimal?
+  totalacrescimoporparcela                                       Decimal?
+  acrescimoporparcela                                            Decimal?
+  tipoacrescimoporparcela                                        String?
+  permitirrenegociacaoapenascomcondicaorenegociacao              Boolean?
+  responsavelliberacaorenegociardesativandocondicaorenegociacao  Int?
+  dataliberacaorenegociardesativandocondicaorenegociacao         DateTime?
+  liberarrenegociardesativandocondicaorenegociacao               Boolean?
+  resplibusuarionaovinculadocondrenegrealizarnegociacao         Int?
+  datalibusuarionaovinculadocondrenegrealizarnegociacao         DateTime?
+  liberarusuarionaovinculadocondrenegrealizarnegociacao         Boolean?
+  responsavelliberacaousuarionaovinculadocondicaorenegociacaoreal Int?
+  dataliberacaousuarionaovinculadocondicaorenegociacaorealizarneg DateTime?
+  liberarusuarionaovinculadocondicaorenegociacaorealizarnegociaca Boolean?
+  itemcondicaodescontorenegociacao                               Int?
+  pessoacomissionada                                             Int?
+  valortotaljuro                                                 Decimal?
+  valorisencaototaljuro                                          Decimal?
+  valorisencaototaljuromaximo                                    Decimal?
+  valortotalmulta                                                Decimal?
+  valorisencaototalmulta                                         Decimal?
+  valorisencaototalmultamaximo                                   Decimal?
+  valortotaldescontoperdido                                      Decimal?
+  valorconcecaodescontoperdido                                   Decimal?
+  valorconcecaodescontoperdidomaximo                             Decimal?
+  permitirpagamentocartaocreditovisaoaluno                       Boolean?
+  valorjurodesconto                                              Decimal?
+  valormultadesconto                                             Decimal?
+  valorindicereajustedesconto                                    Decimal?
+  agentenegativacaocobrancacontareceber                          Int?
+  created                                                        DateTime?
+  codigocreated                                                  Int?
+  nomecreated                                                    String?
+  updated                                                        DateTime?
+  codigoupdated                                                  Int?
+  nomeupdated                                                    String?
+  empresafinanceira                                              String?
+  codigointegracaoempresafinanceira                              String?
+  indicereajuste                                                 Int?
+  requerimento                                                   Int?
+  codigoprotheus                                                 String?
+  codigoprocessoprotheus                                         String?
+
+  @@map("negociacaocontareceber")
+}
+
+model Contarecebernegociado {
+  codigo                                                         Int       @id
+  contareceber                                                   Int?
+  negociacaocontareceber                                         Int?
+  valor                                                          Decimal?
+  nrdiasatraso                                                   Decimal?
+  codigoant                                                      Int?
+  tabelaant                                                      String?
+  valororiginalconta                                             Decimal?
+  valordescontoprogressivodesconsiderado                         Decimal?
+  valordescontoalunodesconsiderado                               Decimal?
+  valordescontoinstituicaocomvalidadedesconsiderado              Decimal?
+  valordescontoinstituicaosemvalidadedesconsiderado              Decimal?
+  desconsiderardescontoprogressivo                               Boolean?
+  desconsiderardescontoaluno                                     Boolean?
+  desconsiderardescontoinstituicaocomvalidade                    Boolean?
+  desconsiderardescontoinstituicaosemvalidade                    Boolean?
+  valororiginaljuro                                              Decimal?
+  valororiginalmulta                                             Decimal?
+  itemcondicaodescontorenegociacao                               Int?
+  created                                                        DateTime?
+  codigocreated                                                  Int?
+  nomecreated                                                    String?
+  updated                                                        DateTime?
+  codigoupdated                                                  Int?
+  nomeupdated                                                    String?
+
+  @@map("contarecebernegociado")
+}
+
+// -----------------------------------------------
+// TABELAS DE RECEBIMENTO / PAGAMENTO
+// -----------------------------------------------
+
+model Negociacaorecebimento {
+  codigo                                                         Int       @id
+  pessoa                                                         Int?
+  tipopessoa                                                     String?
+  matricula                                                      String?
+  contacorrentecaixa                                             Int?
+  responsavel                                                    Int?
+  valortotal                                                     Decimal?
+  valortotalrecebimento                                          Decimal?
+  valortroco                                                     Decimal?
+  data                                                           DateTime?
+  unidadeensino                                                  Int?
+  parceiro                                                       Int?
+  codigoantsei                                                   Int?
+  observacao                                                     String?
+  recebimentoboletoautomatico                                    Boolean?
+  fornecedor                                                     Int?
+  codigoant                                                      Int?
+  tabelaant                                                      String?
+  codigoantflan                                                  Int?
+  pagamentocomdcc                                                Boolean?
+  dataregistro                                                   DateTime?
+  created                                                        DateTime?
+  codigocreated                                                  Int?
+  nomecreated                                                    String?
+  updated                                                        DateTime?
+  codigoupdated                                                  Int?
+  nomeupdated                                                    String?
+  valorestornadocartao                                           Decimal?
+  transacaoprovenienterecorrencia                                Boolean?
+  empresafinanceira                                              String?
+  codigointegracaoempresafinanceira                              String?
+  recebimentowebhook                                             Boolean?
+
+  @@map("negociacaorecebimento")
+}
+
+model Contarecebernegociacaorecebimento {
+  codigo                                                         Int       @id
+  contareceber                                                   Int?      @unique
+  negociacaorecebimento                                          Int?
+  valortotal                                                     Decimal?
+  codigoantsei                                                   Int?
+  notificarserasa                                                Boolean?
+  datanotificacaoserasa                                          DateTime?
+  codigoant                                                      Int?
+  tabelaant                                                      String?
+  contareceberterceiro                                           Boolean?
+  created                                                        DateTime?
+  codigocreated                                                  Int?
+  nomecreated                                                    String?
+  updated                                                        DateTime?
+  codigoupdated                                                  Int?
+  nomeupdated                                                    String?
+  codigoprotheus                                                 String?
+
+  @@map("contarecebernegociacaorecebimento")
+}
+
+model Contareceberrecebimento {
+  codigo                                                         Int       @id
+  formapagamento                                                 Int?
+  contareceber                                                   Int?
+  formapagamentonegociacaorecebimento                            Int?
+  valorrecebimento                                               Decimal?
+  negociacaorecebimento                                          Int?
+  tiporecebimento                                                String?
+  datarecebimento                                                DateTime?
+  responsavel                                                    Int?
+  motivo                                                         String?
+  codigoantsei                                                   Int?
+  notafiscalsaida                                                Int?
+  contareceberoriginal                                           Int?
+  recebimentoterceirizado                                        Boolean?
+  notafiscalsaidaservico                                         Int?
+  created                                                        DateTime?
+  codigocreated                                                  Int?
+  nomecreated                                                    String?
+  updated                                                        DateTime?
+  codigoupdated                                                  Int?
+  nomeupdated                                                    String?
+  valorestornadocartao                                           Decimal?
+
+  @@map("contareceberrecebimento")
+}
+
+model Formapagamentonegociacaorecebimento {
+  codigo                                                         Int       @id
+  cheque                                                         Int?
+  contacorrente                                                  Int?
+  valorrecebimento                                               Decimal?
+  formapagamento                                                 Int?
+  negociacaorecebimento                                          Int?
+  codigoantsei                                                   Int?
+  qtdeparcelascartaocredito                                      Int?
+  operadoracartao                                                Int?
+  taxaoperadora                                                  Float?
+  taxaantecipacao                                                Float?
+  categoriadespesa                                               Int?
+  contacorrenteoperadoracartao                                   Int?
+  codigoant                                                      Int?
+  tabelaant                                                      String?
+  formapagamentonegociacaorecebimentocartaocredito               Int?
+  usuariodesbloqueouformarecebimentonorecebimento                Int?
+  datausuariodesbloqueouformarecebimentonorecebimento            DateTime?
+  configuracaorecebimentocartaocredito                           Int?
+  motivocancelamento                                             String?
+  datacredito                                                    DateTime?
+  created                                                        DateTime?
+  codigocreated                                                  Int?
+  nomecreated                                                    String?
+  updated                                                        DateTime?
+  codigoupdated                                                  Int?
+  nomeupdated                                                    String?
+  numerorecibotransacaocartaodebito                              String?
+  valorestornadocartao                                           Decimal?
+  formapagamentoempresafinanceira                                String?
+
+  @@map("formapagamentonegociacaorecebimento")
+}
+
+model Formapagamento {
+  codigo                                                         Int       @id
+  nome                                                           String?   @unique
+  tipo                                                           String?
+  codigoantsei                                                   Int?
+  usanorecebimento                                               Boolean?
+  codigoant                                                      Int?
+  tabelaant                                                      String?
+  created                                                        DateTime?
+  codigocreated                                                  Int?
+  nomecreated                                                    String?
+  updated                                                        DateTime?
+  codigoupdated                                                  Int?
+  nomeupdated                                                    String?
+  codigoprotheus                                                 String?
+
+  @@map("formapagamento")
+}
+
+// -----------------------------------------------
+// TABELAS DE CARTAO DE CREDITO / RECORRENCIA
+// -----------------------------------------------
+
+model Cartaocreditodebitorecorrenciapessoa {
+  codigo                                                         Int       @id
+  pessoa                                                         Int?
+  matricula                                                      String?
+  responsavelfinanceiro                                          Int?
+  operadoracartao                                                Int?
+  numerocartao                                                   String?
+  numerocartaomascarado                                          String?
+  nomecartao                                                     String?
+  mesvalidade                                                    Int?
+  anovalidade                                                    Int?
+  codigoseguranca                                                String?
+  formapadraodatabasecartaorecorrente                            String?
+  diapagamentopadrao                                             Int?
+  situacao                                                       String?
+  datacadastro                                                   DateTime?
+  algoritmocriptografia                                          String?
+  created                                                        DateTime?
+  codigocreated                                                  Int?
+  nomecreated                                                    String?
+  updated                                                        DateTime?
+  codigoupdated                                                  Int?
+  nomeupdated                                                    String?
+  celularcartao                                                  String?
+  cpfcartao                                                      String?
+  emailcartao                                                    String?
+  datainativacao                                                 DateTime?
+  motivoinativacao                                               String?
+  inativadoviarecorrencia                                        Boolean?
+  transacaocartaoonline                                          Int?
+
+  @@map("cartaocreditodebitorecorrenciapessoa")
+}
+
+// -----------------------------------------------
+// TABELAS DE DOCUMENTOS ASSINADOS
+// -----------------------------------------------
+
+model Documentoassinadopessoa {
+  codigo                                                         Int       @id
+  datasolicitacao                                                DateTime?
+  dataassinatura                                                 DateTime?
+  datarejeicao                                                   DateTime?
+  pessoa                                                         Int?
+  documentoassinado                                              Int?
+  tipopessoa                                                     String?
+  situacaodocumentoassinadopessoa                                String?
+  motivorejeicao                                                 String?
+  ordemassinatura                                                Int?
+  cargo                                                          String?
+  titulo                                                         String?
+  codigoassinatura                                               Int?
+  acaoassinatura                                                 String?
+  urlassinatura                                                  String?
+  created                                                        DateTime?
+  codigocreated                                                  Int?
+  nomecreated                                                    String?
+  updated                                                        DateTime?
+  codigoupdated                                                  Int?
+  nomeupdated                                                    String?
+  assinarporcnpj                                                 Boolean?
+  provedorassinatura                                             String?
+  possuiassinaturaautomatica                                     Boolean?
+  nome                                                           String?
+  nomemembrocomunidade                                           String?
+  cpfmembrocomunidade                                            String?
+  emailmembrocomunidade                                          String?
+  pathurlacessoexterno                                           String?
+  documentoassinadoorigemenum                                    String?
+  jsonassinatura                                                 String?
+  tipoassinaturadocumentoenum                                    String?
+
+  @@map("documentoassinadopessoa")
+}
+
+model Documentoassinado {
+  codigo                                                         Int       @id
+  dataregistro                                                   DateTime?
+  usuario                                                        Int?
+  arquivo                                                        Int?
+  tipoorigemdocumentoassinado                                    String?
+  ano                                                            String?
+  semestre                                                       String?
+  matricula                                                      String?
+  gradecurricular                                                Int?
+  turma                                                          Int?
+  disciplina                                                     Int?
+  unidadeensino                                                  Int?
+  matriculaperiodo                                               Int?
+  provedordeassinaturaenum                                       String?
+  codigoprovedordeassinatura                                     Int?
+  chaveprovedordeassinatura                                      String?
+  urlprovedordeassinatura                                        String?
+  created                                                        DateTime?
+  codigocreated                                                  Int?
+  nomecreated                                                    String?
+  updated                                                        DateTime?
+  codigoupdated                                                  Int?
+  nomeupdated                                                    String?
+  revalidacaomatricula                                           Int?
+  bloqueadopor                                                   Int?
+  databloqueio                                                   DateTime?
+  origembloqueio                                                 String?
+  curso                                                          Int?
+  programacaoformatura                                           Int?
+  planoensino                                                    Int?
+  documentoassinadoinvalido                                      Boolean?
+  motivodocumentoassinadoinvalido                                String?
+  arquivovisual                                                  Int?
+  codigovalidacaohistoricodigital                                String?
+  decisaojudicial                                                Boolean?
+  versaodiploma                                                  String?
+  expedicaodiploma                                               Int?
+  inclusaohistoricoforaprazo                                     Int?
+  negociacaocontareceber                                         Int?
+  codigovalidacaocurriculoescolardigital                         String?
+  contapagar                                                     Int?
+  registrardocumentoassinadocertifikedu                          Boolean?
+  codigoregistrocertifikedu                                      String?
+  erroregistrocertifikedu                                        String?
+  dataexpiracaodocumentocertifikedu                              DateTime?
+  tipocontrato                                                   String?
+  lotediplomasanulados                                           Int?
+  arquivofiscalizacao                                            Int?
+  iddadosregistrodiplomadigital                                  Int?
+  provedorcarimbotempo                                           String?
+  erroregistrarprovedorcarimbotempo                              String?
+  enviarmensagemnotificacao                                      Boolean?
+
+  @@map("documentoassinado")
+}
+
+// -----------------------------------------------
+// TABELAS FINANCEIRAS (Condicoes, Descontos, Planos)
+// -----------------------------------------------
+
+model Condicaopagamentoplanofinanceirocurso {
+  codigo                                                         Int       @id
+  restituirdiferencavalormatriculasistemaporcredito              Boolean?
+  valorunitariocredito                                           Decimal?
+  valorminimoparcelasistemaporcredito                             Decimal?
+  valormatriculasistemaporcredito                                Decimal?
+  planodescontopadrao                                            Int?
+  descontoprogressivopadrao                                      Int?
+  nrparcelasperiodo                                              Int?
+  valorparcela                                                   Decimal?
+  valormatricula                                                 Decimal?
+  descricao                                                      String?
+  nomeformula                                                    String?
+  formulacalculovalorfinal                                       String?
+  formulausovariavel1                                            String?
+  formulacalculovariavel1                                        String?
+  utilizarvariavel1                                              Boolean?
+  variavel1                                                      Float?
+  formulausovariavel2                                            String?
+  formulacalculovariavel2                                        String?
+  utilizarvariavel2                                              Boolean?
+  variavel2                                                      Float?
+  formulausovariavel3                                            String?
+  formulacalculovariavel3                                        String?
+  utilizarvariavel3                                              Boolean?
+  variavel3                                                      Float?
+  titulovariavel1                                                String?
+  titulovariavel2                                                String?
+  titulovariavel3                                                String?
+  planofinanceirocurso                                           Int?
+  valorfixodisciplinaincluida                                    Decimal?
+  valordescontodisciplinaexcluida                                Decimal?
+  gerarparcelasseparadasparadisciplinasincluidas                 Boolean?
+  utilizarvalormatriculafixo                                     Boolean?
+  gerarcobrancapordisciplinasincluidas                           Boolean?
+  gerardescontopordiscipliaexcluidas                             Boolean?
+  gerardescontopordisciplinexcluidassomenteultimoperiodo         Boolean?
+  numeromaximodisciplinacursarparagerardescontos                 Int?
+  ratiarvalordiferencainclusaoexclusaoparatodasparcelas          Boolean?
+  descricaoduracao                                               String?
+  textopadraocontratomatricula                                   Int?
+  descontoprogressivopadraomatricula                             Int?
+  codigoantsei                                                   Int?
+  situacao                                                       String?
+  dataativacao                                                   DateTime?
+  responsavelativacao                                            Int?
+  datainativacao                                                 DateTime?
+  responsavelinativacao                                          Int?
+  naocontrolarmatricula                                          Boolean?
+  apresentarcondicaovisaoaluno                                   Boolean?
+  definirplanodescontoapresentarmatricula                        Boolean?
+  naoregerarparcelavencida                                       Boolean?
+  centroreceita                                                  Int?
+  aplicarcalculocombasedescontoscalculados                       Boolean?
+  descontoprogressivoprimeiraparcela                             Int?
+  tipousocondicaopagamento                                       String?
+  tipocobrancainclusaodisciplinaregular                          String?
+  cobrardiscipregularquandoultrapassarcreditoschmaxperiodoletivo Boolean?
+  tipocobrancainclusaodisciplinadependencia                      String?
+  cobrardiscipdependenciaquandoultrapassarcreditoschmaxperlet    Boolean?
+  tipocalculoparcela                                             String?
+  valorporatividadecomplementar                                  Decimal?
+  tipocobrancaatividadecomplementar                              String?
+  nrcreditoporatividadecomplementar                              Int?
+  tipocobrancaenade                                              String?
+  nrcreditoporenade                                              Int?
+  valorporenade                                                  Decimal?
+  tipocobrancaestagio                                            String?
+  nrcreditoporestagio                                            Int?
+  valorporestagio                                                Decimal?
+  valorfixodisciplinaincluidaead                                 Decimal?
+  utilizarpoliticacobrancaespecificaparaoptativas                Boolean?
+  tipocobrancadisciplinaoptativa                                 String?
+  cobrardiscipoptativaquandoultrapassarcredchmaxperlet           Boolean?
+  valordisciplinaoptativa                                        Decimal?
+  valordisciplinaoptativaead                                     Decimal?
+  valordisciplinaincluidadependencia                             Decimal?
+  valordisciplinaincluidadependenciaead                          Decimal?
+  utilizarpoliticadescontodiscipregularfeitasviaead              Boolean?
+  tipodescontodisciplinaregularead                               String?
+  valordescontodisciplinaregularead                              Decimal?
+  tipocobrancaexclusaodisciplinaregular                          String?
+  valorfixodisciplinaexcluidaead                                 Decimal?
+  apresentarsomenteparadeterminadaformaingresso                  Boolean?
+  apresentarsomenteparaingressantenosemestreano                  Boolean?
+  formaingressoentrevista                                        Boolean?
+  formaingressoportadordiploma                                   Boolean?
+  formaingressotransferenciainterna                              Boolean?
+  formaingressoprocessoseletivo                                  Boolean?
+  formaingressotransferenciaexterna                              Boolean?
+  formaingressoreingresso                                        Boolean?
+  formaingressoprouni                                            Boolean?
+  formaingressoenem                                              Boolean?
+  formaingressooutrotiposelecao                                  Boolean?
+  apresentarsomenteparaalunosintegralizandocurso                 Boolean?
+  considerarintegralizandoestivercursandoultimoper2vez           Boolean?
+  tipocontrolealunointegralizandocurso                           String?
+  valorbasedefiniralunointegralizandocurso                       Decimal?
+  permiterecebimentoonlinecartaocredito                          Boolean?
+  apresentarmatriculaonlineexterna                               Boolean?
+  apresentarmatriculaonlineprofessor                             Boolean?
+  apresentarmatriculaonlinecoordenador                           Boolean?
+  considerarvalorrateiobaseadovalorbasecomdescontosaplicados     Boolean?
+  abatervalorrateirocomodescontorateio                           Boolean?
+  gerarparcelasextrasseparadomensalidadeareceber                 Boolean?
+  considerarvalorrateioextraparcelavencida                       Boolean?
+  categoria                                                      String?
+  naocontrolarvalorparcela                                       Boolean?
+  gerarparcelamaterialdidatico                                   Boolean?
+  usarunidadeensinoespecifica                                    Boolean?
+  controladiabasevencimentoparcelamaterialdidatico               Boolean?
+  aplicardescontosparcelasnomaterialdidatico                     Boolean?
+  aplicardescontomaterialdidaticodescontoaluno                   Boolean?
+  aplicardescontomaterialdidaticodescontoinstitucional           Boolean?
+  aplicardescontomaterialdidaticodescontoprogressivo             Boolean?
+  aplicardescontomaterialdidaticodescontoconvenio                Boolean?
+  aplicardescontosdesconsiderandosvencimento                     Boolean?
+  unidadeensinofinanceira                                        BigInt?
+  quantidadeparcelasmaterialdidatico                             BigInt?
+  diabasevencimentoparcelaoutraunidade                           BigInt?
+  valorporparcelamaterialdidatico                                Decimal?
+  tipogeracaomaterialdidatico                                    String?
+  apresentarcondpagtocrm                                         Boolean?
+  regerarfinanceiro                                              Boolean?
+  apresentarsomentepararenovacoesnosemestreano                   Boolean?
+  aplicardescontomateiraldidaticodescontoaluno                   Boolean?
+  aplicardescontomateiraldidaticodescontoinstitucional           Boolean?
+  aplicardescontomateiraldidaticodescontoprogressivo             Boolean?
+  aplicardescontomateiraldidaticodescontoconvenio                Boolean?
+  quantidadeparcelasmateriadidatico                              BigInt?
+  lancarvalorratiadosobrevalorbasecontareceber                   Boolean?
+  valorprimeiraparcela                                           Decimal?
+  usavalorprimeiraparcela                                        Boolean?
+  vencimentoprimeiraparcelaantesmaterialdidatico                 Boolean?
+  considerarparcelasmaterialdidaticoreajustepreco                Boolean?
+  created                                                        DateTime?
+  codigocreated                                                  Int?
+  nomecreated                                                    String?
+  updated                                                        DateTime?
+  codigoupdated                                                  Int?
+  nomeupdated                                                    String?
+  formulausovariavel4                                            String?
+  formulacalculovariavel4                                        String?
+  titulovariavel4                                                String?
+  formulacalculoparcelaperiodo                                   String?
+  tipoparcelaperiodoenum                                         String?
+  variavel4                                                      Decimal?
+  utilizarvariavel4                                              Boolean?
+  gerarparcelasaposassinaturacontrato                            Boolean?
+
+  @@map("condicaopagamentoplanofinanceirocurso")
+}
+
+model Planodescontocontareceber {
+  codigo                                                         Int       @id
+  contareceber                                                   Int?
+  planodesconto                                                  Int?
+  tipoitemplanofinanceiro                                        String?
+  convenio                                                       Int?
+  valorutilizadorecebimento                                      Decimal?
+  diasvalidadevencimento                                         Int?
+  tipodesconto                                                   String?
+  valordesconto                                                  Decimal?
+  ordemprioridadeparacalculo                                     Int?
+  imposto                                                        Int?
+  aplicarsobrevalorcheio                                         Boolean?
+  aplicarsobrevalorbasededuzidovaloroutrosplanosdesconto         Boolean?
+  utilizardiautil                                                Boolean?
+  utilizardiafixo                                                Boolean?
+  descontovalidoatedatavencimento                                Boolean?
+  usuarioresponsavel                                             Int?
+  dataconcessaodesconto                                          DateTime?
+  observacaodesconto                                             String?
+  nome                                                           String?
+  suspensofinanciamentoproprio                                   Boolean?
+  utilizaravancodiautil                                          Boolean?
+  created                                                        DateTime?
+  codigocreated                                                  Int?
+  nomecreated                                                    String?
+  updated                                                        DateTime?
+  codigoupdated                                                  Int?
+  nomeupdated                                                    String?
+  custeaparcelasmaterialdidatico                                 Boolean?
+  categoriadesconto                                              Int?
+
+  @@map("planodescontocontareceber")
+}
+
+model Planodesconto {
+  codigo                                                         Int       @id
+  descricao                                                      String?
+  requisitos                                                     String?
+  somente1periodoletivomatricula                                 Boolean?
+  percdescontomatricula                                          Float?
+  somente1periodoletivoparcela                                   Boolean?
+  percdescontoparcela                                            Float?
+  nome                                                           String?   @unique
+  tipodescontoparcela                                            String?
+  tipodescontomatricula                                          String?
+  diasvalidadevencimento                                         Int?
+  codigoantsei                                                   Int?
+  ativo                                                          Boolean?
+  responsavelativacao                                            Int?
+  datainativacao                                                 DateTime?
+  responsavelinativacao                                          Int?
+  dataativacao                                                   DateTime?
+  descontovalidoatedatavencimento                                Boolean?
+  unidadeensino                                                  Int?
+  aplicarsobrevalorcheio                                         Boolean?
+  utilizardiautil                                                Boolean?
+  utilizardiafixo                                                Boolean?
+  aplicarsobrevalorbasededuzidovaloroutrosplanosdesconto         Boolean?
+  ordemprioridadeparacalculo                                     Int?
+  categoriadesconto                                              Int?
+  bolsafilantropia                                               Boolean?
+  removerdescontorenovacao                                       Boolean?
+  aplicardescontoapartirparcela                                  Int?
+  utilizaravancodiautil                                          Boolean?
+  created                                                        DateTime?
+  codigocreated                                                  Int?
+  nomecreated                                                    String?
+  updated                                                        DateTime?
+  codigoupdated                                                  Int?
+  nomeupdated                                                    String?
+  aplicardescontoateparcela                                      Int?
+
+  @@map("planodesconto")
+}
+
+// -----------------------------------------------
+// TABELA DE FUNCIONARIOS
+// -----------------------------------------------
+
+model Funcionario {
+  codigo                                                         Int       @id
+  matricula                                                      String?   @unique
+  pessoa                                                         Int?
+  dataadmissao                                                   DateTime?
+  exercecargoadministrativo                                      Boolean?
+  nomebanco                                                      String?
+  numerobancorecebimento                                         String?
+  numeroagenciarecebimento                                       String?
+  contacorrenterecebimento                                       String?
+  codigoant                                                      Int?
+  codigoantsei                                                   Int?
+  remover                                                        Boolean?
+  observacao                                                     String?
+  escolaridade                                                   String?
+  arquivoassinatura                                              Int?
+  empresarecebimento                                             String?
+  cnpjempresarecebimento                                         String?
+  digitoagenciarecebimento                                       String?
+  digitocorrenterecebimento                                      String?
+  operacaobancaria                                               String?
+  chaveenderecamentopix                                          String?
+  tipoidentificacaochavepixenum                                  String?
+  created                                                        DateTime?
+  codigocreated                                                  Int?
+  nomecreated                                                    String?
+  updated                                                        DateTime?
+  codigoupdated                                                  Int?
+  nomeupdated                                                    String?
+  utilizarcertificadoproprio                                     Boolean?
+  certificadodigital                                             Int?
+  senhacertificadodigital                                        String?
+  horassemanaiscontratada                                        Int?
+  regime                                                         String?
+
+  @@map("funcionario")
+}
+
+// -----------------------------------------------
+// TABELA PROPRIA: Perfil consolidado dos alunos
+// Populada via JSON manual (nao vem do SEI)
+// -----------------------------------------------
+
+model Pfalunos {
+  matricula                String  @id
+  nome                     String?
+  telefone                 String?
+  email                    String?
+  parcelas_pagas           Int?
+  parcelas_atraso          Int?
+  parcelas_aberto          Int?
+  aulas_total_porcentagem  Float?
+  id                       BigInt?
+  turma                    String?
+  criado_em                String?
+  dias_desde_primeira_aula Int?
+  dias_desde_ultima_aula   Int?
+  aulas_assistidas         Int?
+  status_financeiro        String?
+  cidade                   String?
+  tag                      String?
+  cep                      String?
+
+  @@map("pf_alunos")
+}
+
+// -----------------------------------------------
+// TABELA PROPRIA: Plantoes flexiveis dos alunos
+// Populada via JSON manual (nao vem do SEI)
+// Um aluno pode ter multiplas linhas (uma por plantao)
+// -----------------------------------------------
+
+model Pfplantoes {
+  id           Int     @id @default(autoincrement())
+  data_plantao String?
+  data_marcado String?
+  matricula    String
+  nome         String?
+  telefone     String?
+  status       String?
+  moscow       String?
+
+  @@unique([matricula, data_plantao])
+  @@map("pf_plantoes")
+}
+
+// -----------------------------------------------
+// TABELA PROPRIA: Registros de negativacao Serasa
+// Populada via JSON manual (exportado do painel Serasa)
+// CPF pode ser usado para relacionar com pessoa.cpf do SEI
+// Nem todos os alunos sao do SEI (podem ser de outras turmas)
+// -----------------------------------------------
+
+model Serasa {
+  id                Int     @id @default(autoincrement())
+  cpf_cnpj          String
+  cpf_cnpj_numerico String
+  nome              String?
+  contrato          String?
+  valor             String?
+  valor_numerico    Float?
+  enviado_em        String?
+  baixado_em        String?
+  situacao          String?
+
+  @@unique([cpf_cnpj_numerico, contrato, enviado_em])
+  @@map("serasa")
+}
+
+// -----------------------------------------------
+// TABELA PROPRIA: Contatos do chatbot Blip
+// Populada via API Blip (LIME protocol)
+// identity = telefone@wa.gw.msging.net
+// cpf extraido de extras.cpfCnpj - relaciona com pessoa.cpf do SEI
+// -----------------------------------------------
+
+model BlipContact {
+  identity            String  @id
+  name                String?
+  phoneNumber         String?
+  cpf                 String?
+  cpf_sanitizado      String?
+  telefone_sanitizado String?
+
+  @@map("blip_contacts")
+}
+
+// -----------------------------------------------
+// TABELA PROPRIA: Tickets de atendimento Blip
+// Populada via API Blip (historico de tickets)
+// customerIdentity liga ao BlipContact.identity
+// -----------------------------------------------
+
+model BlipTicket {
+  id               String   @id
+  sequentialId     Int?
+  customerIdentity String?
+  agentIdentity    String?
+  status           String?
+  storageDate      String?
+  team             String?
+  closed           Int?
+  priority         Int?
+
+  @@map("blip_tickets")
+}
+
+// ============================================================
+// TABELAS CRM — Eventos e Ocorrencias (escrita do sistema)
+// ============================================================
+
+model MensagemWhatsapp {
+  id                  String    @id @default(uuid())
+  mensagemExternaId   String    @unique
+  chatId              Int
+  contatoNumero       String
+  contatoNome         String?
+  contatoImagem       String?
+  instanciaId         String
+  instanciaNome       String?
+  pessoaCodigo        Int?
+  tipo                String    // chat, audio, image, document, video
+  corpo               String?
+  mediaUrl            String?
+  mediaNome           String?
+  transcricaoAudio    String?
+  fromMe              Boolean
+  de                  String
+  para                String
+  agenteId            Int?
+  agenteNome          String?
+  mensagemCitadaId    String?
+  mensagemCitadaCorpo String?
+  ack                 String?   // null=pendente, "device"=entregue, "read"=lido
+  timestamp           DateTime
+  criadoEm            DateTime  @default(now())
+
+  @@index([contatoNumero, timestamp])
+  @@index([pessoaCodigo, timestamp])
+  @@index([chatId, timestamp])
+  @@map("mensagem_whatsapp")
+}
+
+model RegistroLigacao {
+  id                    String    @id @default(uuid())
+  telephonyId           String    @unique
+  callId                String?
+  campanhaId            Int?
+  campanhaNome          String?
+  modo                  String    // dialer, manual, click2call
+  telefone              String
+  pessoaCodigo          Int?
+  pessoaNome            String?
+  mailingId             String?
+  agenteId              Int?
+  agenteNome            String?
+  dataHoraChamada       DateTime
+  dataHoraAtendida      DateTime?
+  dataHoraConectada     DateTime?
+  dataHoraDesligada     DateTime?
+  tempoTotal            Int?
+  tempoEspera           Int?
+  tempoFalando          Int?
+  tempoComAgente        Int?
+  tempoAcw              Int?
+  status                Int
+  statusTexto           String?
+  qualificacaoId        Int?
+  qualificacaoNome      String?
+  qualificacaoPositiva  Boolean?
+  conversao             Boolean?
+  hangupCause           Int?
+  hangupCauseTexto      String?
+  gravada               Boolean   @default(false)
+  gravacaoUrl           String?
+  transcricao           String?
+  encerradaPeloAgente   Boolean?
+  amdStatus             String?
+  criadoEm              DateTime  @default(now())
+
+  @@index([pessoaCodigo, dataHoraChamada])
+  @@index([telefone, dataHoraChamada])
+  @@index([agenteId, dataHoraChamada])
+  @@map("registro_ligacao")
+}
+
+model EventoLigacaoRaw {
+  id            String    @id @default(uuid())
+  tipo          String
+  telephonyId   String?
+  telefone      String?
+  agenteId      Int?
+  payload       Json
+  criadoEm      DateTime  @default(now())
+
+  @@index([telephonyId])
+  @@index([tipo, criadoEm])
+  @@map("evento_ligacao_raw")
+}
+
+// -----------------------------------------------
+// CRM: Conversa de Cobranca (entidade de dominio)
+// Cada conversa WhatsApp vira uma "conversa de cobranca"
+// com enriquecimento financeiro e acoes proprias.
+// 3C Plus continua como canal; CRM como cerebro.
+// -----------------------------------------------
+model ConversaCobranca {
+  id                      String    @id @default(uuid())
+
+  // Vinculacao com 3C Plus (canal)
+  chatId                  String    @unique
+  instanciaId             String
+  contatoNumero           String
+  contatoNome             String?
+  contatoImagem           String?
+
+  // Vinculacao com aluno (dominio)
+  pessoaCodigo            Int?
+  matricula               String?
+
+  // Status de cobranca (nao o da 3C Plus)
+  status                  String    @default("AGUARDANDO") // AGUARDANDO, EM_ATENDIMENTO, SNOOZE, ENCERRADA
+  motivoEncerramento      String?   // ACORDO_FECHADO, PAGO_AVISTA, SEM_RETORNO, RECUSOU, NAO_E_DEVEDOR, TRANSFERIDO_JURIDICO, OUTRO
+  observacaoEncerramento  String?
+
+  // Atribuicao (agente interno, nao 3C Plus)
+  agenteId                Int?
+  agenteNome              String?
+  assumidoEm              DateTime?
+
+  // Snapshot de cobranca (atualizado pelo worker)
+  valorInadimplente       Decimal?  @db.Decimal(12, 2)
+  diasAtraso              Int?
+  serasaAtivo             Boolean   @default(false)
+  temAcordoAtivo          Boolean   @default(false)
+  acordoId                String?
+
+  // Priorizacao (campos preservados, calculo adiado)
+  prioridadeScore         Float     @default(0)
+  prioridadeFaixa         String    @default("BAIXA")
+
+  // SLA / metricas
+  ultimaMensagemCliente   DateTime?
+  ultimaMensagemAgente    DateTime?
+  aguardandoRespostaDesde DateTime?
+  reativarEm              DateTime?
+
+  // Preview da ultima mensagem (para listagem)
+  ultimaMensagemTexto     String?
+  ultimaMensagemTipo      String?
+  ultimaMensagemFromMe    Boolean?
+
+  criadoEm                DateTime  @default(now())
+  atualizadoEm            DateTime  @updatedAt
+  encerradoEm             DateTime?
+
+  @@index([status, ultimaMensagemCliente(sort: Desc)])
+  @@index([agenteId, status])
+  @@index([pessoaCodigo])
+  @@index([instanciaId, status])
+  @@map("conversa_cobranca")
+}
+
+model WebhookEvent {
+  id              String    @id @default(uuid())
+  origem          String    // ASAAS, CLICKSIGN
+  eventoTipo      String
+  eventoId        String
+  pessoaCodigo    Int?
+  acordoId        String?
+  payload         Json
+  processado      Boolean   @default(false)
+  processadoEm    DateTime?
+  tentativas      Int       @default(0)
+  criadoEm        DateTime  @default(now())
+
+  @@unique([origem, eventoId])
+  @@index([processado, criadoEm])
+  @@index([pessoaCodigo])
+  @@map("webhook_event")
+}
+
+model Ocorrencia {
+  id                    String    @id @default(uuid())
+  tipo                  String    // TipoOcorrencia: LIGACAO_EFETUADA, WHATSAPP_RECEBIDO, etc.
+  descricao             String
+  origem                String    // OrigemOcorrencia: SISTEMA, AGENTE, SOCKET_3CPLUS, etc.
+  pessoaCodigo          Int
+  pessoaNome            String?
+  agenteCodigo          String?
+  agenteNome            String?
+  registroLigacaoId     String?
+  mensagemWhatsappId    String?
+  webhookEventId        String?
+  acordoId              String?
+  metadados             Json?
+  criadoEm              DateTime  @default(now())
+
+  @@index([pessoaCodigo, criadoEm])
+  @@index([tipo, criadoEm])
+  @@index([agenteCodigo, criadoEm])
+  @@map("ocorrencia")
+}
+
+// ============================================================
+// WORKFLOW DE NEGOCIACOES
+// ============================================================
+
+model AcordoFinanceiro {
+  id                          String    @id @default(uuid())
+  pessoaCodigo                Int
+  pessoaNome                  String
+  pessoaCpf                   String
+  matricula                   String?
+  turmaIdentificador          String?
+  cursoNome                   String?
+  celularAluno                String?
+  emailAluno                  String?
+
+  etapa                       String    @default("SELECAO")
+
+  // Valores financeiros
+  valorOriginal               Decimal   @db.Decimal(12,2)
+  valorMultaJuros             Decimal   @db.Decimal(12,2)
+  valorDescontos              Decimal   @db.Decimal(12,2) @default(0)
+  valorRecebidoPrevio         Decimal   @db.Decimal(12,2) @default(0)
+  valorSaldoDevedor           Decimal   @db.Decimal(12,2)
+  descontoAcordo              Decimal   @db.Decimal(12,2) @default(0)
+  descontoAcordoPercentual    Decimal?  @db.Decimal(5,2)
+  valorAcordo                 Decimal   @db.Decimal(12,2)
+
+  // Recorrencia
+  vincularRecorrencia         Boolean   @default(false)
+
+  // Integracoes externas
+  asaasCustomerId             String?
+  clicksignEnvelopeId         String?
+  clicksignDocumentId         String?
+  clicksignSignerId           String?
+  negociacaoContaReceberCodigo Int?
+
+  // Controle
+  criadoPor                   Int       // userId
+  criadoPorNome               String
+  observacao                  String?
+  motivoCancelamento          String?
+
+  // Timestamps
+  criadoEm                    DateTime  @default(now())
+  atualizadoEm                DateTime  @updatedAt
+  termoEnviadoEm              DateTime?
+  termoAssinadoEm             DateTime?
+  acordoGeradoEm              DateTime?
+  seiVinculadoEm              DateTime?
+  canceladoEm                 DateTime?
+
+  // Relacoes
+  parcelasOriginais           ParcelaOriginalAcordo[]
+  pagamentos                  PagamentoAcordo[]
+  documento                   Documento?
+
+  @@index([etapa])
+  @@index([pessoaCodigo])
+  @@index([criadoPor])
+  @@map("acordo_financeiro")
+}
+
+model ParcelaOriginalAcordo {
+  id                 String   @id @default(uuid())
+  acordoId           String
+  contaReceberCodigo Int
+  parcela            String?
+  valor              Decimal  @db.Decimal(12,2)
+  multa              Decimal  @db.Decimal(12,2) @default(0)
+  juro               Decimal  @db.Decimal(12,2) @default(0)
+  descontos          Decimal  @db.Decimal(12,2) @default(0)
+  valorRecebido      Decimal  @db.Decimal(12,2) @default(0)
+  saldoDevedor       Decimal  @db.Decimal(12,2)
+  dataVencimento     DateTime
+  tipoOrigem         String?
+
+  acordo             AcordoFinanceiro @relation(fields: [acordoId], references: [id], onDelete: Cascade)
+
+  @@index([acordoId])
+  @@map("parcela_original_acordo")
+}
+
+model PagamentoAcordo {
+  id                  String    @id @default(uuid())
+  acordoId            String
+  numeroPagamento     Int
+  valor               Decimal   @db.Decimal(12,2)
+  formaPagamento      String
+  parcelas            Int       @default(1)
+  dataVencimento      DateTime
+  descricao           String?
+
+  situacao            String    @default("PENDENTE")
+
+  // Asaas
+  asaasPaymentId      String?   @unique
+  asaasInstallmentId  String?
+  asaasInvoiceUrl     String?
+  asaasPixQrCode      String?
+  asaasBankSlipUrl    String?
+
+  // Confirmacao
+  dataPagamento       DateTime?
+  valorPago           Decimal?  @db.Decimal(12,2)
+  valorLiquido        Decimal?  @db.Decimal(12,2)
+  taxaAsaas           Decimal?  @db.Decimal(12,2)
+
+  acordo              AcordoFinanceiro @relation(fields: [acordoId], references: [id], onDelete: Cascade)
+
+  @@index([acordoId])
+  @@index([situacao])
+  @@map("pagamento_acordo")
+}
+
+model Documento {
+  id                    String    @id @default(uuid())
+  acordoId              String    @unique
+  tipo                  String    @default("TERMO_ACORDO")
+  clicksignDocumentKey  String?
+  clicksignEnvelopeId   String?
+  situacao              String    @default("RASCUNHO")
+  urlOriginal           String?
+  urlAssinado           String?
+  pdfAssinado           Bytes?    // PDF assinado baixado da ClickSign
+  signatarios           Json?
+  enviadoEm             DateTime?
+  assinadoEm            DateTime?
+
+  acordo                AcordoFinanceiro @relation(fields: [acordoId], references: [id], onDelete: Cascade)
+
+  @@map("documento")
+}
+
+// ============================================================
+// WORKFLOW DE RECORRENCIA
+// ============================================================
+
+model CadastroRecorrencia {
+  id                    String    @id @default(uuid())
+  pessoaCodigo          Int
+  pessoaNome            String
+  pessoaCpf             String
+  matricula             String?
+  celularAluno          String?
+
+  etapa                 String    @default("PENDENTE") // PENDENTE, MONITORANDO, CONCLUIDO, CANCELADO
+  origem                String    // MANUAL, NEGOCIACAO, RECONVERSAO
+  metodo                String?   // PARCELA_SIMBOLICA, ATIVACAO_MANUAL
+
+  // Vinculo negociacao
+  acordoId              String?
+
+  // Parcela simbolica
+  contaReceberCodigo    Int?
+  parcelaPaga           Boolean   @default(false)
+
+  // Deteccao
+  recorrenciaAtivada    Boolean   @default(false)
+  cartaoDetectadoCodigo Int?
+
+  // Controle
+  dataLimite            DateTime?
+  criadoPor             Int
+  criadoPorNome         String
+  observacao            String?
+
+  criadoEm              DateTime  @default(now())
+  atualizadoEm          DateTime  @updatedAt
+  concluidoEm           DateTime?
+  canceladoEm           DateTime?
+
+  @@index([etapa])
+  @@index([pessoaCodigo])
+  @@map("cadastro_recorrencia")
+}
+
+// ============================================================
+// TABELA RESUMO DE ALUNOS (substitui mv_aluno_resumo)
+// ============================================================
+
+model AlunoResumo {
+  codigo              Int       @id
+  nome                String
+  cpf                 String?
+  celular             String?
+  matricula           String?
+  matSituacao          String?
+  naoEnviarMsg        Boolean   @default(false)
+  situacao            String    // ATIVO, TRANCADO, CANCELADO
+  valorDevedor        Decimal   @db.Decimal(12,2) @default(0)
+  parcelasAtraso      Int       @default(0)
+  valorPago           Decimal   @db.Decimal(12,2) @default(0)
+  situacaoFinanceira  String    // ADIMPLENTE, INADIMPLENTE
+  turma               String?
+  atualizadoEm        DateTime  @default(now()) @updatedAt
+
+  @@index([situacao])
+  @@index([situacaoFinanceira])
+  @@index([nome])
+  @@map("aluno_resumo")
+}
+
+// ============================================================
+// WORKFLOW FICOU FACIL (Financiamento Estudantil)
+// ============================================================
+
+model FicouFacil {
+  id                    String    @id @default(uuid())
+  pessoaCodigo          Int
+  pessoaNome            String
+  pessoaCpf             String
+  matricula             String?
+  turma                 String?
+  celularAluno          String?
+
+  etapa                 String    @default("AGUARDANDO_DOCUMENTACAO")
+
+  // Valores financeiros (pre-preenchidos, editaveis)
+  valorPos              Decimal   @db.Decimal(12,2)
+  valorRecebido         Decimal   @db.Decimal(12,2)
+  valorInadimplente     Decimal   @db.Decimal(12,2)
+  valorInadimplenteMJ   Decimal   @db.Decimal(12,2)
+  contaSantander        Boolean   @default(false)
+
+  // Checkboxes por etapa (JSON flexivel)
+  checkboxes            Json      @default("{}")
+
+  // Analise de credito
+  creditoAprovado       Boolean?
+  creditoObservacao     String?
+
+  // Controle
+  criadoPor             Int
+  criadoPorNome         String
+  observacao            String?
+
+  criadoEm              DateTime  @default(now())
+  atualizadoEm          DateTime  @updatedAt
+  concluidoEm           DateTime?
+  canceladoEm           DateTime?
+
+  documentos            DocumentoFicouFacil[]
+
+  @@index([etapa])
+  @@index([pessoaCodigo])
+  @@map("ficou_facil")
+}
+
+model DocumentoFicouFacil {
+  id              String    @id @default(uuid())
+  ficouFacilId    String
+  tipo            String    // DOCUMENTO_ALUNO, DOCUMENTO_AVALISTA
+  nomeArquivo     String
+  mimeType        String
+  tamanho         Int
+  arquivo         Bytes
+  criadoEm        DateTime  @default(now())
+
+  ficouFacil      FicouFacil @relation(fields: [ficouFacilId], references: [id], onDelete: Cascade)
+
+  @@index([ficouFacilId])
+  @@map("documento_ficou_facil")
+}

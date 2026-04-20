@@ -1,0 +1,149 @@
+matriculaperiodo
+
+-- public.matriculaperiodo definição
+
+-- Drop table
+
+-- DROP TABLE public.matriculaperiodo;
+
+CREATE TABLE public.matriculaperiodo (
+	responsavelliberacaomatricula int4 NULL,
+	responsavelemissaoboletomatricula int4 NULL,
+	dataemissaoboletomatricula timestamp NULL,
+	dataliberacaomatricula timestamp NULL,
+	turma int4 NULL,
+	responsavelrenovacaomatricula int4 NULL,
+	periodoletivomatricula int4 NOT NULL,
+	gradecurricular int4 NULL,
+	matricula varchar(20) NOT NULL,
+	situacao varchar(2) NOT NULL,
+	"data" timestamp NOT NULL,
+	contareceber int4 NULL,
+	nrdocumento varchar(50) NULL,
+	codigo serial4 NOT NULL,
+	unidadeensinocurso int4 NULL,
+	turmaperiodo int4 NULL,
+	semestre varchar(5) NULL,
+	ano varchar(10) NULL,
+	responsavelmatriculaforaprazo int4 NULL,
+	situacaomatriculaperiodo varchar(5) NULL,
+	processomatricula int4 NULL,
+	transferenciaentrada int4 NULL,
+	contratomatricula int4 NULL,
+	planofinanceirocurso int4 NULL,
+	condicaopagamentoplanofinanceirocurso int4 NULL,
+	matriculaperiodoprematricula int4 NULL,
+	nrdisciplinasincluidas int4 NULL,
+	nrdisciplinasexcluidas int4 NULL,
+	financeiromanual bool DEFAULT false NOT NULL,
+	contratofiador int4 NULL,
+	reconheceudivida bool NULL,
+	carneentregue bool DEFAULT false NULL,
+	codigoantsei int4 NULL,
+	datafechamentomatriculaperiodo timestamp NULL,
+	origemfechamentomatriculaperiodo varchar(50) NULL,
+	codigoorigemfechamentomatriculaperiodo int4 NULL,
+	usuarioresponsavelconfirmacaooucancelamentoprematricula int4 NULL,
+	bolsista bool DEFAULT false NULL,
+	contratoextensao int4 NULL,
+	alunotransferidounidade bool NULL,
+	responsavelativacaofinanceiromanual int4 NULL,
+	dataativacaofinanceiromanual date NULL,
+	aceitoutermocontratorenovacaoonline bool NULL,
+	datanotificacaoabandonocurso timestamp NULL,
+	codigoant int4 NULL,
+	tabelaant varchar(30) NULL,
+	statusimp varchar(30) NULL,
+	motivoliberacaopgtomatricula text NULL,
+	matriculaespecial bool DEFAULT false NULL,
+	observacaocriterioavaliacao text NULL,
+	sequencialcodmatperalternativoboleto serial4 NOT NULL,
+	matriculaperiodoincluidaparacorrecaohistoricoforagrade bool DEFAULT false NULL,
+	deveatualizarnovaunidadeensinocurso bool NULL,
+	dataaceitoutermocontratorenovacaoonline timestamp NULL,
+	categoriacondicaopagamento varchar(25) NULL,
+	databasegeracaoparcelas date NULL,
+	datavencimentomatriculaespecifico date NULL,
+	created timestamp NULL,
+	codigocreated int4 NULL,
+	nomecreated varchar(255) NULL,
+	updated timestamp NULL,
+	codigoupdated int4 NULL,
+	nomeupdated varchar(255) NULL,
+	nrparcelasperiodocalculo int4 NULL,
+	registroemmanutencao bool DEFAULT false NULL,
+	turnomatriculaanterior int4 NULL,
+	identificadoralteracaodados varchar(250) DEFAULT NULL::character varying NULL,
+	geracaoparcelaautomatica bool DEFAULT false NULL,
+	alunoregular bool DEFAULT true NULL,
+	contratoaditivo int4 NULL,
+	codigoplataformaa int4 NULL,
+	CONSTRAINT check_matriculaperiodo_ano_semestre_matricula CHECK (fn_validarexistenciamatriculaperiodo((matricula)::text, (ano)::text, (semestre)::text, (codigo)::bigint, registroemmanutencao)) NOT VALID,
+	CONSTRAINT ck_validarunidadeensinomatriculaunidadeensinoprocessomatricula CHECK ((fn_validaruematriculaigualueprocessomatricula(processomatricula, unidadeensinocurso, registroemmanutencao) = true)) NOT VALID,
+	CONSTRAINT fn_validarexistenciaprocessomatriculacalendario CHECK ((fn_validarexistenciaprocessomatriculacalendario(processomatricula, unidadeensinocurso, registroemmanutencao) = true)) NOT VALID,
+	CONSTRAINT matriculaperiodo_pkey PRIMARY KEY (codigo),
+	CONSTRAINT fk_contareceber FOREIGN KEY (contareceber) REFERENCES public.contareceber(codigo) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_gradecurricular FOREIGN KEY (gradecurricular) REFERENCES public.gradecurricular(codigo) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_matricula FOREIGN KEY (matricula) REFERENCES public.matricula(matricula) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_matricula_responsavelemissaoboletomatricula FOREIGN KEY (responsavelemissaoboletomatricula) REFERENCES public.usuario(codigo) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_matricula_responsavelliberacaomatricula FOREIGN KEY (responsavelliberacaomatricula) REFERENCES public.usuario(codigo) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_matriculaperiodo_condicaopagamentoplanofinanceirocurso FOREIGN KEY (condicaopagamentoplanofinanceirocurso) REFERENCES public.condicaopagamentoplanofinanceirocurso(codigo) ON DELETE CASCADE ON UPDATE CASCADE,
+	CONSTRAINT fk_matriculaperiodo_contratoextensao FOREIGN KEY (contratoextensao) REFERENCES public.textopadrao(codigo) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_matriculaperiodo_contratofiador FOREIGN KEY (contratofiador) REFERENCES public.textopadrao(codigo) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_matriculaperiodo_contratomatricula FOREIGN KEY (contratomatricula) REFERENCES public.textopadrao(codigo) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_matriculaperiodo_matricula FOREIGN KEY (matricula) REFERENCES public.matricula(matricula) ON DELETE CASCADE ON UPDATE CASCADE,
+	CONSTRAINT fk_matriculaperiodo_periodoletivomatricula FOREIGN KEY (periodoletivomatricula) REFERENCES public.periodoletivo(codigo) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_matriculaperiodo_planofinanceirocurso FOREIGN KEY (planofinanceirocurso) REFERENCES public.planofinanceirocurso(codigo) ON DELETE CASCADE ON UPDATE CASCADE,
+	CONSTRAINT fk_matriculaperiodo_turma FOREIGN KEY (turma) REFERENCES public.turma(codigo) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_matriculaperiodo_usuarioresponsavelconfirmacaooucancelamento FOREIGN KEY (usuarioresponsavelconfirmacaooucancelamentoprematricula) REFERENCES public.usuario(codigo) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_processomatricula FOREIGN KEY (processomatricula) REFERENCES public.processomatricula(codigo) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_responsavelemissaoboleto FOREIGN KEY (responsavelemissaoboletomatricula) REFERENCES public.usuario(codigo) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_responsavelliberacaomatricula FOREIGN KEY (responsavelliberacaomatricula) REFERENCES public.usuario(codigo) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_responsavelmatriculaforaprazo FOREIGN KEY (responsavelmatriculaforaprazo) REFERENCES public.usuario(codigo) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_responsavelrenovacaomatricula FOREIGN KEY (responsavelrenovacaomatricula) REFERENCES public.usuario(codigo) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_transferenciaentrada FOREIGN KEY (transferenciaentrada) REFERENCES public.transferenciaentrada(codigo) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_turma FOREIGN KEY (turma) REFERENCES public.turma(codigo) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_unidadeensinocurso FOREIGN KEY (unidadeensinocurso) REFERENCES public.unidadeensinocurso(codigo) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_usuarioresponsavelconfirmacaooucancelamentoprematricula FOREIGN KEY (usuarioresponsavelconfirmacaooucancelamentoprematricula) REFERENCES public.usuario(codigo) ON DELETE RESTRICT ON UPDATE RESTRICT
+);
+CREATE INDEX ch_matriculaperiodo_ano_semestre ON public.matriculaperiodo USING btree (ano, semestre);
+CREATE INDEX ch_matriculaperiodo_gradecurricular ON public.matriculaperiodo USING btree (gradecurricular);
+CREATE INDEX ch_matriculaperiodo_matricula ON public.matriculaperiodo USING btree (matricula);
+CREATE INDEX ch_matriculaperiodo_turma ON public.matriculaperiodo USING btree (turma);
+CREATE INDEX id_mp_mat_datafe_situ ON public.matriculaperiodo USING btree (matricula, datafechamentomatriculaperiodo, situacaomatriculaperiodo);
+CREATE INDEX idx_matriculaperiodo_ano_semestre_filtro_sit ON public.matriculaperiodo USING btree (ano, semestre) WHERE ((situacaomatriculaperiodo)::text = 'AT'::text);
+CREATE INDEX idx_matriculaperiodo_contareceber ON public.matriculaperiodo USING btree (contareceber);
+CREATE INDEX idx_matriculaperiodo_data ON public.matriculaperiodo USING btree (data);
+CREATE INDEX idx_matriculaperiodo_matricula_ano_semestre ON public.matriculaperiodo USING btree (matricula, ano, semestre);
+CREATE INDEX idx_matriculaperiodo_unidadeensinocurso ON public.matriculaperiodo USING btree (unidadeensinocurso);
+
+-- Table Triggers
+
+create trigger audit_trigger_row after
+insert
+    or
+delete
+    or
+update
+    on
+    public.matriculaperiodo for each row execute function audit.if_modified_func('true');
+create trigger audit_trigger_stm after
+truncate
+    on
+    public.matriculaperiodo for each statement execute function audit.if_modified_func('true');
+create trigger tg_matriculaperiodoplataformaa after
+delete
+    or
+update
+    on
+    public.matriculaperiodo for each row execute function fn_matriculaperiodoplataformaa();
+create trigger tg_validar_matriculaperiododuplicada before
+insert
+    or
+update
+    on
+    public.matriculaperiodo for each row execute function fn_validarmatriculaperiododuplicada();
+create trigger tg_persistirinclusaosalaaulablackboardoperacaomatriculaperiodo after
+update
+    on
+    public.matriculaperiodo for each row execute function fn_persistirinclusaosalaaulablackboardoperacaomatriculaperiodo();

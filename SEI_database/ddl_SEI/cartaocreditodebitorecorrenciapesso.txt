@@ -1,0 +1,59 @@
+cartaocreditodebitorecorrenciapessoa
+
+-- public.cartaocreditodebitorecorrenciapessoa definição
+
+-- Drop table
+
+-- DROP TABLE public.cartaocreditodebitorecorrenciapessoa;
+
+CREATE TABLE public.cartaocreditodebitorecorrenciapessoa (
+	codigo serial4 NOT NULL,
+	pessoa int4 NOT NULL,
+	matricula varchar(50) NOT NULL,
+	responsavelfinanceiro int4 NULL,
+	operadoracartao int4 NOT NULL,
+	numerocartao text NOT NULL,
+	numerocartaomascarado varchar(30) NOT NULL,
+	nomecartao varchar(255) NOT NULL,
+	mesvalidade int4 NOT NULL,
+	anovalidade int4 NOT NULL,
+	codigoseguranca text NOT NULL,
+	formapadraodatabasecartaorecorrente varchar(40) NOT NULL,
+	diapagamentopadrao int4 NULL,
+	situacao varchar(20) NOT NULL,
+	datacadastro timestamp DEFAULT CURRENT_TIMESTAMP NULL,
+	algoritmocriptografia varchar(30) DEFAULT 'RSA'::character varying NULL,
+	created timestamp NULL,
+	codigocreated int4 NULL,
+	nomecreated varchar(255) NULL,
+	updated timestamp NULL,
+	codigoupdated int4 NULL,
+	nomeupdated varchar(255) NULL,
+	celularcartao varchar(15) NULL,
+	cpfcartao varchar(18) NULL,
+	emailcartao varchar(255) NULL,
+	datainativacao timestamp NULL,
+	motivoinativacao text NULL,
+	inativadoviarecorrencia bool DEFAULT false NULL,
+	transacaocartaoonline int4 NULL,
+	CONSTRAINT cartaocreditodebitorecorrenciapessoa_pkey PRIMARY KEY (codigo),
+	CONSTRAINT fk_cartaocreditodebitorecorrenciapessoa_matricula FOREIGN KEY (matricula) REFERENCES public.matricula(matricula) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_cartaocreditodebitorecorrenciapessoa_operadoracartao FOREIGN KEY (operadoracartao) REFERENCES public.operadoracartao(codigo) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_cartaocreditodebitorecorrenciapessoa_pessoa FOREIGN KEY (pessoa) REFERENCES public.pessoa(codigo) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_cartaocreditodebitorecorrenciapessoa_responsavelfinanceiro FOREIGN KEY (responsavelfinanceiro) REFERENCES public.pessoa(codigo) ON DELETE RESTRICT ON UPDATE RESTRICT
+);
+
+-- Table Triggers
+
+create trigger audit_trigger_row after
+insert
+    or
+delete
+    or
+update
+    on
+    public.cartaocreditodebitorecorrenciapessoa for each row execute function audit.if_modified_func('true');
+create trigger audit_trigger_stm after
+truncate
+    on
+    public.cartaocreditodebitorecorrenciapessoa for each statement execute function audit.if_modified_func('true');

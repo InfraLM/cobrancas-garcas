@@ -1,0 +1,123 @@
+negociacaocontareceber
+
+-- public.negociacaocontareceber definição
+
+-- Drop table
+
+-- DROP TABLE public.negociacaocontareceber;
+
+CREATE TABLE public.negociacaocontareceber (
+	intervaloparcela int4 NOT NULL,
+	nrparcela int4 NOT NULL,
+	valorentrada numeric(20, 2) NULL,
+	contacorrente int4 NOT NULL,
+	centroreceita int4 NOT NULL,
+	valortotal numeric(20, 2) NOT NULL,
+	desconto numeric(20, 2) NULL,
+	multa float4 NULL,
+	juro float4 NULL,
+	valor numeric(20, 2) NOT NULL,
+	funcionario int4 NULL,
+	matriculaaluno varchar(100) NULL,
+	pessoa int4 NULL,
+	tipopessoa varchar(5) NOT NULL,
+	unidadeensino int4 NOT NULL,
+	responsavel int4 NOT NULL,
+	"data" timestamp NOT NULL,
+	codigo serial4 NOT NULL,
+	justificativa text NULL,
+	descontoprogressivo int4 NULL,
+	parceiro int4 NULL,
+	tipodesconto varchar(20) NULL,
+	tiporenegociacao varchar(2) NULL,
+	condicaorenegociacao int4 NULL,
+	itemcondicaorenegociacao int4 NULL,
+	liberarrenovacaoapospagamentoprimeiraparcela bool DEFAULT true NULL,
+	liberarrenovacaoapospagamentotodasparcelas bool DEFAULT false NULL,
+	fornecedor int4 NULL,
+	acrescimo numeric(20, 2) NULL,
+	codigoant int4 NULL,
+	tabelaant varchar(30) NULL,
+	tipointervaloparcelaenum varchar(20) NULL,
+	databaseparcela timestamp NULL,
+	acrescimogeral numeric(20, 2) NULL,
+	totalacrescimoporparcela numeric(20, 2) DEFAULT 0.0 NULL,
+	acrescimoporparcela numeric(20, 2) DEFAULT 0.0 NULL,
+	tipoacrescimoporparcela varchar(15) DEFAULT 'PORCENTAGEM'::character varying NULL,
+	permitirrenegociacaoapenascomcondicaorenegociacao bool DEFAULT false NULL,
+	responsavelliberacaorenegociardesativandocondicaorenegociacao int4 NULL,
+	dataliberacaorenegociardesativandocondicaorenegociacao timestamp NULL,
+	liberarrenegociardesativandocondicaorenegociacao bool DEFAULT false NULL,
+	resplibusuarionaovinculadocondrenegrealizarnegociacao int4 NULL,
+	datalibusuarionaovinculadocondrenegrealizarnegociacao timestamp NULL,
+	liberarusuarionaovinculadocondrenegrealizarnegociacao bool DEFAULT false NULL,
+	responsavelliberacaousuarionaovinculadocondicaorenegociacaoreal int4 NULL,
+	dataliberacaousuarionaovinculadocondicaorenegociacaorealizarneg timestamp NULL,
+	liberarusuarionaovinculadocondicaorenegociacaorealizarnegociaca bool DEFAULT false NULL,
+	itemcondicaodescontorenegociacao int4 NULL,
+	pessoacomissionada int4 NULL,
+	valortotaljuro numeric(20, 2) DEFAULT 0.0 NULL,
+	valorisencaototaljuro numeric(20, 2) DEFAULT 0.0 NULL,
+	valorisencaototaljuromaximo numeric(20, 2) DEFAULT 0.0 NULL,
+	valortotalmulta numeric(20, 2) DEFAULT 0.0 NULL,
+	valorisencaototalmulta numeric(20, 2) DEFAULT 0.0 NULL,
+	valorisencaototalmultamaximo numeric(20, 2) DEFAULT 0.0 NULL,
+	valortotaldescontoperdido numeric(20, 2) DEFAULT 0.0 NULL,
+	valorconcecaodescontoperdido numeric(20, 2) DEFAULT 0.0 NULL,
+	valorconcecaodescontoperdidomaximo numeric(20, 2) DEFAULT 0.0 NULL,
+	permitirpagamentocartaocreditovisaoaluno bool DEFAULT true NULL,
+	valorjurodesconto numeric(20, 2) NULL,
+	valormultadesconto numeric(20, 2) NULL,
+	valorindicereajustedesconto numeric(20, 2) NULL,
+	agentenegativacaocobrancacontareceber int4 NULL,
+	created timestamp NULL,
+	codigocreated int4 NULL,
+	nomecreated varchar(255) NULL,
+	updated timestamp NULL,
+	codigoupdated int4 NULL,
+	nomeupdated varchar(255) NULL,
+	empresafinanceira varchar(50) NULL,
+	codigointegracaoempresafinanceira varchar(50) NULL,
+	indicereajuste int4 NULL,
+	requerimento int4 NULL,
+	codigoprotheus varchar(255) NULL,
+	codigoprocessoprotheus varchar(255) NULL,
+	CONSTRAINT negociacaocontareceber_pkey PRIMARY KEY (codigo),
+	CONSTRAINT fk_condicaorenegociacao_responsavelliberacaorenegociardesativan FOREIGN KEY (responsavelliberacaorenegociardesativandocondicaorenegociacao) REFERENCES public.usuario(codigo) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_condicaorenegociacao_responsavelliberacaousuarionaovinculado FOREIGN KEY (resplibusuarionaovinculadocondrenegrealizarnegociacao) REFERENCES public.usuario(codigo) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_negociacaocontareceber_agente FOREIGN KEY (agentenegativacaocobrancacontareceber) REFERENCES public.agentenegativacaocobrancacontareceber(codigo) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_negociacaocontareceber_centroreceita FOREIGN KEY (centroreceita) REFERENCES public.centroreceita(codigo) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_negociacaocontareceber_condicaorenegociacao FOREIGN KEY (condicaorenegociacao) REFERENCES public.condicaorenegociacao(codigo),
+	CONSTRAINT fk_negociacaocontareceber_contacorrente FOREIGN KEY (contacorrente) REFERENCES public.contacorrente(codigo) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_negociacaocontareceber_fornecedor FOREIGN KEY (fornecedor) REFERENCES public.fornecedor(codigo) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_negociacaocontareceber_indicereajuste FOREIGN KEY (indicereajuste) REFERENCES public.indicereajuste(codigo),
+	CONSTRAINT fk_negociacaocontareceber_itemcondicaodescontorenegociacao FOREIGN KEY (itemcondicaodescontorenegociacao) REFERENCES public.itemcondicaodescontorenegociacao(codigo) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_negociacaocontareceber_itemcondicaorenegociacao FOREIGN KEY (itemcondicaorenegociacao) REFERENCES public.itemcondicaorenegociacao(codigo),
+	CONSTRAINT fk_negociacaocontareceber_parceiro FOREIGN KEY (parceiro) REFERENCES public.parceiro(codigo) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_negociacaocontareceber_pessoacomissionada FOREIGN KEY (pessoacomissionada) REFERENCES public.pessoa(codigo) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_negociacaocontareceber_responsavel FOREIGN KEY (responsavel) REFERENCES public.usuario(codigo) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_negociacaocontareceber_unidadeensino FOREIGN KEY (unidadeensino) REFERENCES public.unidadeensino(codigo) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_requerimento FOREIGN KEY (requerimento) REFERENCES public.requerimento(codigo)
+);
+CREATE INDEX ch_negociacaocontareceber_centroreceita ON public.negociacaocontareceber USING btree (centroreceita);
+CREATE INDEX ch_negociacaocontareceber_contacorrente ON public.negociacaocontareceber USING btree (contacorrente);
+CREATE INDEX ch_negociacaocontareceber_data ON public.negociacaocontareceber USING btree (data);
+CREATE INDEX ch_negociacaocontareceber_funcionario ON public.negociacaocontareceber USING btree (funcionario);
+CREATE INDEX ch_negociacaocontareceber_matriculaaluno ON public.negociacaocontareceber USING btree (matriculaaluno);
+CREATE INDEX ch_negociacaocontareceber_unidadeensino ON public.negociacaocontareceber USING btree (unidadeensino);
+CREATE INDEX idx_negociacaocontareceber_responsavel ON public.negociacaocontareceber USING btree (responsavel);
+
+-- Table Triggers
+
+create trigger audit_trigger_row after
+insert
+    or
+delete
+    or
+update
+    on
+    public.negociacaocontareceber for each row execute function audit.if_modified_func('true');
+create trigger audit_trigger_stm after
+truncate
+    on
+    public.negociacaocontareceber for each statement execute function audit.if_modified_func('true');

@@ -1,0 +1,63 @@
+funcionário
+
+-- public.funcionario definição
+
+-- Drop table
+
+-- DROP TABLE public.funcionario;
+
+CREATE TABLE public.funcionario (
+	matricula varchar(50) NOT NULL,
+	pessoa int4 NULL,
+	dataadmissao timestamp NOT NULL,
+	codigo serial4 NOT NULL,
+	exercecargoadministrativo bool NULL,
+	nomebanco varchar(30) NULL,
+	numerobancorecebimento varchar(10) NULL,
+	numeroagenciarecebimento varchar(15) NULL,
+	contacorrenterecebimento varchar(20) NULL,
+	codigoant int4 NULL,
+	codigoantsei int4 NULL,
+	remover bool NULL,
+	observacao text NULL,
+	escolaridade varchar(2) NULL,
+	arquivoassinatura int4 NULL,
+	empresarecebimento varchar(100) NULL,
+	cnpjempresarecebimento varchar(20) NULL,
+	digitoagenciarecebimento varchar(1) NULL,
+	digitocorrenterecebimento varchar(1) NULL,
+	operacaobancaria varchar(5) NULL,
+	chaveenderecamentopix varchar(150) NULL,
+	tipoidentificacaochavepixenum varchar(50) NULL,
+	created timestamp NULL,
+	codigocreated int4 NULL,
+	nomecreated varchar(255) NULL,
+	updated timestamp NULL,
+	codigoupdated int4 NULL,
+	nomeupdated varchar(255) NULL,
+	utilizarcertificadoproprio bool DEFAULT false NULL,
+	certificadodigital int4 NULL,
+	senhacertificadodigital varchar(255) NULL,
+	horassemanaiscontratada int4 NULL,
+	regime varchar(10) DEFAULT NULL::character varying NULL,
+	CONSTRAINT funcionario_matricula_key UNIQUE (matricula),
+	CONSTRAINT funcionario_pkey PRIMARY KEY (codigo),
+	CONSTRAINT fk_funcionario_arquivo FOREIGN KEY (certificadodigital) REFERENCES public.arquivo(codigo) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_pessoa FOREIGN KEY (pessoa) REFERENCES public.pessoa(codigo) ON DELETE RESTRICT ON UPDATE RESTRICT
+);
+CREATE INDEX idx_funcionario_pessoa ON public.funcionario USING btree (pessoa);
+
+-- Table Triggers
+
+create trigger audit_trigger_row after
+insert
+    or
+delete
+    or
+update
+    on
+    public.funcionario for each row execute function audit.if_modified_func('true');
+create trigger audit_trigger_stm after
+truncate
+    on
+    public.funcionario for each statement execute function audit.if_modified_func('true');

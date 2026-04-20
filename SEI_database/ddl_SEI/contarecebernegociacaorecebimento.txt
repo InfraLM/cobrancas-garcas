@@ -1,0 +1,51 @@
+contarecebernegociacaorecebimento
+
+-- public.contarecebernegociacaorecebimento definição
+
+-- Drop table
+
+-- DROP TABLE public.contarecebernegociacaorecebimento;
+
+CREATE TABLE public.contarecebernegociacaorecebimento (
+	contareceber int4 NOT NULL,
+	valortotal numeric(20, 2) NOT NULL,
+	negociacaorecebimento int4 NOT NULL,
+	codigo serial4 NOT NULL,
+	codigoantsei int4 NULL,
+	notificarserasa bool NULL,
+	datanotificacaoserasa timestamp NULL,
+	codigoant int4 NULL,
+	tabelaant varchar(30) NULL,
+	contareceberterceiro bool NULL,
+	created timestamp NULL,
+	codigocreated int4 NULL,
+	nomecreated varchar(255) NULL,
+	updated timestamp NULL,
+	codigoupdated int4 NULL,
+	nomeupdated varchar(255) NULL,
+	codigoprotheus varchar(255) NULL,
+	CONSTRAINT contarecebernegociacaorecebimento_pkey PRIMARY KEY (codigo),
+	CONSTRAINT unq_contarecebernegociacaorecebimento_contareceber UNIQUE (contareceber),
+	CONSTRAINT fk_contarecebernegociacaorecebimento_contareceber FOREIGN KEY (contareceber) REFERENCES public.contareceber(codigo) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_contarecebernegociacaorecebimento_negociacaorecebimento FOREIGN KEY (negociacaorecebimento) REFERENCES public.negociacaorecebimento(codigo) ON DELETE CASCADE ON UPDATE CASCADE
+);
+CREATE INDEX ch_contarecebernegociacaorecebimento_negociacaorecebimento ON public.contarecebernegociacaorecebimento USING btree (negociacaorecebimento);
+
+-- Table Triggers
+
+create trigger audit_trigger_row after
+insert
+    or
+delete
+    or
+update
+    on
+    public.contarecebernegociacaorecebimento for each row execute function audit.if_modified_func('true');
+create trigger audit_trigger_stm after
+truncate
+    on
+    public.contarecebernegociacaorecebimento for each statement execute function audit.if_modified_func('true');
+create trigger tg_contarecebernegociacaorecebimento_unicidade_contareceber before
+insert
+    on
+    public.contarecebernegociacaorecebimento for each row execute function fn_contarecebernegociacaorecebimento_validarunicidadecontareceb();

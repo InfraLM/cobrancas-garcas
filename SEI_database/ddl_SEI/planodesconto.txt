@@ -1,0 +1,67 @@
+planodesconto
+
+-- public.planodesconto definição
+
+-- Drop table
+
+-- DROP TABLE public.planodesconto;
+
+CREATE TABLE public.planodesconto (
+	descricao varchar(250) NULL,
+	requisitos varchar(250) NULL,
+	somente1periodoletivomatricula bool NULL,
+	percdescontomatricula float4 NULL,
+	somente1periodoletivoparcela bool NULL,
+	percdescontoparcela float4 NULL,
+	nome varchar(150) NOT NULL,
+	codigo serial4 NOT NULL,
+	tipodescontoparcela varchar(2) NULL,
+	tipodescontomatricula varchar(2) NULL,
+	diasvalidadevencimento int4 NULL,
+	codigoantsei int4 NULL,
+	ativo bool NULL,
+	responsavelativacao int4 NULL,
+	datainativacao timestamp NULL,
+	responsavelinativacao int4 NULL,
+	dataativacao timestamp NULL,
+	descontovalidoatedatavencimento bool NULL,
+	unidadeensino int4 NULL,
+	aplicarsobrevalorcheio bool DEFAULT false NULL,
+	utilizardiautil bool DEFAULT false NULL,
+	utilizardiafixo bool DEFAULT false NULL,
+	aplicarsobrevalorbasededuzidovaloroutrosplanosdesconto bool DEFAULT true NULL,
+	ordemprioridadeparacalculo int4 NULL,
+	categoriadesconto int4 NULL,
+	bolsafilantropia bool DEFAULT false NULL,
+	removerdescontorenovacao bool DEFAULT false NULL,
+	aplicardescontoapartirparcela int4 DEFAULT 0 NULL,
+	utilizaravancodiautil bool DEFAULT false NULL,
+	created timestamp NULL,
+	codigocreated int4 NULL,
+	nomecreated varchar(255) NULL,
+	updated timestamp NULL,
+	codigoupdated int4 NULL,
+	nomeupdated varchar(255) NULL,
+	aplicardescontoateparcela int4 NULL,
+	CONSTRAINT planodesconto_nome_key UNIQUE (nome),
+	CONSTRAINT planodesconto_pkey PRIMARY KEY (codigo),
+	CONSTRAINT fk_planodesconto_categoriadesconto FOREIGN KEY (categoriadesconto) REFERENCES public.categoriadesconto(codigo) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_planodesconto_responsavelativacao FOREIGN KEY (responsavelativacao) REFERENCES public.usuario(codigo) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_planodesconto_responsavelinativacao FOREIGN KEY (responsavelinativacao) REFERENCES public.usuario(codigo) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_planodesconto_unidadeensino FOREIGN KEY (unidadeensino) REFERENCES public.unidadeensino(codigo) ON DELETE RESTRICT ON UPDATE RESTRICT
+);
+
+-- Table Triggers
+
+create trigger audit_trigger_row after
+insert
+    or
+delete
+    or
+update
+    on
+    public.planodesconto for each row execute function audit.if_modified_func('true');
+create trigger audit_trigger_stm after
+truncate
+    on
+    public.planodesconto for each statement execute function audit.if_modified_func('true');

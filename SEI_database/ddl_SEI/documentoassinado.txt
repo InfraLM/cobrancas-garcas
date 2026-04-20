@@ -1,0 +1,100 @@
+documentoassinado
+
+-- public.documentoassinado definição
+
+-- Drop table
+
+-- DROP TABLE public.documentoassinado;
+
+CREATE TABLE public.documentoassinado (
+	codigo serial4 NOT NULL,
+	dataregistro timestamp NULL,
+	usuario int4 NOT NULL,
+	arquivo int4 NOT NULL,
+	tipoorigemdocumentoassinado varchar(64) DEFAULT 'NENHUM'::character varying NULL,
+	ano varchar(4) NULL,
+	semestre varchar(1) NULL,
+	matricula varchar(20) NULL,
+	gradecurricular int4 NULL,
+	turma int4 NULL,
+	disciplina int4 NULL,
+	unidadeensino int4 NULL,
+	matriculaperiodo int4 NULL,
+	provedordeassinaturaenum varchar(100) DEFAULT 'SEI'::character varying NULL,
+	codigoprovedordeassinatura int4 NULL,
+	chaveprovedordeassinatura varchar(100) NULL,
+	urlprovedordeassinatura varchar(255) NULL,
+	created timestamp NULL,
+	codigocreated int4 NULL,
+	nomecreated varchar(255) NULL,
+	updated timestamp NULL,
+	codigoupdated int4 NULL,
+	nomeupdated varchar(255) NULL,
+	revalidacaomatricula int4 NULL,
+	bloqueadopor int4 NULL,
+	databloqueio date NULL,
+	origembloqueio text NULL,
+	curso int4 NULL,
+	programacaoformatura int4 NULL,
+	planoensino int4 NULL,
+	documentoassinadoinvalido bool DEFAULT false NULL,
+	motivodocumentoassinadoinvalido text NULL,
+	arquivovisual int4 NULL,
+	codigovalidacaohistoricodigital text NULL,
+	decisaojudicial bool DEFAULT false NULL,
+	versaodiploma varchar(15) NULL,
+	expedicaodiploma int4 NULL,
+	inclusaohistoricoforaprazo int4 NULL,
+	negociacaocontareceber int4 NULL,
+	codigovalidacaocurriculoescolardigital text NULL,
+	contapagar int4 NULL,
+	registrardocumentoassinadocertifikedu bool DEFAULT false NULL,
+	codigoregistrocertifikedu varchar(36) DEFAULT NULL::character varying NULL,
+	erroregistrocertifikedu varchar(255) DEFAULT NULL::character varying NULL,
+	dataexpiracaodocumentocertifikedu date NULL,
+	tipocontrato varchar NULL,
+	lotediplomasanulados int4 NULL,
+	arquivofiscalizacao int4 NULL,
+	iddadosregistrodiplomadigital int4 NULL,
+	provedorcarimbotempo text NULL,
+	erroregistrarprovedorcarimbotempo text NULL,
+	enviarmensagemnotificacao bool DEFAULT false NULL,
+	CONSTRAINT pkey_documentoassinado PRIMARY KEY (codigo),
+	CONSTRAINT documentoassinado_curso_fkey FOREIGN KEY (curso) REFERENCES public.curso(codigo) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT documentoassinado_programacaoformatura_fkey FOREIGN KEY (programacaoformatura) REFERENCES public.programacaoformatura(codigo) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_documentoassinado_arquivo FOREIGN KEY (arquivo) REFERENCES public.arquivo(codigo) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_documentoassinado_arquivovisual FOREIGN KEY (arquivovisual) REFERENCES public.arquivo(codigo) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_documentoassinado_bloqueadopor FOREIGN KEY (bloqueadopor) REFERENCES public.documentoassinadopessoa(codigo) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_documentoassinado_contapagar FOREIGN KEY (contapagar) REFERENCES public.contapagar(codigo),
+	CONSTRAINT fk_documentoassinado_disciplina FOREIGN KEY (disciplina) REFERENCES public.disciplina(codigo) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_documentoassinado_expedicaodiploma FOREIGN KEY (expedicaodiploma) REFERENCES public.expedicaodiploma(codigo) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_documentoassinado_gradecurricular FOREIGN KEY (gradecurricular) REFERENCES public.gradecurricular(codigo) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_documentoassinado_inclusaohistoricoforaprazo FOREIGN KEY (inclusaohistoricoforaprazo) REFERENCES public.inclusaohistoricoforaprazo(codigo),
+	CONSTRAINT fk_documentoassinado_lotediplomasanulados FOREIGN KEY (lotediplomasanulados) REFERENCES public.diplomasanuladosxml(numerosequencial) ON DELETE SET NULL,
+	CONSTRAINT fk_documentoassinado_matricula FOREIGN KEY (matricula) REFERENCES public.matricula(matricula) ON DELETE CASCADE ON UPDATE CASCADE,
+	CONSTRAINT fk_documentoassinado_matriculaperiodo FOREIGN KEY (matriculaperiodo) REFERENCES public.matriculaperiodo(codigo) ON DELETE CASCADE ON UPDATE CASCADE,
+	CONSTRAINT fk_documentoassinado_negociacaocontareceber FOREIGN KEY (negociacaocontareceber) REFERENCES public.negociacaocontareceber(codigo) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_documentoassinado_planoensino FOREIGN KEY (planoensino) REFERENCES public.planoensino(codigo) ON DELETE CASCADE,
+	CONSTRAINT fk_documentoassinado_revalidacaomatricula FOREIGN KEY (revalidacaomatricula) REFERENCES public.revalidacaomatricula(codigo) ON DELETE CASCADE,
+	CONSTRAINT fk_documentoassinado_turma FOREIGN KEY (turma) REFERENCES public.turma(codigo) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_documentoassinado_unidadeensino FOREIGN KEY (unidadeensino) REFERENCES public.unidadeensino(codigo) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_documentoassinado_usuario FOREIGN KEY (usuario) REFERENCES public.usuario(codigo) ON DELETE RESTRICT ON UPDATE RESTRICT
+);
+CREATE INDEX ch_documentoassinado_arquivo ON public.documentoassinado USING btree (arquivo);
+CREATE INDEX idx_documentoassinado_dataregistro ON public.documentoassinado USING btree (dataregistro);
+CREATE INDEX idx_documentoassinado_matricula ON public.documentoassinado USING btree (matricula);
+
+-- Table Triggers
+
+create trigger audit_trigger_row after
+insert
+    or
+delete
+    or
+update
+    on
+    public.documentoassinado for each row execute function audit.if_modified_func('true');
+create trigger audit_trigger_stm after
+truncate
+    on
+    public.documentoassinado for each statement execute function audit.if_modified_func('true');

@@ -1,0 +1,56 @@
+contarecebernegociado
+
+-- public.contarecebernegociado definição
+
+-- Drop table
+
+-- DROP TABLE public.contarecebernegociado;
+
+CREATE TABLE public.contarecebernegociado (
+	valor numeric(20, 2) NULL,
+	contareceber int4 NOT NULL,
+	negociacaocontareceber int4 NOT NULL,
+	codigo serial4 NOT NULL,
+	nrdiasatraso numeric NULL,
+	codigoant int4 NULL,
+	tabelaant varchar(30) NULL,
+	valororiginalconta numeric(20, 2) DEFAULT 0.0 NULL,
+	valordescontoprogressivodesconsiderado numeric(20, 2) DEFAULT 0.0 NULL,
+	valordescontoalunodesconsiderado numeric(20, 2) DEFAULT 0.0 NULL,
+	valordescontoinstituicaocomvalidadedesconsiderado numeric(20, 2) DEFAULT 0.0 NULL,
+	valordescontoinstituicaosemvalidadedesconsiderado numeric(20, 2) DEFAULT 0.0 NULL,
+	desconsiderardescontoprogressivo bool DEFAULT false NULL,
+	desconsiderardescontoaluno bool DEFAULT false NULL,
+	desconsiderardescontoinstituicaocomvalidade bool DEFAULT false NULL,
+	desconsiderardescontoinstituicaosemvalidade bool DEFAULT false NULL,
+	valororiginaljuro numeric(20, 2) DEFAULT 0.0 NULL,
+	valororiginalmulta numeric(20, 2) DEFAULT 0.0 NULL,
+	itemcondicaodescontorenegociacao int4 NULL,
+	created timestamp NULL,
+	codigocreated int4 NULL,
+	nomecreated varchar(255) NULL,
+	updated timestamp NULL,
+	codigoupdated int4 NULL,
+	nomeupdated varchar(255) NULL,
+	CONSTRAINT check_negociacaocontareceber_contareceber CHECK (fn_validarunicidadenegociacaocontarecebercontareceber(negociacaocontareceber, contareceber)) NOT VALID,
+	CONSTRAINT contarecebernegociado_pkey PRIMARY KEY (codigo),
+	CONSTRAINT fk_contarecebernegociado_contareceber FOREIGN KEY (contareceber) REFERENCES public.contareceber(codigo) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_contarecebernegociado_negociacaocontareceber FOREIGN KEY (negociacaocontareceber) REFERENCES public.negociacaocontareceber(codigo) ON DELETE CASCADE ON UPDATE CASCADE
+);
+CREATE INDEX ch_contarecebernegociado_contareceber ON public.contarecebernegociado USING btree (contareceber);
+CREATE INDEX ch_contarecebernegociado_negociacaocontareceber ON public.contarecebernegociado USING btree (negociacaocontareceber);
+
+-- Table Triggers
+
+create trigger audit_trigger_row after
+insert
+    or
+delete
+    or
+update
+    on
+    public.contarecebernegociado for each row execute function audit.if_modified_func('true');
+create trigger audit_trigger_stm after
+truncate
+    on
+    public.contarecebernegociado for each statement execute function audit.if_modified_func('true');

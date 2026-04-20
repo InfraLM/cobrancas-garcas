@@ -1,0 +1,246 @@
+matricula
+
+-- public.matricula definição
+
+-- Drop table
+
+-- DROP TABLE public.matricula;
+
+CREATE TABLE public.matricula (
+	tipomidiacaptacao int4 NULL,
+	turno int4 NOT NULL,
+	usuario int4 NULL,
+	inscricao int4 NULL,
+	situacaofinanceira varchar(2) NULL,
+	situacao varchar(2) NOT NULL,
+	"data" timestamp NOT NULL,
+	curso int4 NOT NULL,
+	unidadeensino int4 NOT NULL,
+	aluno int4 NOT NULL,
+	matricula varchar(20) NOT NULL,
+	tranferenciaentrada int4 NULL,
+	responsavelliberacaodesconto int4 NULL,
+	formaingresso varchar(2) NULL,
+	programareservavaga varchar(10) NULL,
+	financiamentoestudantil varchar(2) NULL,
+	apoiosocial varchar(2) NULL,
+	atividadecomplementar varchar(50) NULL,
+	anoingresso varchar(4) NULL,
+	semestreingresso varchar(2) NULL,
+	anoconclusao varchar(4) NULL,
+	semestreconclusao varchar(2) NULL,
+	disciplinasprocseletivo text NULL,
+	fezenade bool NULL,
+	dataenade timestamp NULL,
+	notaenade float4 NULL,
+	horascomplementares int4 NULL,
+	enade int4 NULL,
+	alunoabandonoucurso bool NULL,
+	nomemonografia text NULL,
+	datainiciocurso timestamp NULL,
+	dataconclusaocurso timestamp NULL,
+	observacaocomplementar text NULL,
+	localarmazenamentodocumentosmatricula varchar(250) NULL,
+	descontochancela bool DEFAULT false NULL,
+	notamonografia varchar(25) NULL,
+	formacaoacademica int4 NULL,
+	updated timestamp NULL,
+	autorizacaocurso int4 NULL,
+	consultor int4 NULL,
+	tipomatricula varchar(2) NULL,
+	extensao bool DEFAULT false NULL,
+	matriculasuspensa bool DEFAULT false NULL,
+	databasesuspensao date NULL,
+	dataenvionotificacao1 date NULL,
+	dataenvionotificacao2 date NULL,
+	dataenvionotificacao3 date NULL,
+	matriculaserasa bool NULL,
+	dataatualizacaomatriculaformada timestamp NULL,
+	responsavelatualizacaomatriculaformada int4 NULL,
+	naoenviarmensagemcobranca bool DEFAULT false NULL,
+	qtddisciplinasextensao int4 NULL,
+	dataliberacaopendenciafinanceira date NULL,
+	responsavelliberacaopendenciafinanceira int4 NULL,
+	formou bool NULL,
+	alunoconcluiudisciplinasregulares bool NULL,
+	dataalunoconcluiudisciplinasregulares date NULL,
+	datacolacaograu date NULL,
+	dataenvionotificacaopendenciadocumento date NULL,
+	qtddiasadiarbloqueio int4 NULL,
+	adesivoinstituicaoentregue bool NULL,
+	dataalteracaomatriculaserasa timestamp NULL,
+	usuariorespalteracaomatriculaserasa int4 NULL,
+	mesingresso varchar(2) NULL,
+	matriculaverificadaserasa bool DEFAULT false NULL,
+	liberarbloqueioalunoinadimplente bool NULL,
+	datanotifcalunoinadimplente date NULL,
+	dataprimeiranotinadimplencia date NULL,
+	datasegundanotinadimplencia date NULL,
+	dataterceiranotinadimplencia date NULL,
+	codigoant int4 NULL,
+	tabelaant varchar(30) NULL,
+	statusimp varchar(30) NULL,
+	datacadastro timestamp NULL,
+	totalpontoprocseletivo numeric(20, 2) DEFAULT 0 NULL,
+	naoapresentarcenso bool DEFAULT false NULL,
+	dataprocessoseletivo timestamp NULL,
+	gradecurricularatual int4 NULL,
+	dataquartanotinadimplencia date NULL,
+	dataenvionotificacao4 date NULL,
+	tipotrabalhoconclusaocurso varchar(2) NULL,
+	notaenem numeric(20, 2) NULL,
+	observacaodiploma text NULL,
+	canceladofinanceiro bool DEFAULT false NULL,
+	codigofinanceiromatricula varchar(8) NULL,
+	classificacaoingresso text NULL,
+	semestreanoingressocenso varchar(6) NULL,
+	renovacaoreconhecimento int4 NULL,
+	bloquearemissaoboletomatmenvisaoaluno bool DEFAULT false NULL,
+	localprocessoseletivo text NULL,
+	motivomatriculabloqueada text NULL,
+	responsavelsuspensaomatricula int4 NULL,
+	responsavelcancelamentosuspensaomatricula int4 NULL,
+	datacancelamentosuspensaomatricula timestamp NULL,
+	motivocancelamentosuspensaomatricula text NULL,
+	responsaveladiamentosuspensaomatricula int4 NULL,
+	dataadiamentosuspensaomatricula timestamp NULL,
+	motivoadiamentosuspensaomatricula text NULL,
+	codigoinscricaoovg varchar(20) NULL,
+	dataemissaohistorico timestamp NULL,
+	permiteexecucaoreajustepreco bool DEFAULT true NULL,
+	motivocancelamentoreajustepreco text NULL,
+	datacancelamentoreajustepreco timestamp NULL,
+	responsavelcancelamentoreajustepreco int4 NULL,
+	orientadormonografia text NULL,
+	proficiencialinguaestrangeira varchar(50) NULL,
+	situacaoproficiencialinguaestrangeira varchar(50) NULL,
+	bloqueioporsolicitacaoliberacaomatricula bool DEFAULT false NULL,
+	considerarparcelasmaterialdidaticoreajustepreco bool DEFAULT true NULL,
+	permitirinclusaoexclusaodisciplinasrenovacao bool DEFAULT true NULL,
+	cargahorariamonografia int4 NULL,
+	titulacaoorientadormonografia varchar(50) NULL,
+	created timestamp NULL,
+	codigocreated int4 NULL,
+	nomecreated varchar(255) NULL,
+	codigoupdated int4 NULL,
+	nomeupdated varchar(255) NULL,
+	escolapublica bool NULL,
+	datamonografia date NULL,
+	ingressantecota varchar(20) DEFAULT 'NENHUM'::character varying NULL,
+	bolsasauxilios bool NULL,
+	autodeclaracaopretopardoindigena bool NULL,
+	normasmatricula bool NULL,
+	financiamentoestudantilcenso varchar(50) DEFAULT ''::character varying NULL,
+	justificativacenso varchar(20) DEFAULT 'NENHUMA'::character varying NULL,
+	tipomobilidadeacademica varchar(20) DEFAULT 'NENHUMA'::character varying NULL,
+	mobilidadeacademicanacionaliesdestino varchar(15) DEFAULT ''::character varying NULL,
+	mobilidadeacademicainternacionalpaisdestino varchar(5) DEFAULT ''::character varying NULL,
+	idcrmeducacional varchar(255) NULL,
+	informacoescensorelativoano varchar(4) DEFAULT ''::character varying NULL,
+	datadefesatcc date NULL,
+	datapublicacaoartigo date NULL,
+	cargahorariamatrizcurricular int4 NULL,
+	areaconcentracaomestrado varchar(300) NULL,
+	datarealizacaoprovamestrado date NULL,
+	dataexamequalificacaomestrado date NULL,
+	matriculaanterior varchar(20) NULL,
+	origem varchar(50) NULL,
+	permitirassinarcontratopendenciadocumentacao bool DEFAULT false NULL,
+	codigoregistrocertifikedu varchar(36) DEFAULT NULL::character varying NULL,
+	erroregistrocertifikedu varchar(255) DEFAULT NULL::character varying NULL,
+	cupomdesconto int4 NULL,
+	codigoplataformaa int4 NULL,
+	unidadeensinopolo int4 NULL,
+	idnegociacaordstationcrm varchar NULL,
+	motivobloqueiorenovacaomatricula text NULL,
+	bloquearrenovacaomatricula bool DEFAULT false NULL,
+	CONSTRAINT matricula_pkey PRIMARY KEY (matricula),
+	CONSTRAINT fk_aluno FOREIGN KEY (aluno) REFERENCES public.pessoa(codigo) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_consultor FOREIGN KEY (consultor) REFERENCES public.funcionario(codigo) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_curso FOREIGN KEY (curso) REFERENCES public.curso(codigo) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_inscricao FOREIGN KEY (inscricao) REFERENCES public.inscricao(codigo) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_matricula_aluno FOREIGN KEY (aluno) REFERENCES public.pessoa(codigo) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_matricula_autorizacaocurso FOREIGN KEY (autorizacaocurso) REFERENCES public.autorizacaocurso(codigo) ON DELETE RESTRICT ON UPDATE CASCADE,
+	CONSTRAINT fk_matricula_cupomdesconto FOREIGN KEY (cupomdesconto) REFERENCES public.cupomdesconto(codigo),
+	CONSTRAINT fk_matricula_curso FOREIGN KEY (curso) REFERENCES public.curso(codigo) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_matricula_enade FOREIGN KEY (enade) REFERENCES public.enade(codigo) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_matricula_formacaoacademica FOREIGN KEY (formacaoacademica) REFERENCES public.formacaoacademica(codigo) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_matricula_gradecurricularatual FOREIGN KEY (gradecurricularatual) REFERENCES public.gradecurricular(codigo) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_matricula_renovacaoreconhecimento FOREIGN KEY (renovacaoreconhecimento) REFERENCES public.autorizacaocurso(codigo),
+	CONSTRAINT fk_matricula_responsavelatualizacaomatriculaformada FOREIGN KEY (responsavelatualizacaomatriculaformada) REFERENCES public.usuario(codigo) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_matricula_responsavelcancelamentoreajustepreco FOREIGN KEY (responsavelcancelamentoreajustepreco) REFERENCES public.usuario(codigo) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_matricula_turno FOREIGN KEY (turno) REFERENCES public.turno(codigo) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_matricula_unidadeensino FOREIGN KEY (unidadeensino) REFERENCES public.unidadeensino(codigo) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_matricula_usuario FOREIGN KEY (usuario) REFERENCES public.usuario(codigo) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_responsavelliberacaodesconto FOREIGN KEY (responsavelliberacaodesconto) REFERENCES public.usuario(codigo) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_tipomidiacaptacao FOREIGN KEY (tipomidiacaptacao) REFERENCES public.tipomidiacaptacao(codigo) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_transferenciaentrada FOREIGN KEY (tranferenciaentrada) REFERENCES public.transferenciaentrada(codigo) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_turno FOREIGN KEY (turno) REFERENCES public.turno(codigo) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_unidadeensino FOREIGN KEY (unidadeensino) REFERENCES public.unidadeensino(codigo) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_usuario FOREIGN KEY (usuario) REFERENCES public.usuario(codigo) ON DELETE RESTRICT ON UPDATE RESTRICT
+);
+CREATE INDEX ch_matricula_aluno ON public.matricula USING btree (aluno);
+CREATE INDEX ch_matricula_curso ON public.matricula USING btree (curso);
+CREATE INDEX ch_matricula_data ON public.matricula USING btree (data);
+CREATE INDEX ch_matricula_situacao ON public.matricula USING btree (situacao);
+CREATE INDEX ch_matricula_usuario ON public.matricula USING btree (usuario);
+CREATE INDEX idx_matricula_autorizacaocurso ON public.matricula USING btree (autorizacaocurso);
+CREATE INDEX idx_matricula_gradecurricularatual ON public.matricula USING btree (gradecurricularatual);
+CREATE INDEX idx_matricula_renovacaoreconhecimento ON public.matricula USING btree (renovacaoreconhecimento);
+CREATE INDEX idx_matricula_unidade_curso ON public.matricula USING btree (curso, unidadeensino);
+CREATE INDEX idx_updated_updated ON public.matricula USING btree (updated);
+
+-- Table Triggers
+
+create trigger alterar_matricula after
+update
+    on
+    public.matricula for each row
+    when (((old.aluno is distinct
+from
+    new.aluno)
+    or ((old.matricula)::text is distinct
+from
+    (new.matricula)::text))) execute function elastic.reindexar_aluno_alterando_matricula();
+create trigger audit_trigger_row after
+insert
+    or
+delete
+    or
+update
+    on
+    public.matricula for each row execute function audit.if_modified_func('true');
+create trigger audit_trigger_stm after
+truncate
+    on
+    public.matricula for each statement execute function audit.if_modified_func('true');
+create trigger excluir_matricula before
+delete
+    on
+    public.matricula for each row execute function elastic.reindexar_aluno_excluindo_matricula();
+create trigger inserir_matricula after
+insert
+    on
+    public.matricula for each row execute function elastic.reindexar_aluno_incluindo_matricula();
+create trigger tg_matricula_alteracao_aluno before
+update
+    on
+    public.matricula for each row execute function fn_matricula_validaralteracaoaluno();
+create trigger tg_matricula_alteracao_curso before
+update
+    on
+    public.matricula for each row execute function fn_matricula_validaralteracaocurso();
+create trigger tg_matriculaplataformaa after
+delete
+    or
+update
+    on
+    public.matricula for each row execute function fn_matriculaplataformaa();
+create trigger tg_persistirsalaaulablackboardoperacaomatricula after
+update
+    on
+    public.matricula for each row execute function fn_persistirsalaaulablackboardoperacaomatricula();
+create trigger tg_persistiroperacaoalunoseid2loperacaomatricula after
+update
+    on
+    public.matricula for each row execute function fn_persistiroperacaoalunoseid2loperacaomatricula();

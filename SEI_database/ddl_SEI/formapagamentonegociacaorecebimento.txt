@@ -1,0 +1,70 @@
+formapagamentonegociacaorecebimento
+
+-- public.formapagamentonegociacaorecebimento definição
+
+-- Drop table
+
+-- DROP TABLE public.formapagamentonegociacaorecebimento;
+
+CREATE TABLE public.formapagamentonegociacaorecebimento (
+	cheque int4 NULL,
+	contacorrente int4 NULL,
+	valorrecebimento numeric(20, 2) NOT NULL,
+	formapagamento int4 NOT NULL,
+	negociacaorecebimento int4 NOT NULL,
+	codigo serial4 NOT NULL,
+	codigoantsei int4 NULL,
+	qtdeparcelascartaocredito int4 NULL,
+	operadoracartao int4 NULL,
+	taxaoperadora float4 NULL,
+	taxaantecipacao float4 NULL,
+	categoriadespesa int4 NULL,
+	contacorrenteoperadoracartao int4 NULL,
+	codigoant int4 NULL,
+	tabelaant varchar(30) NULL,
+	formapagamentonegociacaorecebimentocartaocredito int4 NULL,
+	usuariodesbloqueouformarecebimentonorecebimento int4 NULL,
+	datausuariodesbloqueouformarecebimentonorecebimento timestamp NULL,
+	configuracaorecebimentocartaocredito int4 NULL,
+	motivocancelamento text NULL,
+	datacredito timestamp NULL,
+	created timestamp NULL,
+	codigocreated int4 NULL,
+	nomecreated varchar(255) NULL,
+	updated timestamp NULL,
+	codigoupdated int4 NULL,
+	nomeupdated varchar(255) NULL,
+	numerorecibotransacaocartaodebito varchar(100) NULL,
+	valorestornadocartao numeric(20, 2) NULL,
+	formapagamentoempresafinanceira varchar(100) NULL,
+	CONSTRAINT formapagamentonegociacaorecebimento_pkey PRIMARY KEY (codigo),
+	CONSTRAINT fk_configuracaorecebimentocartaocredito FOREIGN KEY (configuracaorecebimentocartaocredito) REFERENCES public.configuracaorecebimentocartaoonline(codigo),
+	CONSTRAINT fk_formapagamentonegociacaorecebimento_categoriadespesa FOREIGN KEY (categoriadespesa) REFERENCES public.categoriadespesa(codigo) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_formapagamentonegociacaorecebimento_cheque FOREIGN KEY (cheque) REFERENCES public.cheque(codigo) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_formapagamentonegociacaorecebimento_contacorrente FOREIGN KEY (contacorrente) REFERENCES public.contacorrente(codigo) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_formapagamentonegociacaorecebimento_formapagamento FOREIGN KEY (formapagamento) REFERENCES public.formapagamento(codigo) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_formapagamentonegociacaorecebimento_negociacaorecebimento FOREIGN KEY (negociacaorecebimento) REFERENCES public.negociacaorecebimento(codigo) ON DELETE CASCADE ON UPDATE CASCADE,
+	CONSTRAINT fk_formapagamentonegociacaorecebimento_operadoracartao FOREIGN KEY (operadoracartao) REFERENCES public.operadoracartao(codigo) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_formapagamentonegociacaorecebimento_usuariodesbforrecebnorec FOREIGN KEY (usuariodesbloqueouformarecebimentonorecebimento) REFERENCES public.usuario(codigo) ON DELETE RESTRICT ON UPDATE RESTRICT
+);
+CREATE INDEX ch_formapagamentonegociacaorecebimento_cheque ON public.formapagamentonegociacaorecebimento USING btree (cheque);
+CREATE INDEX ch_formapagamentonegociacaorecebimento_contacorrente ON public.formapagamentonegociacaorecebimento USING btree (contacorrente);
+CREATE INDEX ch_formapagamentonegociacaorecebimento_formapagamento ON public.formapagamentonegociacaorecebimento USING btree (formapagamento);
+CREATE INDEX ch_formapagamentonegociacaorecebimento_negociacaorecebimento ON public.formapagamentonegociacaorecebimento USING btree (negociacaorecebimento);
+CREATE INDEX idx_formapagamentonegociacaorecebimento_formapgnegcartaocredito ON public.formapagamentonegociacaorecebimento USING btree (formapagamentonegociacaorecebimentocartaocredito);
+CREATE INDEX idx_formapagamentonegociacaorecebimento_operadoracartao ON public.formapagamentonegociacaorecebimento USING btree (operadoracartao);
+
+-- Table Triggers
+
+create trigger audit_trigger_row after
+insert
+    or
+delete
+    or
+update
+    on
+    public.formapagamentonegociacaorecebimento for each row execute function audit.if_modified_func('true');
+create trigger audit_trigger_stm after
+truncate
+    on
+    public.formapagamentonegociacaorecebimento for each statement execute function audit.if_modified_func('true');

@@ -1,0 +1,140 @@
+turma
+
+-- public.turma definição
+
+-- Drop table
+
+-- DROP TABLE public.turma;
+
+CREATE TABLE public.turma (
+	situacao varchar(2) NOT NULL,
+	curso int4 NULL,
+	periodoletivo int4 NULL,
+	turno int4 NULL,
+	unidadeensino int4 NOT NULL,
+	gradecurricular int4 NULL,
+	nrminimomatricula int4 NOT NULL,
+	nrmaximomatricula int4 NOT NULL,
+	nrvagas int4 NOT NULL,
+	identificadorturma varchar(80) NOT NULL,
+	codigo serial4 NOT NULL,
+	sala varchar(20) NULL,
+	turmaagrupada bool NULL,
+	semestral bool NULL,
+	anual bool NULL,
+	configuracaoacademico int4 NULL,
+	planofinanceirocurso int4 NULL,
+	turmaprematricula bool NULL,
+	tipochancela varchar(2) NULL,
+	porcentagemchancela float4 NULL,
+	valorfixochancela numeric(20, 2) NULL,
+	valorporaluno bool NULL,
+	codigoantsei int4 NULL,
+	databasegeracaoparcelas date NULL,
+	grupodestinatarios int4 NULL,
+	chancela int4 NULL,
+	contacorrente int4 NULL,
+	qtdalunosestimado int4 NULL,
+	customedioaluno float4 NULL,
+	receitamediaaluno float4 NULL,
+	exigeniveladministrativoplanoorcamentario bool NULL,
+	exigenivelacademicoplanoorcamentario bool NULL,
+	exigecentrocustorequisitante bool NULL,
+	utilizardadosmatrizboleto bool NULL,
+	dataprevistafinalizacao date NULL,
+	dataprevisaofinalizacao date NULL,
+	observacao varchar(250) NULL,
+	codigoant int4 NULL,
+	tabelaant varchar(30) NULL,
+	identificadoturmatemporario varchar(50) NULL,
+	subturma bool DEFAULT false NULL,
+	turmaprincipal int4 NULL,
+	configuracaoead int4 NULL,
+	avaliacaoonline int4 NULL,
+	tiposubturma varchar(7) DEFAULT 'GERAL'::character varying NULL,
+	apresentarrenovacaoonline bool DEFAULT true NULL,
+	abreviaturacurso varchar(250) DEFAULT 'NDC'::character varying NULL,
+	nrvagasinclusaoreposicao int4 NULL,
+	datacriacao timestamp NULL,
+	categoriacondicaopagamento varchar(25) NULL,
+	dataultimaalteracao timestamp DEFAULT now() NULL,
+	indicereajuste int4 NULL,
+	centroresultado int4 NULL,
+	digitoturma varchar(1) NULL,
+	codigoturnoapresentarcenso int4 DEFAULT 0 NULL,
+	considerarturmaavaliacaoinstitucional bool DEFAULT true NULL,
+	created timestamp NULL,
+	codigocreated int4 NULL,
+	nomecreated varchar(255) NULL,
+	updated timestamp NULL,
+	codigoupdated int4 NULL,
+	nomeupdated varchar(255) NULL,
+	nrvagasenriquecimento int4 NULL,
+	estruturacurricularcensoformacaogeralbasica bool DEFAULT true NULL,
+	estruturacurricularcensoitinerarioformativo bool DEFAULT false NULL,
+	unidadecurriculareletivas bool DEFAULT true NULL,
+	unidadecurricularlibras bool DEFAULT false NULL,
+	unidadecurricularlinguaindigena bool DEFAULT false NULL,
+	unidadecurricularlingualiteraturaestrangeiraespanhol bool DEFAULT false NULL,
+	unidadecurricularlingualiteraturaestrangeirafrances bool DEFAULT false NULL,
+	unidadecurricularlingualiteraturaestrangeiraoutra bool DEFAULT false NULL,
+	unidadecurricularprojetovida bool DEFAULT false NULL,
+	unidadecurriculartrilhasaprofundamentoaprendizagens bool DEFAULT false NULL,
+	modalidadeturma int4 NULL,
+	unidadecurricularoutras text NULL,
+	nrvagasextensao int4 NULL,
+	incompany bool DEFAULT false NULL,
+	tutorblackboard int4 NULL,
+	identificadorhierarquiablackboard text NULL,
+	integracaosap bool DEFAULT false NULL,
+	areaitinerarioformativolinguagens bool DEFAULT false NULL,
+	areaitinerarioformativomatematica bool DEFAULT false NULL,
+	areaitinerarioformativocienciasnatureza bool DEFAULT false NULL,
+	areaitinerarioformativocienciahumanas bool DEFAULT false NULL,
+	areaitinerarioformativoformacaotecnicaprofissinal bool DEFAULT false NULL,
+	CONSTRAINT turma_identificadorturma_key UNIQUE (identificadorturma),
+	CONSTRAINT turma_pkey PRIMARY KEY (codigo),
+	CONSTRAINT fk_avaliacaoonline FOREIGN KEY (avaliacaoonline) REFERENCES public.avaliacaoonline(codigo),
+	CONSTRAINT fk_configuracaoead FOREIGN KEY (configuracaoead) REFERENCES public.configuracaoead(codigo),
+	CONSTRAINT fk_curso FOREIGN KEY (curso) REFERENCES public.curso(codigo) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_gradecurricular FOREIGN KEY (gradecurricular) REFERENCES public.gradecurricular(codigo) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_grupodestinatarios_codigo FOREIGN KEY (grupodestinatarios) REFERENCES public.grupodestinatarios(codigo) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_indicereajuste FOREIGN KEY (indicereajuste) REFERENCES public.indicereajuste(codigo),
+	CONSTRAINT fk_periodoletivo FOREIGN KEY (periodoletivo) REFERENCES public.periodoletivo(codigo) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_turma_centroresultado FOREIGN KEY (centroresultado) REFERENCES public.centroresultado(codigo) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_turma_chancela FOREIGN KEY (chancela) REFERENCES public.chancela(codigo) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_turma_configuracaoacademico FOREIGN KEY (configuracaoacademico) REFERENCES public.configuracaoacademico(codigo) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_turma_contacorrente FOREIGN KEY (contacorrente) REFERENCES public.contacorrente(codigo) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_turma_gradecurricular FOREIGN KEY (gradecurricular) REFERENCES public.gradecurricular(codigo) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_turma_modalidadeturma FOREIGN KEY (modalidadeturma) REFERENCES public.modalidadeturma(codigo) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_turma_planofinanceirocurso FOREIGN KEY (planofinanceirocurso) REFERENCES public.planofinanceirocurso(codigo) ON DELETE CASCADE ON UPDATE CASCADE,
+	CONSTRAINT fk_turma_turno FOREIGN KEY (turno) REFERENCES public.turno(codigo) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_turma_tutorblackboard FOREIGN KEY (tutorblackboard) REFERENCES public.funcionario(codigo) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_turma_unidadeensino FOREIGN KEY (unidadeensino) REFERENCES public.unidadeensino(codigo) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_turno FOREIGN KEY (turno) REFERENCES public.turno(codigo) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_unidadeensino FOREIGN KEY (unidadeensino) REFERENCES public.unidadeensino(codigo) ON DELETE RESTRICT ON UPDATE RESTRICT
+);
+CREATE INDEX ch_turma_turno ON public.turma USING btree (turno);
+CREATE INDEX ch_turma_unidadeensino ON public.turma USING btree (unidadeensino);
+CREATE INDEX idx_turma_periodoletivo ON public.turma USING btree (periodoletivo);
+CREATE INDEX idx_turma_planofinanceirocurso ON public.turma USING btree (planofinanceirocurso);
+CREATE INDEX idx_turma_turmaprincipal ON public.turma USING btree (turmaprincipal);
+
+-- Table Triggers
+
+create trigger audit_trigger_row after
+insert
+    or
+delete
+    or
+update
+    on
+    public.turma for each row execute function audit.if_modified_func('true');
+create trigger audit_trigger_stm after
+truncate
+    on
+    public.turma for each statement execute function audit.if_modified_func('true');
+create trigger tg_persistirsalaaulablackboardoperacaoturma after
+update
+    on
+    public.turma for each row execute function fn_persistirsalaaulablackboardoperacaoturma();

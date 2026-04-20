@@ -1,0 +1,62 @@
+documentoassinadopessoa
+
+-- public.documentoassinadopessoa definição
+
+-- Drop table
+
+-- DROP TABLE public.documentoassinadopessoa;
+
+CREATE TABLE public.documentoassinadopessoa (
+	codigo serial4 NOT NULL,
+	datasolicitacao timestamp NOT NULL,
+	dataassinatura timestamp NULL,
+	datarejeicao timestamp NULL,
+	pessoa int4 NULL,
+	documentoassinado int4 NOT NULL,
+	tipopessoa varchar(100) NOT NULL,
+	situacaodocumentoassinadopessoa varchar(100) NOT NULL,
+	motivorejeicao varchar(255) NULL,
+	ordemassinatura int4 DEFAULT 0 NULL,
+	cargo varchar(250) DEFAULT ''::character varying NULL,
+	titulo varchar(250) DEFAULT ''::character varying NULL,
+	codigoassinatura int4 NULL,
+	acaoassinatura varchar(100) NULL,
+	urlassinatura varchar(255) NULL,
+	created timestamp NULL,
+	codigocreated int4 NULL,
+	nomecreated varchar(255) NULL,
+	updated timestamp NULL,
+	codigoupdated int4 NULL,
+	nomeupdated varchar(255) NULL,
+	assinarporcnpj bool DEFAULT false NULL,
+	provedorassinatura text NULL,
+	possuiassinaturaautomatica bool DEFAULT false NULL,
+	nome text NULL,
+	nomemembrocomunidade varchar(100) NULL,
+	cpfmembrocomunidade varchar(18) NULL,
+	emailmembrocomunidade varchar(100) NULL,
+	pathurlacessoexterno uuid DEFAULT gen_random_uuid() NULL,
+	documentoassinadoorigemenum varchar(20) NULL,
+	jsonassinatura text NULL,
+	tipoassinaturadocumentoenum varchar(25) NULL,
+	CONSTRAINT documentoassinadopessoa_pkey PRIMARY KEY (codigo),
+	CONSTRAINT documentoassinadopessoa_pessoa_fkey FOREIGN KEY (pessoa) REFERENCES public.pessoa(codigo),
+	CONSTRAINT fk_documentoassinadopessoa_documentoassinado FOREIGN KEY (documentoassinado) REFERENCES public.documentoassinado(codigo) ON DELETE CASCADE ON UPDATE CASCADE
+);
+CREATE INDEX idx_documentoassinadopessoa_documentoassinado_situacao ON public.documentoassinadopessoa USING btree (documentoassinado, situacaodocumentoassinadopessoa);
+CREATE INDEX idx_documentoassinadopessoa_pessoa ON public.documentoassinadopessoa USING btree (pessoa);
+
+-- Table Triggers
+
+create trigger audit_trigger_row after
+insert
+    or
+delete
+    or
+update
+    on
+    public.documentoassinadopessoa for each row execute function audit.if_modified_func('true');
+create trigger audit_trigger_stm after
+truncate
+    on
+    public.documentoassinadopessoa for each statement execute function audit.if_modified_func('true');

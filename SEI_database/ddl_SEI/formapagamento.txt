@@ -1,0 +1,41 @@
+formapagamento
+
+-- public.formapagamento definição
+
+-- Drop table
+
+-- DROP TABLE public.formapagamento;
+
+CREATE TABLE public.formapagamento (
+	nome varchar(50) NOT NULL,
+	tipo varchar(5) NOT NULL,
+	codigo serial4 NOT NULL,
+	codigoantsei int4 NULL,
+	usanorecebimento bool DEFAULT true NOT NULL,
+	codigoant int4 NULL,
+	tabelaant varchar(30) NULL,
+	created timestamp NULL,
+	codigocreated int4 NULL,
+	nomecreated varchar(255) NULL,
+	updated timestamp NULL,
+	codigoupdated int4 NULL,
+	nomeupdated varchar(255) NULL,
+	codigoprotheus varchar(5) NULL,
+	CONSTRAINT formapagamento_nome_key UNIQUE (nome),
+	CONSTRAINT formapagamento_pkey PRIMARY KEY (codigo)
+);
+
+-- Table Triggers
+
+create trigger audit_trigger_row after
+insert
+    or
+delete
+    or
+update
+    on
+    public.formapagamento for each row execute function audit.if_modified_func('true');
+create trigger audit_trigger_stm after
+truncate
+    on
+    public.formapagamento for each statement execute function audit.if_modified_func('true');

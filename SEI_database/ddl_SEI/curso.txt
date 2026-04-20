@@ -1,0 +1,155 @@
+curso
+
+-- public.curso definição
+
+-- Drop table
+
+-- DROP TABLE public.curso;
+
+CREATE TABLE public.curso (
+	configuracaoacademico int4 NOT NULL,
+	areaconhecimento int4 NULL,
+	regime varchar(2) NOT NULL,
+	regimeaprovacao varchar(2) NOT NULL,
+	periodicidade varchar(2) NOT NULL,
+	datacriacao timestamp NULL,
+	nrregistrointerno text NULL,
+	datapublicacaodo timestamp NULL,
+	nrperiodoletivo int4 NOT NULL,
+	baselegal varchar(160) NULL,
+	niveleducacional varchar(2) NOT NULL,
+	perfilegresso text NULL,
+	publicoalvo text NULL,
+	descricao text NULL,
+	objetivos text NULL,
+	nome text NOT NULL,
+	codigo serial4 NOT NULL,
+	idcursoinep int4 NULL,
+	habilitacao varchar(250) NULL,
+	titulo varchar(2) NULL,
+	abreviatura varchar(10) NULL,
+	codigoantsei int4 NULL,
+	titulacaodoformando text NULL,
+	numeroexemplaresbibliograficobasica int4 NULL,
+	tempodefasagempadraocatalogobibliograficabasica int4 NULL,
+	numeroexemplaresbibliograficocomplementar int4 NULL,
+	tempodefasagempadraocatalogobibliograficacomplementar int4 NULL,
+	limitardiasdownload bool DEFAULT false NOT NULL,
+	qtdediaslimitedownload int4 NULL,
+	funcionarioresppreinscricao int4 NULL,
+	quantidadedisciplinasoptativasexpedicaodiploma int4 NULL,
+	liberarregistroaulaentreperiodo bool NULL,
+	apresentarhomepreinscricao bool DEFAULT true NULL,
+	codigoant int4 NULL,
+	tabelaant varchar(30) NULL,
+	configuracaotcc int4 NULL,
+	titulacaodoformandofeminino text NULL,
+	anomudancalegislacao varchar(4) DEFAULT ''::character varying NULL,
+	percentualevolucaoacademicaingressanteenade int4 DEFAULT 20 NULL,
+	percentualevolucaoacademicaconcluinteenade int4 DEFAULT 80 NULL,
+	preposicaonomecurso varchar(255) NULL,
+	nomedocumentacao varchar(300) NULL,
+	titulacaomasculinoapresentardiploma varchar(255) NULL,
+	titulacaofemininoapresentardiploma varchar(255) NULL,
+	codigocontabil varchar(20) NULL,
+	nomecontabil varchar(250) NULL,
+	apresentarcursobiblioteca bool DEFAULT true NULL,
+	dataultimaalteracao timestamp DEFAULT now() NULL,
+	nivelcontabil varchar(50) NULL,
+	modalidadecurso varchar(30) NULL,
+	utilizarrecursoavaterceiros bool DEFAULT false NULL,
+	questionario int4 NULL,
+	created timestamp NULL,
+	codigocreated int4 NULL,
+	nomecreated varchar(255) NULL,
+	updated timestamp NULL,
+	codigoupdated int4 NULL,
+	nomeupdated varchar(255) NULL,
+	textodeclaracaoppi text NULL,
+	textodeclaracaoescolaridadepublica text NULL,
+	textoconfirmacaonovamatricula text NULL,
+	urldeclaracaonormasmatricula text NULL,
+	textodeclaracaobolsasauxilios text NULL,
+	permitirassinarcontratopendenciadocumentacao bool DEFAULT true NULL,
+	ativarprematriculaaposentregadocumentosobrigatorios bool DEFAULT false NULL,
+	possuicodigoemec bool DEFAULT true NULL,
+	codigoemec int4 NULL,
+	numeroprocessoemec int4 NULL,
+	tipoprocessoemec varchar(255) NULL,
+	datacadastroemec timestamp NULL,
+	dataprotocoloemec timestamp NULL,
+	tipoautorizacaocursoenum varchar(255) NULL,
+	numeroautorizacao varchar(40) NULL,
+	criterioavaliacao text NULL,
+	idcrmeducacional varchar(255) NULL,
+	apresentarcursoappaluno bool DEFAULT true NULL,
+	permitirmultiplasmatriculas bool DEFAULT false NULL,
+	datacredenciamento timestamp NULL,
+	veiculopublicacao varchar(100) NULL,
+	secaopublicacao int4 NULL,
+	paginapublicacao int4 NULL,
+	numerodou int4 NULL,
+	funcionarioresptermoestagio int4 NULL,
+	grupopessoaanaliserelatorioestagio int4 NULL,
+	grupopessoaanaliseaproveitamentoestagio int4 NULL,
+	grupopessoaanalisetermoaditivoestagio int4 NULL,
+	grupopessoaanalisetermorecisaoestagio int4 NULL,
+	configuracaoestagio int4 NULL,
+	ativarmatriculaaposassinaturacontrato bool DEFAULT false NULL,
+	considerarentreguedocumentosdeferidos bool DEFAULT false NULL,
+	autorizacaoresolucaoemtramitacao bool NULL,
+	numeroprocessoautorizacaoresolucao varchar(40) NULL,
+	tipoprocessoautorizacaoresolucao varchar(255) NULL,
+	datacadastroautorizacaoresolucao date NULL,
+	dataprotocoloautorizacaoresolucao date NULL,
+	grupopessoaanalisetermoestagio int4 NULL,
+	datahabilitacao date NULL,
+	codigoplataformaa int4 NULL,
+	produtordstation varchar NULL,
+	etapareferenciacampocustomizavelrdstation varchar NULL,
+	idprodutordstation varchar NULL,
+	formulacalculoaprovacaovestibularingressantesenem text NULL,
+	apresentarareasitinerarias bool DEFAULT false NULL,
+	areasitinerarioformativo varchar DEFAULT ''::character varying NULL,
+	tipocursoitinerarioformacaotecnicaprofissional varchar DEFAULT ''::character varying NULL,
+	codigocursoitinerariotecnico int4 DEFAULT 0 NULL,
+	CONSTRAINT curso_nome_hab_key UNIQUE (nome, habilitacao),
+	CONSTRAINT curso_pkey PRIMARY KEY (codigo),
+	CONSTRAINT fk_areaconhecimento FOREIGN KEY (areaconhecimento) REFERENCES public.areaconhecimento(codigo) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_configuracaoacademico FOREIGN KEY (configuracaoacademico) REFERENCES public.configuracaoacademico(codigo) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_curso_areaconhecimento FOREIGN KEY (areaconhecimento) REFERENCES public.areaconhecimento(codigo) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_curso_configuracaoacademico FOREIGN KEY (configuracaoacademico) REFERENCES public.configuracaoacademico(codigo) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_curso_configuracaoestagiocodigo FOREIGN KEY (configuracaoestagio) REFERENCES public.configuracaoestagio(codigo) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_curso_configuracaotcc FOREIGN KEY (configuracaotcc) REFERENCES public.configuracaotcc(codigo) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_curso_funcionarioresptermoestagio FOREIGN KEY (funcionarioresptermoestagio) REFERENCES public.funcionario(codigo) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_curso_grupopessoaanaliseaproveitamentoestagio FOREIGN KEY (grupopessoaanaliseaproveitamentoestagio) REFERENCES public.grupopessoa(codigo) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_curso_grupopessoaanaliserelatorioestagio FOREIGN KEY (grupopessoaanaliserelatorioestagio) REFERENCES public.grupopessoa(codigo) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_curso_grupopessoaanalisetermoaditivoestagio FOREIGN KEY (grupopessoaanalisetermoaditivoestagio) REFERENCES public.grupopessoa(codigo) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_curso_grupopessoaanalisetermoestagio FOREIGN KEY (grupopessoaanalisetermoestagio) REFERENCES public.grupopessoa(codigo) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_curso_grupopessoaanalisetermorecisaoestagio FOREIGN KEY (grupopessoaanalisetermorecisaoestagio) REFERENCES public.grupopessoa(codigo) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_curso_questionario FOREIGN KEY (questionario) REFERENCES public.questionario(codigo) ON DELETE RESTRICT ON UPDATE RESTRICT
+);
+CREATE INDEX ch_curso_areaconhecimento ON public.curso USING btree (areaconhecimento);
+CREATE INDEX ch_curso_niveleducacional ON public.curso USING btree (niveleducacional);
+CREATE INDEX ch_curso_nome ON public.curso USING btree (nome);
+
+-- Table Triggers
+
+create trigger audit_trigger_row after
+insert
+    or
+delete
+    or
+update
+    on
+    public.curso for each row execute function audit.if_modified_func('true');
+create trigger audit_trigger_stm after
+truncate
+    on
+    public.curso for each statement execute function audit.if_modified_func('true');
+create trigger tg_cursoplataformaa after
+delete
+    or
+update
+    on
+    public.curso for each row execute function fn_cursoplataformaa();

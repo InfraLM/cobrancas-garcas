@@ -1,0 +1,67 @@
+planodescontocontareceber
+
+-- public.planodescontocontareceber definição
+
+-- Drop table
+
+-- DROP TABLE public.planodescontocontareceber;
+
+CREATE TABLE public.planodescontocontareceber (
+	codigo serial4 NOT NULL,
+	contareceber int4 NULL,
+	planodesconto int4 NULL,
+	tipoitemplanofinanceiro varchar(2) NULL,
+	convenio int4 NULL,
+	valorutilizadorecebimento numeric(20, 2) NULL,
+	diasvalidadevencimento int4 NULL,
+	tipodesconto varchar(2) DEFAULT 'VA'::character varying NULL,
+	valordesconto numeric(20, 2) NULL,
+	ordemprioridadeparacalculo int4 NULL,
+	imposto int4 NULL,
+	aplicarsobrevalorcheio bool NULL,
+	aplicarsobrevalorbasededuzidovaloroutrosplanosdesconto bool NULL,
+	utilizardiautil bool NULL,
+	utilizardiafixo bool NULL,
+	descontovalidoatedatavencimento bool NULL,
+	usuarioresponsavel int4 NULL,
+	dataconcessaodesconto date NULL,
+	observacaodesconto text NULL,
+	nome varchar(100) NULL,
+	suspensofinanciamentoproprio bool DEFAULT false NULL,
+	utilizaravancodiautil bool DEFAULT false NULL,
+	created timestamp NULL,
+	codigocreated int4 NULL,
+	nomecreated varchar(255) NULL,
+	updated timestamp NULL,
+	codigoupdated int4 NULL,
+	nomeupdated varchar(255) NULL,
+	custeaparcelasmaterialdidatico bool DEFAULT false NULL,
+	categoriadesconto int4 NULL,
+	CONSTRAINT planodescontocontareceber_pkey PRIMARY KEY (codigo),
+	CONSTRAINT fk_planodescontocontareceber_categoriadesconto FOREIGN KEY (categoriadesconto) REFERENCES public.categoriadesconto(codigo) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_planodescontocontareceber_contareceber FOREIGN KEY (contareceber) REFERENCES public.contareceber(codigo) ON DELETE CASCADE ON UPDATE CASCADE,
+	CONSTRAINT fk_planodescontocontareceber_convenio FOREIGN KEY (convenio) REFERENCES public.convenio(codigo) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_planodescontocontareceber_imposto FOREIGN KEY (imposto) REFERENCES public.imposto(codigo) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_planodescontocontareceber_planodesconto FOREIGN KEY (planodesconto) REFERENCES public.planodesconto(codigo) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_planodescontocontareceber_usuarioresponsavel FOREIGN KEY (usuarioresponsavel) REFERENCES public.usuario(codigo) ON DELETE RESTRICT ON UPDATE RESTRICT
+);
+CREATE INDEX idx_pdcr_categoriadesconto ON public.planodescontocontareceber USING btree (categoriadesconto);
+CREATE INDEX idx_planodescontocontareceber_imposto ON public.planodescontocontareceber USING btree (imposto);
+CREATE INDEX index_planodescontocontareceber_contareceber ON public.planodescontocontareceber USING btree (contareceber);
+CREATE INDEX index_planodescontocontareceber_planodesconto ON public.planodescontocontareceber USING btree (planodesconto);
+CREATE INDEX index_planodescontocontareceber_tipoitemplanofinanceiro_conveni ON public.planodescontocontareceber USING btree (tipoitemplanofinanceiro, convenio, planodesconto);
+
+-- Table Triggers
+
+create trigger audit_trigger_row after
+insert
+    or
+delete
+    or
+update
+    on
+    public.planodescontocontareceber for each row execute function audit.if_modified_func('true');
+create trigger audit_trigger_stm after
+truncate
+    on
+    public.planodescontocontareceber for each statement execute function audit.if_modified_func('true');

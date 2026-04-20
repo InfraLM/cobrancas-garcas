@@ -1,0 +1,328 @@
+pessoa 
+
+-- public.pessoa definição
+
+-- Drop table
+
+-- DROP TABLE public.pessoa;
+
+CREATE TABLE public.pessoa (
+	necessidadesespeciais varchar(100) NULL,
+	tituloeleitoral varchar(25) NULL,
+	orgaoemissor varchar(200) NULL,
+	estadoemissaorg varchar(2) NULL,
+	dataemissaorg timestamp NULL,
+	certificadomilitar varchar(50) NULL,
+	rg varchar(25) NULL,
+	cpf varchar(18) NOT NULL,
+	nacionalidade int4 NULL,
+	naturalidade int4 NULL,
+	datanasc date NULL,
+	email varchar(100) NULL,
+	celular varchar(20) NULL,
+	telefonerecado varchar(20) NULL,
+	telefoneres varchar(20) NULL,
+	estadocivil varchar(2) NULL,
+	sexo varchar(2) NULL,
+	cidade int4 NULL,
+	complemento varchar(100) NULL,
+	cep varchar(10) NULL,
+	numero varchar(20) NULL,
+	setor varchar(100) NULL,
+	endereco varchar(100) NULL,
+	nome varchar(100) NULL,
+	codigo serial4 NOT NULL,
+	aluno bool NULL,
+	professor bool NULL,
+	funcionario bool NULL,
+	candidato bool NULL,
+	membrocomunidade bool NULL,
+	paginapessoal varchar(70) NULL,
+	csspadrao varchar(50) NULL,
+	perfileconomico int4 NULL,
+	atuacomodocente varchar(2) NULL,
+	ativo bool NOT NULL,
+	idalunoinep varchar(50) NULL,
+	corraca varchar(2) NULL,
+	deficiencia varchar(20) NULL,
+	passaporte varchar(70) NULL,
+	nomefiador varchar(100) NULL,
+	enderecofiador varchar(100) NULL,
+	telefonefiador varchar(20) NULL,
+	cpffiador varchar(14) NULL,
+	tiponecessidadesespeciais varchar(50) NULL,
+	celularfiador varchar(14) NULL,
+	valorcsstopologo varchar(7) NULL,
+	valorcssbackground varchar(7) NULL,
+	valorcssmenu varchar(7) NULL,
+	arquivoimagem int4 NULL,
+	codigoantsei int4 NULL,
+	email2 varchar(100) NULL,
+	dataultimaalteracao timestamp NULL,
+	reponsavelultimaalteracao int4 NULL,
+	coordenador bool DEFAULT false NOT NULL,
+	enviarcomunicadopessoa bool NULL,
+	"access" bool NULL,
+	autocad bool NULL,
+	coreldraw bool NULL,
+	espanhol bool NULL,
+	espanholnivel varchar(255) NULL,
+	excel bool NULL,
+	frances bool NULL,
+	francesnivel varchar(255) NULL,
+	ingles bool NULL,
+	inglesnivel varchar(255) NULL,
+	internet bool NULL,
+	microsiga bool NULL,
+	outrosidiomas varchar(255) NULL,
+	outrosidiomasnivel varchar(255) NULL,
+	outrossoftwares varchar(255) NULL,
+	photoshop bool NULL,
+	powerpoint bool NULL,
+	sap bool NULL,
+	windows bool NULL,
+	word bool NULL,
+	telefonecomer varchar(20) NULL,
+	nomeempresa varchar(200) NULL,
+	enderecoempresa varchar(200) NULL,
+	cargopessoaempresa varchar(200) NULL,
+	cepempresa varchar(200) NULL,
+	complementoempresa varchar(200) NULL,
+	setorempresa varchar(200) NULL,
+	cidadeempresa2 int4 NULL,
+	cidadeempresa3 varchar(50) NULL,
+	cidadeempresa int4 NULL,
+	possuifilho bool NULL,
+	qtdfilhos int4 NULL,
+	participabancocurriculum bool NULL,
+	informacoesverdadeiras bool NULL,
+	divulgarmeusdados bool NULL,
+	certidaonascimento varchar(255) NULL,
+	informacoesadicionais varchar(255) NULL,
+	codprospect int4 NULL,
+	gerenciapreinscricao bool NULL,
+	curriculoatualizado bool NULL,
+	seraza bool NULL,
+	responsavellancamentoseraza int4 NULL,
+	datalancamentoseraza date NULL,
+	pispasep varchar(255) NULL,
+	cepfiador varchar(255) NULL,
+	complementofiador varchar(255) NULL,
+	numeroendfiador varchar(255) NULL,
+	possuiacessovisaopais bool NULL,
+	setorfiador varchar(255) NULL,
+	cepficador varchar(10) NULL,
+	cidadefiador int4 NULL,
+	codigofiliacao int4 NULL,
+	requisitante bool NULL,
+	isentartaxaboleto bool DEFAULT false NULL,
+	ocultardadoscrm bool DEFAULT true NULL,
+	gravida bool NULL,
+	canhoto bool NULL,
+	portadornecessidadeespecial bool NULL,
+	disciplinas varchar(255) NULL,
+	qtdvagascandidatou int4 NULL,
+	dataexpedicaotituloeleitoral date NULL,
+	zonaeleitoral varchar(50) NULL,
+	dataexpedicaocertificadomilitar date NULL,
+	orgaoexpedidorcertificadomilitar varchar(70) NULL,
+	codigoantresponsavelfinanceiro varchar(30) NULL,
+	codigoant int4 NULL,
+	tabelaant varchar(30) NULL,
+	situacaomilitar varchar(15) NULL,
+	dadospessoaisatualizado bool DEFAULT false NULL,
+	nomecenso varchar(100) NULL,
+	dataultimaatualizacaocadatral timestamp NULL,
+	grauparentesco varchar(60) NULL,
+	permiteenviarremessa bool DEFAULT false NULL,
+	senhacertificadoparadocumento varchar(20) NULL,
+	estadocivilfiador varchar(1) NULL,
+	datanascimentofiador date NULL,
+	profissaofiador varchar(100) NULL,
+	rgfiador varchar(50) NULL,
+	paisfiador int4 NULL,
+	secaozonaeleitoral varchar(20) NULL,
+	tipomidiacaptacao int4 NULL,
+	nomebatismo varchar(100) NULL,
+	possuicadastrominhabiblioteca bool NULL,
+	created timestamp NULL,
+	codigocreated int4 NULL,
+	nomecreated varchar(255) NULL,
+	updated timestamp NULL,
+	codigoupdated int4 NULL,
+	nomeupdated varchar(255) NULL,
+	falecido bool DEFAULT false NULL,
+	residecomresponsavel bool DEFAULT true NULL,
+	datahoravencimentocodigoautenticacao timestamp NULL,
+	codigoautenticacao int4 NULL,
+	idcrmeducacional varchar(255) NULL,
+	nomemedico text DEFAULT ''::text NULL,
+	telefonemedico varchar(20) DEFAULT ''::character varying NULL,
+	planosaude text DEFAULT ''::text NULL,
+	telefoneplanosaude text DEFAULT ''::text NULL,
+	tiposanguineo varchar(15) DEFAULT 'NAO INFORMADO'::character varying NULL,
+	alergia text DEFAULT ''::text NULL,
+	doencagrave text DEFAULT ''::text NULL,
+	remedioespecial text DEFAULT ''::text NULL,
+	diagnostico text DEFAULT ''::text NULL,
+	apoiorecurso text DEFAULT ''::text NULL,
+	tempoestendidoprova bool DEFAULT false NULL,
+	bloquearcontatocrm bool DEFAULT false NULL,
+	emancipado bool DEFAULT false NULL,
+	atualizardatacadastral bool NULL,
+	autorizodivulgacaoinformacoesterceiros bool DEFAULT true NULL,
+	codigopessoasap text DEFAULT ''::text NULL,
+	codigoautenticacaonavegador varchar(50) NULL,
+	tipoassinaturadocumentoenum varchar(25) DEFAULT 'ELETRONICA'::character varying NULL,
+	"token" uuid DEFAULT uuid_generate_v4() NULL,
+	numerodocumentoestrangeiro varchar(30) DEFAULT NULL::character varying NULL,
+	utilizardocumentoestrangeiro bool DEFAULT false NULL,
+	tipodocumentoestrangeiro varchar(40) DEFAULT NULL::character varying NULL,
+	codigoplataformaa int4 NULL,
+	resideexterior bool NULL,
+	paisresideexterior int4 NULL,
+	cidaderesideexterior varchar(100) NULL,
+	estadoresideexterior varchar(100) NULL,
+	codigopostal varchar(100) NULL,
+	codigointegracaopergamum varchar(200) NULL,
+	situacaointegracaopergamum varchar(2) DEFAULT NULL::character varying NULL,
+	descricaosituacaointegracaopergamum text NULL,
+	idcrmrdstation varchar NULL,
+	idempresafinanceira varchar(100) NULL,
+	discalculia bool DEFAULT false NULL,
+	disgrafia bool DEFAULT false NULL,
+	dislalia bool DEFAULT false NULL,
+	dislexia bool DEFAULT false NULL,
+	transtornodeficitatencaohiperatividade bool DEFAULT false NULL,
+	transtornoprocessamentoauditivocentral bool DEFAULT false NULL,
+	recursoavaliacaoinepauxilioledor bool DEFAULT false NULL,
+	recursoavaliacaoinepauxiliotranscricao bool DEFAULT false NULL,
+	recursoavaliacaoinepauxiliointerprete bool DEFAULT false NULL,
+	recursoavaliacaoinepauxiliotradutorinterpretelibras bool DEFAULT false NULL,
+	recursoavaliacaoinepauxilioleituralabial bool DEFAULT false NULL,
+	recursoavaliacaoinepauxilioprovaampliada bool DEFAULT false NULL,
+	recursoavaliacaoinepauxilioprovasuperampliada bool DEFAULT false NULL,
+	recursoavaliacaoinepauxiliocdcomaudioparadeficientevisual bool DEFAULT false NULL,
+	recursoavaliacaoinepauxilioprovaportuguesasegundalinguasurdos bool DEFAULT false NULL,
+	recursoavaliacaoinepauxilioprovaemvideoemlibras bool DEFAULT false NULL,
+	recursoavaliacaoinepauxiliomaterialdidaticoembraille bool DEFAULT false NULL,
+	recursoavaliacaoinepauxilioprovaembraille bool DEFAULT false NULL,
+	recursoavaliacaoinepauxiliotempoadicional bool DEFAULT false NULL,
+	recursoavaliacaoinepauxilionenhum bool DEFAULT false NULL,
+	codigod2l int4 NULL,
+	registroacademico text NULL,
+	codigointegracao varchar(100) NULL,
+	origemintegracao varchar(50) NULL,
+	idintegracao varchar(100) NULL,
+	cnpj varchar(18) NULL,
+	tipodocumento varchar(50) NULL,
+	inscricaomunicipal varchar(50) NULL,
+	inscricaoestadual varchar(50) NULL,
+	codigootm int4 NULL,
+	codigoprotheus varchar(255) NULL,
+	CONSTRAINT pessoa_check_validarunicidadealunoestrangeiro CHECK (fn_pessoa_validarunicidadealunoestrangeiro(codigo, tipodocumentoestrangeiro, numerodocumentoestrangeiro)) NOT VALID,
+	CONSTRAINT pessoa_check_validarunicidadecpf CHECK (fn_pessoa_validarunicidadecpf(codigo, cpf)) NOT VALID,
+	CONSTRAINT pessoa_cpf_key UNIQUE (cpf),
+	CONSTRAINT pessoa_pkey PRIMARY KEY (codigo),
+	CONSTRAINT fk_cidade FOREIGN KEY (cidade) REFERENCES public.cidade(codigo) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_nacionalidade FOREIGN KEY (nacionalidade) REFERENCES public.paiz(codigo) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_naturalidade FOREIGN KEY (naturalidade) REFERENCES public.cidade(codigo) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_perfileconomico FOREIGN KEY (perfileconomico) REFERENCES public.perfileconomico(codigo) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_pessoa_cidade FOREIGN KEY (cidade) REFERENCES public.cidade(codigo) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_pessoa_cidadefiador FOREIGN KEY (cidadefiador) REFERENCES public.cidade(codigo) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_pessoa_nacionalidade FOREIGN KEY (nacionalidade) REFERENCES public.paiz(codigo) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_pessoa_naturalidade FOREIGN KEY (naturalidade) REFERENCES public.cidade(codigo) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_pessoa_paisfiador FOREIGN KEY (paisfiador) REFERENCES public.paiz(codigo),
+	CONSTRAINT fk_pessoa_paisresideexterior FOREIGN KEY (paisresideexterior) REFERENCES public.paiz(codigo) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_pessoa_reponsavelultimaalteracao FOREIGN KEY (reponsavelultimaalteracao) REFERENCES public.usuario(codigo) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_pessoa_tipomidiacaptacao FOREIGN KEY (tipomidiacaptacao) REFERENCES public.tipomidiacaptacao(codigo) ON DELETE RESTRICT ON UPDATE RESTRICT
+);
+CREATE INDEX ch_pessoa_codigofiliacao ON public.pessoa USING btree (codigofiliacao);
+CREATE INDEX idx_pessoa_arquivo ON public.pessoa USING btree (arquivoimagem);
+CREATE INDEX idx_pessoa_cidade ON public.pessoa USING btree (cidade);
+CREATE INDEX idx_pessoa_codigo_encripted ON public.pessoa USING btree (encode(digest((codigo)::text, 'sha256'::text), 'hex'::text));
+CREATE INDEX idx_pessoa_cpf_replace ON public.pessoa USING btree (replace(replace((cpf)::text, '.'::text, ''::text), '-'::text, ''::text));
+CREATE INDEX idx_pessoa_email2_sem_acentos ON public.pessoa USING gin (f_sem_acentos((email2)::text) gin_trgm_ops);
+CREATE INDEX idx_pessoa_email_sem_acentos ON public.pessoa USING gin (f_sem_acentos((email)::text) gin_trgm_ops);
+CREATE INDEX idx_pessoa_naturalidade ON public.pessoa USING btree (naturalidade);
+CREATE INDEX idx_pessoa_nome_funcao_upper ON public.pessoa USING gin (upper((nome)::text) gin_trgm_ops);
+CREATE INDEX idx_pessoa_nome_sem_acentos ON public.pessoa USING gin (f_sem_acentos((nome)::text) gin_trgm_ops);
+CREATE INDEX idx_pessoa_paiz ON public.pessoa USING btree (nacionalidade);
+CREATE INDEX idx_pessoa_prospect ON public.pessoa USING btree (codprospect);
+CREATE UNIQUE INDEX uq_pessoa_cnpj ON public.pessoa USING btree (cnpj) WHERE ((cnpj IS NOT NULL) AND ((cnpj)::text <> ''::text));
+
+-- Table Triggers
+
+create trigger audit_trigger_row after
+insert
+    or
+delete
+    or
+update
+    on
+    public.pessoa for each row execute function audit.if_modified_func('true');
+create trigger audit_trigger_stm after
+truncate
+    on
+    public.pessoa for each statement execute function audit.if_modified_func('true');
+create trigger excluir_aluno before
+delete
+    on
+    public.pessoa for each row
+    when (old.aluno) execute function elastic.desindexar_aluno();
+create trigger inserir_aluno after
+insert
+    on
+    public.pessoa for each row
+    when (new.aluno) execute function elastic.indexar_aluno();
+create trigger tg_atualizarnomesacadocontareceber after
+update
+    on
+    public.pessoa for each row
+    when (((new.nome)::text <> (old.nome)::text)) execute function fn_atualizarnomesacadocontareceber();
+create trigger tg_pessoa_cadastrar after
+insert
+    or
+update
+    on
+    public.pessoa for each row
+    when ((coalesce(new.atualizardatacadastral, false) is false)) execute function inserirdadoscomerciais();
+create trigger tg_pessoaplataformaa after
+delete
+    or
+update
+    on
+    public.pessoa for each row execute function fn_pessoaplataformaa();
+create trigger tg_persistirsalaaulablackboardoperacaopessoa after
+update
+    on
+    public.pessoa for each row execute function fn_persistirsalaaulablackboardoperacaopessoa();
+create trigger alterar_aluno after
+update
+    on
+    public.pessoa for each row
+    when ((((old.nome)::text is distinct
+from
+    (new.nome)::text)
+        or ((old.cpf)::text is distinct
+    from
+        (new.cpf)::text)
+            or ((old.email)::text is distinct
+        from
+            (new.email)::text)
+                or (old.registroacademico is distinct
+            from
+                new.registroacademico)
+                or (old.aluno is distinct
+            from
+                new.aluno)
+                or (old.arquivoimagem is distinct
+            from
+                new.arquivoimagem))) execute function elastic.reindexar_aluno_alterando_aluno();
+create trigger tg_pessoa_unicidade_email before
+insert
+    or
+update
+    on
+    public.pessoa for each row
+    when ((coalesce(new.atualizardatacadastral, false) is false)) execute function fn_pessoa_validarunicidadeemail();

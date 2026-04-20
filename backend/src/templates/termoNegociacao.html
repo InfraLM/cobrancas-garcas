@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'Segoe UI', Arial, sans-serif;
+      font-size: 11pt;
+      color: #1a1a1a;
+      line-height: 1.6;
+      padding: 40px 50px;
+    }
+
+    .header {
+      text-align: center;
+      border-bottom: 2px solid #c41e3a;
+      padding-bottom: 16px;
+      margin-bottom: 24px;
+    }
+    .header h1 {
+      font-size: 13pt;
+      font-weight: 700;
+      color: #c41e3a;
+      letter-spacing: 0.5px;
+      margin-bottom: 4px;
+    }
+    .header .empresa {
+      font-size: 9pt;
+      color: #555;
+    }
+
+    .titulo-doc {
+      text-align: center;
+      font-size: 12pt;
+      font-weight: 700;
+      margin: 20px 0;
+      color: #1a1a1a;
+    }
+
+    .secao {
+      margin: 18px 0;
+    }
+    .secao-titulo {
+      font-size: 10pt;
+      font-weight: 700;
+      text-transform: uppercase;
+      color: #c41e3a;
+      border-bottom: 1px solid #e0e0e0;
+      padding-bottom: 4px;
+      margin-bottom: 10px;
+    }
+
+    .dados-devedor {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px 24px;
+      font-size: 10pt;
+    }
+    .dados-devedor .campo {
+      min-width: 200px;
+    }
+    .dados-devedor .label {
+      font-weight: 600;
+      color: #555;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 8px 0;
+      font-size: 9.5pt;
+    }
+    th {
+      background-color: #f5f5f5;
+      font-weight: 600;
+      text-align: left;
+      padding: 6px 8px;
+      border: 1px solid #ddd;
+      font-size: 8.5pt;
+      text-transform: uppercase;
+      color: #555;
+    }
+    td {
+      padding: 5px 8px;
+      border: 1px solid #ddd;
+    }
+    tr:nth-child(even) { background-color: #fafafa; }
+    .total-row {
+      font-weight: 700;
+      background-color: #f0f0f0 !important;
+    }
+    .valor { text-align: right; font-variant-numeric: tabular-nums; }
+
+    .clausula {
+      margin: 14px 0;
+      text-align: justify;
+    }
+    .clausula-titulo {
+      font-weight: 700;
+      font-size: 10pt;
+      margin-bottom: 4px;
+    }
+    .clausula p {
+      margin: 4px 0;
+      font-size: 10pt;
+    }
+    .clausula ul {
+      margin: 4px 0 4px 20px;
+      font-size: 10pt;
+    }
+    .clausula li { margin: 2px 0; }
+
+    .destaque { font-weight: 700; }
+    .valor-destaque { font-weight: 700; color: #c41e3a; }
+
+    .recorrencia-box {
+      border: 1px solid #e8a800;
+      background: #fffde6;
+      padding: 10px 14px;
+      border-radius: 4px;
+      margin: 10px 0;
+      font-size: 10pt;
+    }
+    .recorrencia-box .titulo {
+      font-weight: 700;
+      color: #b8960a;
+      margin-bottom: 4px;
+    }
+
+    .rodape {
+      margin-top: 30px;
+      font-size: 9.5pt;
+    }
+    .rodape .info-negociacao {
+      color: #777;
+      margin-bottom: 20px;
+    }
+    .assinatura {
+      margin-top: 40px;
+      text-align: center;
+    }
+    .assinatura .linha {
+      border-top: 1px solid #333;
+      width: 300px;
+      margin: 0 auto;
+      padding-top: 6px;
+    }
+    .assinatura .nome {
+      font-weight: 700;
+      font-size: 10pt;
+    }
+    .assinatura .cpf-assinatura {
+      font-size: 9pt;
+      color: #555;
+    }
+    .assinatura .label-devedor {
+      font-size: 9pt;
+      color: #777;
+      font-style: italic;
+    }
+
+    .digital-info {
+      margin-top: 24px;
+      text-align: center;
+      font-size: 8pt;
+      color: #999;
+      border-top: 1px solid #eee;
+      padding-top: 10px;
+    }
+
+    @media print {
+      body { padding: 20px 30px; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- HEADER -->
+  <div class="header">
+    <h1>LIBERDADE MÉDICA LTDA</h1>
+    <div class="empresa">
+      CNPJ: 40.070.030/0001-99 | R. S-1, 826 - St. Bela Vista, Goiânia - GO, 74230-220<br>
+      financeiro@liberdademedicaedu.com.br
+    </div>
+  </div>
+
+  <div class="titulo-doc">INSTRUMENTO PARTICULAR DE CONFISSÃO DE DÍVIDA E ACORDO DE PAGAMENTO</div>
+
+  <!-- PARTES -->
+  <div class="secao">
+    <div class="secao-titulo">Partes</div>
+    <p style="font-size:10pt; margin-bottom:8px;">
+      <span class="destaque">CREDORA:</span> LIBERDADE MÉDICA LTDA, pessoa jurídica de direito privado, inscrita no CNPJ sob o nº 40.070.030/0001-99, com sede na R. S-1, 826 - St. Bela Vista, Goiânia - GO, CEP 74230-220.
+    </p>
+    <p style="font-size:10pt; margin-bottom:6px;"><span class="destaque">DEVEDOR(A):</span></p>
+    <div class="dados-devedor">
+      <div class="campo"><span class="label">Nome:</span> {{nomeAluno}}</div>
+      <div class="campo"><span class="label">CPF:</span> {{cpfAluno}}</div>
+      <div class="campo"><span class="label">Matrícula:</span> {{matriculaAluno}}</div>
+      <div class="campo"><span class="label">Celular:</span> {{celularAluno}}</div>
+      <div class="campo"><span class="label">E-mail:</span> {{emailAluno}}</div>
+    </div>
+  </div>
+
+  <!-- CLAUSULA 1 - CONFISSAO -->
+  <div class="clausula">
+    <div class="clausula-titulo">CLÁUSULA 1ª - CONFISSÃO DE DÍVIDA</div>
+    <p>
+      O(A) DEVEDOR(A), por meio deste instrumento, confessa dever à CREDORA a quantia de
+      <span class="valor-destaque">{{valorSaldoDevedor}}</span> ({{valorSaldoDevedorExtenso}}),
+      referente às mensalidades em atraso discriminadas abaixo, nas quais já estão inclusos os encargos de inadimplência:
+    </p>
+  </div>
+
+  <!-- TABELA DEBITO ORIGINAL -->
+  <div class="secao">
+    <div class="secao-titulo">Demonstrativo do Débito Original</div>
+    <table>
+      <thead>
+        <tr>
+          <th>Parcela</th>
+          <th>Vencimento</th>
+          <th class="valor">Valor Nominal</th>
+          <th class="valor">Multa + Juros</th>
+          <th class="valor">Valor Atualizado</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{linhasParcelasOriginais}}
+        <tr class="total-row">
+          <td colspan="2"><strong>TOTAL</strong></td>
+          <td class="valor">{{totalNominal}}</td>
+          <td class="valor">{{totalMultaJuros}}</td>
+          <td class="valor">{{totalAtualizado}}</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- CLAUSULA 2 - ACORDO -->
+  <div class="clausula">
+    <div class="clausula-titulo">CLÁUSULA 2ª - ACORDO DE PAGAMENTO</div>
+    <p>
+      As partes acordam que o débito confessado na Cláusula 1ª será quitado pelo valor de
+      <span class="valor-destaque">{{valorAcordo}}</span> ({{valorAcordoExtenso}}){{textoDesconto}},
+      conforme condições abaixo:
+    </p>
+  </div>
+
+  <!-- TABELA PAGAMENTOS -->
+  <div class="secao">
+    <div class="secao-titulo">Condições de Pagamento</div>
+    <table>
+      <thead>
+        <tr>
+          <th>Parcela</th>
+          <th>Vencimento</th>
+          <th>Forma de Pagamento</th>
+          <th class="valor">Valor</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{linhasPagamentos}}
+        <tr class="total-row">
+          <td colspan="3"><strong>TOTAL</strong></td>
+          <td class="valor">{{valorAcordo}}</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- CLAUSULA 3 - WHATSAPP -->
+  <div class="clausula">
+    <div class="clausula-titulo">CLÁUSULA 3ª - ENVIO DOS PAGAMENTOS</div>
+    <p>
+      Os links de pagamento referentes a este acordo serão enviados exclusivamente pelo WhatsApp oficial da LIBERDADE MÉDICA,
+      através do número <span class="destaque">(62) 98139-6751</span>. O(A) DEVEDOR(A) declara ciência de que este é o único
+      canal autorizado para envio de cobranças relacionadas a este acordo.
+    </p>
+  </div>
+
+  <!-- CLAUSULA 4 - INADIMPLENCIA -->
+  <div class="clausula">
+    <div class="clausula-titulo">CLÁUSULA 4ª - INADIMPLÊNCIA</div>
+    <p>O não pagamento de qualquer parcela na data estipulada implicará:</p>
+    <ul>
+      <li>Vencimento antecipado de todas as parcelas restantes;</li>
+      <li>Incidência de multa moratória de 2% (dois por cento) e juros de 1% (um por cento) ao mês sobre o valor inadimplido;</li>
+      <li>Inclusão do nome do(a) DEVEDOR(A) nos órgãos de proteção ao crédito (SERASA/SPC) após <span class="destaque">5 (cinco) dias</span> do vencimento de qualquer parcela;</li>
+      <li>Em caso de pagamento apenas parcial do acordo, a negativação será realizada pelo <span class="destaque">valor total remanescente</span> da dívida;</li>
+      <li>A CREDORA poderá promover a cobrança judicial ou extrajudicial da totalidade do débito, acrescido de honorários advocatícios de 10% (dez por cento).</li>
+    </ul>
+  </div>
+
+  <!-- CLAUSULA 5 - RECORRENCIA (condicional) -->
+  {{clausulaRecorrencia}}
+
+  <!-- CLAUSULA 6 - TITULO EXECUTIVO -->
+  <div class="clausula">
+    <div class="clausula-titulo">CLÁUSULA {{numClausulaTitulo}}ª - TÍTULO EXECUTIVO</div>
+    <p>
+      O presente instrumento constitui título executivo extrajudicial nos termos do Art. 784, inciso III, do Código de Processo Civil.
+    </p>
+  </div>
+
+  <!-- CLAUSULA 7 - ASSINATURA DIGITAL -->
+  <div class="clausula">
+    <div class="clausula-titulo">CLÁUSULA {{numClausulaDigital}}ª - ASSINATURA DIGITAL</div>
+    <p>
+      Este documento será assinado digitalmente por meio da plataforma ClickSign, com validade jurídica nos termos da
+      Lei nº 14.063/2020 e da Medida Provisória nº 2.200-2/2001, dispensando-se a assinatura física.
+    </p>
+  </div>
+
+  <!-- CLAUSULA 8 - FORO -->
+  <div class="clausula">
+    <div class="clausula-titulo">CLÁUSULA {{numClausulaForo}}ª - FORO</div>
+    <p>
+      As partes elegem o foro da Comarca de Goiânia - GO para dirimir quaisquer questões oriundas deste instrumento.
+    </p>
+  </div>
+
+  <!-- RODAPE -->
+  <div class="rodape">
+    <div class="info-negociacao">
+      Negociação realizada por: <span class="destaque">{{nomeAgente}}</span><br>
+      Data: {{dataAcordo}}<br>
+      Goiânia - GO
+    </div>
+
+    <div class="assinatura">
+      <div class="linha">
+        <div class="nome">{{nomeAluno}}</div>
+        <div class="cpf-assinatura">CPF: {{cpfAluno}}</div>
+        <div class="label-devedor">Devedor(a)</div>
+      </div>
+    </div>
+
+    <div class="digital-info">
+      Documento assinado digitalmente via ClickSign. A autenticidade pode ser verificada no site da plataforma.
+    </div>
+  </div>
+
+</body>
+</html>

@@ -1,0 +1,67 @@
+negociacaorecebimento
+
+-- public.negociacaorecebimento definição
+
+-- Drop table
+
+-- DROP TABLE public.negociacaorecebimento;
+
+CREATE TABLE public.negociacaorecebimento (
+	pessoa int4 NULL,
+	tipopessoa varchar(5) NULL,
+	matricula varchar(50) NULL,
+	contacorrentecaixa int4 NOT NULL,
+	responsavel int4 NULL,
+	valortotal numeric(20, 2) NOT NULL,
+	valortotalrecebimento numeric(20, 2) NOT NULL,
+	valortroco numeric(20, 2) NULL,
+	"data" timestamptz NOT NULL,
+	codigo serial4 NOT NULL,
+	unidadeensino int4 NULL,
+	parceiro int4 NULL,
+	codigoantsei int4 NULL,
+	observacao text NULL,
+	recebimentoboletoautomatico bool NULL,
+	fornecedor int4 NULL,
+	codigoant int4 NULL,
+	tabelaant varchar(30) NULL,
+	codigoantflan int4 NULL,
+	pagamentocomdcc bool DEFAULT false NULL,
+	dataregistro timestamp DEFAULT now() NULL,
+	created timestamp NULL,
+	codigocreated int4 NULL,
+	nomecreated varchar(255) NULL,
+	updated timestamp NULL,
+	codigoupdated int4 NULL,
+	nomeupdated varchar(255) NULL,
+	valorestornadocartao numeric(20, 2) NULL,
+	transacaoprovenienterecorrencia bool DEFAULT false NULL,
+	empresafinanceira varchar(50) NULL,
+	codigointegracaoempresafinanceira varchar(50) NULL,
+	recebimentowebhook bool DEFAULT false NULL,
+	CONSTRAINT negociacaorecebimento_pkey PRIMARY KEY (codigo),
+	CONSTRAINT fk_negociacaorecebimento_contacorrentecaixa FOREIGN KEY (contacorrentecaixa) REFERENCES public.contacorrente(codigo) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_negociacaorecebimento_fornecedor FOREIGN KEY (fornecedor) REFERENCES public.fornecedor(codigo) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_negociacaorecebimento_pessoa FOREIGN KEY (pessoa) REFERENCES public.pessoa(codigo) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_negociacaorecebimento_responsavel FOREIGN KEY (responsavel) REFERENCES public.usuario(codigo) ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT fk_negociacaorecebimento_unidadeensino FOREIGN KEY (unidadeensino) REFERENCES public.unidadeensino(codigo) ON DELETE RESTRICT ON UPDATE RESTRICT
+);
+CREATE INDEX ch_negociacaorecebimento_contacorrentecaixa ON public.negociacaorecebimento USING btree (contacorrentecaixa);
+CREATE INDEX ch_negociacaorecebimento_pessoa ON public.negociacaorecebimento USING btree (pessoa);
+CREATE INDEX idx_negociacaorecebimento_fornecedor ON public.negociacaorecebimento USING btree (fornecedor);
+CREATE INDEX idx_negrec_unidadeensino_data ON public.negociacaorecebimento USING btree (unidadeensino, data);
+
+-- Table Triggers
+
+create trigger audit_trigger_row after
+insert
+    or
+delete
+    or
+update
+    on
+    public.negociacaorecebimento for each row execute function audit.if_modified_func('true');
+create trigger audit_trigger_stm after
+truncate
+    on
+    public.negociacaorecebimento for each statement execute function audit.if_modified_func('true');

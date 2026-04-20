@@ -1,0 +1,75 @@
+# BASE DE CONHECIMENTO - INTEGRAÇÃO SEI (SISTEMA DE ENSINO INTEGRADO)
+
+ATENÇÃO CLAUDE: Sempre consulte este documento antes de criar, modificar ou debugar qualquer integração, query ou regra de negócio relacionada ao banco de dados do SEI. Este documento contém o fluxo de trabalho passo a passo, as regras arquiteturais e o mapeamento de tabelas.
+
+---
+
+## 1. FLUXO DE TRABALHO INICIAL (O QUE VOCÊ DEVE FAZER AGORA)
+
+Para implementar o sistema de cobrança, precisamos criar um banco de dados local que seja um clone perfeito das tabelas-chave do SEI.
+
+### Passo 1: Criação das Tabelas (Clone do SEI)
+A primeira tarefa é criar as tabelas no nosso banco de dados local.
+- **Nomenclatura:** As tabelas locais DEVEM ter os nomes exatos das tabelas do SEI (ex: `contareceber`, `pessoa`, `matricula`).
+- **Estrutura (DDL):** Você deve consultar os arquivos DDL que estão na pasta `ddl_SEI/` (ex: `ddl_SEI/contareceber.txt`). Se faltar alguma informação, consulte o arquivo `ddl_schema_public.txt` que contém o DDL completo do banco original.
+- **Objetivo:** Garantir que os tipos de dados e as constraints (Primary Keys) sejam idênticos ao SEI para facilitar a ingestão de dados.
+
+### Passo 2: População Inicial (Full Load)
+Após criar todas as tabelas, precisaremos fazer a carga inicial dos dados.
+- Neste momento, todos os WebServices do SEI estão configurados com a query `SELECT * FROM nomedatabela`.
+- Isso significa que o primeiro request trará a tabela inteira.
+- **Ação:** Quando você terminar de criar as tabelas e os scripts de ingestão (Insert/Upsert), você DEVE **parar e solicitar a chave de autorização (Auth Key) ao usuário** para que possamos rodar a população inicial.
+
+### Passo 3: Configuração do Delta Sync (Sincronização Contínua)
+Após o Full Load inicial, não podemos baixar o banco inteiro todos os dias. Mudaremos os WebServices no SEI para aceitar parâmetros e faremos sincronização incremental.
+- **Como funciona:** O WebService do SEI aceita parâmetros dinâmicos no corpo da requisição HTTP (Body JSON).
+- **Query no SEI (Futura):** `SELECT * FROM nomedatabela WHERE updated >= :data_ultima_sync`
+- **Request do nosso sistema:** Enviaremos um POST com o body `{"data_ultima_sync": "2024-03-05 23:00:00"}`.
+- O sistema receberá apenas os registros alterados/criados e fará um `UPSERT` no banco local.
+
+---
+
+## 2. COMO FUNCIONA A INTEGRAÇÃO COM O SEI
+
+O SEI não permite conexão direta ao banco de dados em produção. Toda a extração de dados é feita através de WebServices REST.
+
+- **Endpoint Padrão:** `POST https://sei.liberdademedicaedu.com.br/webservice/api/{iddoservico}`
+- **Headers Obrigatórios:**
+  - `Authorization: [CHAVE_FORNECIDA_PELO_USUARIO]` (Nunca exponha ou commite a chave no código)
+  - `Content-Type: application/json`
+
+---
+
+## 3. MAPEAMENTO DE TABELAS E SERVIÇOS
+
+Para cada tabela do SEI que clonamos, existe um `{iddoservico}` específico. Quando for consumir a API, substitua a variável na URL por este ID:
+
+| Tabela Local / SEI | `{iddoservico}` na URL | O que contém |
+| :--- | :--- | :--- |
+| `contareceber` | `SEIcontareceber` | Títulos/parcelas. É o coração financeiro. Liga aluno, turma, valor, vencimento e status (AB=Aberto, PG=Pago). |
+| `pessoa` | `SEIpessoa` | Dados cadastrais (Nome, CPF, Celular, Email). Possui flags de cobrança (`seraza`, `bloquearcontatocrm`). |
+| `matricula` | `SEImatricula` | Vínculo do aluno com o curso. Status acadêmico. Possui flag `naoenviarmensagemcobranca`. |
+| `matriculaperiodo` | `SEImatriculaperiodo` | O período letivo específico de uma matrícula. |
+| `turma` | `SEIturma` | Dados da turma/cohort. |
+| `curso` | `SEIcurso` | Dados do programa acadêmico. |
+| `negociacaocontareceber` | `SEInegociacaocontareceber` | Cabeçalho (Header) de uma renegociação de dívida. |
+| `contarecebernegociado` | `SEIcontarecebernegociado` | Títulos antigos (inadimplentes) que foram substituídos em um acordo. |
+| `negociacaorecebimento` | `SEInegociacaorecebimento` | Cabeçalho (Header) de um pagamento recebido. |
+| `contarecebernegociacaorecebimento`| `SEIcontarecebernegociacaorecebimento`| Tabela de ligação: Vincula o título (`contareceber`) ao recibo (`negociacaorecebimento`). |
+| `contareceberrecebimento` | `SEIcontareceberrecebimento` | Detalhes do pagamento (valor exato pago por título). |
+| `formapagamentonegociacaorecebimento`| `SEIformapagamentonegociacaorecebimento`| Forma de pagamento usada no recibo (liga com `formapagamento`). |
+| `formapagamento` | `SEIformapagamento` | Dicionário de formas de pagamento (Boleto, Cartão, PIX). |
+| `cartaocreditodebitorecorrenciapessoa`| `SEIcartaocreditodebitorecorrenciapessoa`| Dados de cartões salvos para recorrência. |
+| `documentoassinadopessoa` | `SEIdocumentoassinadopessoa` | Controle de assinaturas de contratos por pessoa. |
+| `documentoassinado` | `SEIdocumentoassinado` | O documento/contrato em si. |
+| `condicaopagamentoplanofinanceirocurso`| `SEIcondicaopagamentoplanofinanceirocurso`| Regras financeiras do curso. |
+| `planodescontocontareceber` | `SEIplanodescontocontareceber` | Aplicação de um desconto a um título específico. |
+| `planodesconto` | `SEIplanodesconto` | Dicionário de regras de descontos. |
+| `funcionario` | `SEIfuncionario` | Staff/Usuários do sistema. |
+
+---
+
+## 4. DIRETRIZES FINAIS PARA O CLAUDE
+
+1. **Sincronização:** Use sempre `UPSERT` (ex: `ON CONFLICT (codigo) DO UPDATE SET...`) no PostgreSQL local usando a PK (geralmente `codigo` ou `matricula`).
+2. **Proteção de Dados:** Nunca logue, commite ou exponha CPFs, e-mails, telefones ou chaves de API.

@@ -1,0 +1,51 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+dist
+dist-ssr
+*.local
+
+# Database
+*.db
+*.db-journal
+
+# Environment
+.env
+.env.*
+backend/.env
+backend/.env.*
+
+# Claude Code (contém tokens e memorias com dados sensiveis)
+.claude/
+
+# Remember files
+.remember/
+
+# Dashboard reference files
+dashboard/
+
+# ClickSign example code
+clicksign_exemplo/
+
+# Sync scripts de restauracao (uso local)
+backend/src/sync/restaurarContareceber.js
+backend/src/sync/refreshResumo.js
+backend/src/sync/popularOcorrencias.js
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
