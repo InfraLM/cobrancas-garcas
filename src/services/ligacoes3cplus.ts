@@ -8,6 +8,8 @@
  * e frontend usa RealtimeContext para receber via /ws.
  */
 
+const API_URL = import.meta.env.VITE_API_URL || '/api';
+
 function authHeaders(extra: Record<string, string> = {}): Record<string, string> {
   const headers: Record<string, string> = { 'Accept': 'application/json', ...extra };
   const token = localStorage.getItem('auth_token');
@@ -82,7 +84,7 @@ export async function prepararAudio(): Promise<boolean> {
 // --- Carregar config do backend (usa JWT do usuario logado) ---
 export async function carregarConfigDoBackend(): Promise<boolean> {
   try {
-    const response = await fetch('/api/ligacoes/config', { headers: authHeaders() });
+    const response = await fetch(`${API_URL}/ligacoes/config`, { headers: authHeaders() });
     if (!response.ok) {
       console.error('[3C+] Falha ao carregar config:', response.status);
       return false;
@@ -192,7 +194,7 @@ export async function logoutCampanha(): Promise<void> {
 export async function click2call(telefone: string): Promise<boolean> {
   try {
     // Passa pelo proxy do backend para não expor token do gestor
-    const response = await fetch('/api/ligacoes/click2call', {
+    const response = await fetch(`${API_URL}/ligacoes/click2call`, {
       method: 'POST',
       headers: authHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({
@@ -253,7 +255,7 @@ export async function qualificarChamada(callId: string, qualificationId: number)
 export async function hangup(callId: string): Promise<boolean> {
   if (!callId) return false;
   try {
-    const response = await fetch(`/api/ligacoes/hangup/${encodeURIComponent(callId)}`, { method: 'POST', headers: authHeaders() });
+    const response = await fetch(`${API_URL}/ligacoes/hangup/${encodeURIComponent(callId)}`, { method: 'POST', headers: authHeaders() });
     if (!response.ok) {
       const err = await response.text();
       console.error('[3C+] Hangup falhou:', response.status, err);
@@ -284,7 +286,7 @@ export interface AlunoLigacao {
 export async function buscarAlunoPorTelefone(phone: string): Promise<AlunoLigacao | null> {
   if (!phone) return null;
   try {
-    const response = await fetch(`/api/ligacoes/aluno-por-telefone?phone=${encodeURIComponent(phone)}`, { headers: authHeaders() });
+    const response = await fetch(`${API_URL}/ligacoes/aluno-por-telefone?phone=${encodeURIComponent(phone)}`, { headers: authHeaders() });
     if (!response.ok) return null;
     const { data } = await response.json();
     return data || null;

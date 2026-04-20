@@ -6,7 +6,7 @@
  * Auth: ?api_token=MANAGER_TOKEN
  */
 
-const DISCADOR_API = 'https://liberdademedica.3c.plus/api/v1';
+const DISCADOR_API = `https://${process.env.THREECPLUS_SUBDOMAIN || 'liberdademedica'}.3c.plus/api/v1`;
 const CAMPANHA_MASSA = 257976;
 
 function getToken() {

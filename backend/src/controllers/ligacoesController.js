@@ -10,7 +10,7 @@
 import { prisma } from '../config/database.js';
 
 const CLICK2CALL_URL = 'https://3c.fluxoti.com/api/v1/click2call';
-const SUBDOMAIN = 'liberdademedica';
+const SUBDOMAIN = process.env.THREECPLUS_SUBDOMAIN || 'liberdademedica';
 
 export async function click2call(req, res, next) {
   try {

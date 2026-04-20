@@ -414,7 +414,7 @@ export function LigacoesProvider({ children }: { children: ReactNode }) {
 
     // 1. Limpar listas anteriores
     try {
-      await fetch('/api/segmentacoes/limpar-campanha', { method: 'POST', headers: authHeaders });
+      await fetch(`${import.meta.env.VITE_API_URL || '/api'}/segmentacoes/limpar-campanha`, { method: 'POST', headers: authHeaders });
       log('http', 'Listas anteriores removidas');
     } catch (err) {
       log('erro', 'Falha ao limpar listas: ' + String(err));
@@ -424,7 +424,7 @@ export function LigacoesProvider({ children }: { children: ReactNode }) {
     for (const lista of config.listas) {
       try {
         log('http', `Subindo "${lista.regraNome}"...`);
-        const res = await fetch(`/api/segmentacoes/${lista.regraId}/subir-campanha`, {
+        const res = await fetch(`${import.meta.env.VITE_API_URL || '/api'}/segmentacoes/${lista.regraId}/subir-campanha`, {
           method: 'POST', headers: authHeaders,
         });
         const resText = await res.text();

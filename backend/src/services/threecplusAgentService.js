@@ -7,10 +7,10 @@
  * - Chat API nova: https://app.3c.plus/omni-chat-api/v1/whatsapp (Bearer) — instances, chats
  */
 
-const DISCADOR_API = 'https://liberdademedica.3c.plus/api/v1';
+const COMPANY_DOMAIN = process.env.THREECPLUS_SUBDOMAIN || 'liberdademedica';
+const DISCADOR_API = `https://${COMPANY_DOMAIN}.3c.plus/api/v1`;
 const OMNI_API = 'https://app.3c.fluxoti.com/omni-api/v1/whatsapp';
 const CHAT_API = 'https://app.3c.plus/omni-chat-api/v1/whatsapp';
-const COMPANY_DOMAIN = 'liberdademedica';
 
 function getManagerToken() {
   return process.env.THREECPLUS_MANAGER_TOKEN;

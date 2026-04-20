@@ -8,7 +8,8 @@
 
 import type { Chat3CPlus, Mensagem3CPlus, TipoMensagem } from '../types/conversa';
 
-const API_BASE = '/api/conversas';
+const API_URL = import.meta.env.VITE_API_URL || '/api';
+const API_BASE = `${API_URL}/conversas`;
 
 function authHeaders(extra: Record<string, string> = {}): Record<string, string> {
   const headers: Record<string, string> = { ...extra };

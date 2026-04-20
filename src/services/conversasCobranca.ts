@@ -5,7 +5,8 @@
 import type { ConversaCobranca, MotivoEncerramento, StatusConversa } from '../types/conversa';
 import type { Mensagem3CPlus } from '../types/conversa';
 
-const API_BASE = '/api/conversas-cobranca';
+const API_URL = import.meta.env.VITE_API_URL || '/api';
+const API_BASE = `${API_URL}/conversas-cobranca`;
 
 function getHeaders(): Record<string, string> {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };

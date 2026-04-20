@@ -200,7 +200,11 @@ export async function gerarPdfTermo(acordo) {
 
   const browser = await puppeteer.launch({
     headless: true,
-    executablePath: process.env.CHROME_PATH || 'C:/Program Files/Google/Chrome/Application/chrome.exe',
+    executablePath: process.env.CHROME_PATH || (
+      process.platform === 'win32' ? 'C:/Program Files/Google/Chrome/Application/chrome.exe'
+      : process.platform === 'darwin' ? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
+      : '/usr/bin/google-chrome'
+    ),
     args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-gpu'],
   });
 

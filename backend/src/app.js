@@ -11,9 +11,9 @@ const app = express();
 app.use(helmet({ contentSecurityPolicy: false })); // CSP desabilitado pois frontend e separado
 
 // CORS restritivo
+const isDev = process.env.NODE_ENV === 'development';
 const ALLOWED_ORIGINS = [
-  'http://localhost:5173',
-  'http://localhost:3000',
+  ...(isDev ? ['http://localhost:5173', 'http://localhost:3000'] : []),
   'https://cobranca.lmedu.com.br',
   process.env.FRONTEND_URL,
 ].filter(Boolean);
