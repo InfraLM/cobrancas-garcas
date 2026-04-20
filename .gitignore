@@ -1,51 +1,42 @@
-# Logs
-logs
-*.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
-lerna-debug.log*
-
+# Dependencies
 node_modules
+
+# Build
 dist
 dist-ssr
-*.local
 
-# Database
-*.db
-*.db-journal
-
-# Environment
+# Environment (NUNCA commitar)
 .env
 .env.*
 backend/.env
 backend/.env.*
 
-# Claude Code (contém tokens e memorias com dados sensiveis)
-.claude/
+# Logs
+logs
+*.log
 
-# Remember files
+# Database local
+*.db
+*.db-journal
+
+# Claude Code
+.claude/
 .remember/
 
-# Dashboard reference files
+# Arquivos de referencia (nao sao codigo)
 dashboard/
-
-# ClickSign example code
 clicksign_exemplo/
+xx.json
 
-# Sync scripts de restauracao (uso local)
+# Scripts de uso local
 backend/src/sync/restaurarContareceber.js
 backend/src/sync/refreshResumo.js
 backend/src/sync/popularOcorrencias.js
 
-# Editor directories and files
+# Editor
 .vscode/*
 !.vscode/extensions.json
 .idea
 .DS_Store
-*.suo
-*.ntvs*
-*.njsproj
-*.sln
+*.local
 *.sw?
