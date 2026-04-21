@@ -1,17 +1,20 @@
-import type { LigacaoAtiva, EventoLigacao } from '../../types/ligacao';
+import type { LigacaoAtiva, EventoLigacao, QualificacaoLigacao } from '../../types/ligacao';
 import { formatarTelefone } from '../../mocks/ligacoes';
 import LogEventos from './LogEventos';
 import TimerLigacao from './TimerLigacao';
-import { PhoneCall, PhoneOff, Banknote, PhoneForwarded, ExternalLink, BookOpen } from 'lucide-react';
+import { PhoneCall, PhoneOff, Banknote, PhoneForwarded, ExternalLink, BookOpen, CheckCircle } from 'lucide-react';
 
 interface PainelLigacaoAtivaProps {
   ligacao: LigacaoAtiva | null;
+  ligacaoEncerrada: LigacaoAtiva | null;
+  qualificacoes: QualificacaoLigacao[];
   eventos: EventoLigacao[];
   onCriarNegociacao: () => void;
   onAgendarCallback: () => void;
   onDesligarChamada: () => void;
   onDesativarWebRTC: () => void;
   onVerMaisAluno: () => void;
+  onQualificarInline: (q: QualificacaoLigacao) => void;
 }
 
 function formatarMoeda(v: number) {
@@ -20,12 +23,15 @@ function formatarMoeda(v: number) {
 
 export default function PainelLigacaoAtiva({
   ligacao,
+  ligacaoEncerrada,
+  qualificacoes,
   eventos,
   onCriarNegociacao,
   onAgendarCallback,
   onDesligarChamada,
   onDesativarWebRTC,
   onVerMaisAluno,
+  onQualificarInline,
 }: PainelLigacaoAtivaProps) {
   const emChamada = ligacao?.status === 'conectada';
   const podeDesligar = ligacao && ['discando', 'tocando', 'conectada'].includes(ligacao.status) && !!ligacao.callId;
@@ -68,7 +74,7 @@ export default function PainelLigacaoAtiva({
             ) : (
               <>
                 <p className="text-lg font-medium text-gray-400">Aguardando chamadas...</p>
-                <p className="text-[0.75rem] text-gray-600">O discador está ativo.</p>
+                <p className="text-[0.75rem] text-gray-600">O discador está ativo — próxima chamada em breve.</p>
               </>
             )}
           </div>
@@ -162,6 +168,30 @@ export default function PainelLigacaoAtiva({
               <PhoneForwarded size={13} />
               Agendar retorno
             </button>
+          </div>
+        )}
+
+        {/* Qualificacao inline — modo massa, chamada recém-encerrada */}
+        {!ligacao && ligacaoEncerrada && (
+          <div className="bg-gray-900/80 rounded-xl border border-gray-800 p-4 mb-4">
+            <div className="flex items-center gap-2 mb-3">
+              <CheckCircle size={14} className="text-gray-500" />
+              <span className="text-[0.8125rem] text-gray-400">
+                Qualificar: <span className="text-gray-200 font-medium">{ligacaoEncerrada.aluno?.nome || formatarTelefone(ligacaoEncerrada.telefone)}</span>
+              </span>
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {qualificacoes.map((qual) => (
+                <button
+                  key={qual.id}
+                  onClick={() => onQualificarInline(qual)}
+                  className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-gray-800 hover:border-gray-700 hover:bg-gray-800/50 transition-colors"
+                >
+                  <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: qual.cor }} />
+                  <span className="text-[0.75rem] text-gray-300">{qual.nome}</span>
+                </button>
+              ))}
+            </div>
           </div>
         )}
 

@@ -28,6 +28,7 @@ interface LigacoesContextType {
   telefoneIndividual: string;
   configuracaoCampanha: ConfiguracaoCampanha | null;
   ligacaoAtiva: LigacaoAtiva | null;
+  ligacaoEncerrada: LigacaoAtiva | null;
   eventos: EventoLigacao[];
   qualificacoes: QualificacaoLigacao[];
   modoAtivo: boolean;
@@ -47,6 +48,7 @@ interface LigacoesContextType {
   voltarParaSelecao: () => void;
   setTelefoneIndividual: (tel: string) => void;
   qualificarLigacao: (q: QualificacaoLigacao) => void;
+  qualificarLigacaoInline: (q: QualificacaoLigacao) => void;
   agendarCallback: (a: AgendamentoCallback) => void;
   cancelarChamada: () => void;
   desligarChamada: () => Promise<void>;
@@ -96,6 +98,8 @@ export function LigacoesProvider({ children }: { children: ReactNode }) {
   const [telefoneIndividual, setTelefoneIndividual] = useState('');
   const [configuracaoCampanha, setConfiguracaoCampanha] = useState<ConfiguracaoCampanha | null>(null);
   const [ligacaoAtiva, setLigacaoAtiva] = useState<LigacaoAtiva | null>(null);
+  const [ligacaoEncerrada, setLigacaoEncerrada] = useState<LigacaoAtiva | null>(null);
+  const ligacaoAtivaRef = useRef<LigacaoAtiva | null>(null);
   const [eventos, setEventos] = useState<EventoLigacao[]>([]);
   const [qualificacoes] = useState<QualificacaoLigacao[]>(qualificacoesMock);
   const [callbackAberto, setCallbackAberto] = useState(false);
@@ -158,6 +162,9 @@ export function LigacoesProvider({ children }: { children: ReactNode }) {
     setStatusConexao(prev => ({ ...prev, socketConectado: realtime.conectado }));
   }, [realtime.conectado]);
 
+  // Keep ref in sync with ligacaoAtiva for use in event handlers
+  useEffect(() => { ligacaoAtivaRef.current = ligacaoAtiva; }, [ligacaoAtiva]);
+
   useEffect(() => {
     return () => { cleanupRef.current?.(); clearAllTimers(); };
   }, []);
@@ -187,6 +194,8 @@ export function LigacoesProvider({ children }: { children: ReactNode }) {
       case 'call-was-created': {
         // Captura callId (telephony_id) para poder usar no hangup
         const callId = call.telephony_id || call.id || undefined;
+        // Nova chamada chegou — limpa qualificacao pendente da anterior
+        setLigacaoEncerrada(null);
         setLigacaoAtiva({
           id: evento.id,
           callId,
@@ -195,6 +204,10 @@ export function LigacoesProvider({ children }: { children: ReactNode }) {
           aluno: null,
           status: 'discando',
         });
+        // Em massa, garantir que estamos em EM_LIGACAO (pode estar em QUALIFICACAO individual residual)
+        if (tipoLigacao === 'massa') {
+          setEstadoPagina('EM_LIGACAO');
+        }
         break;
       }
 
@@ -254,18 +267,31 @@ export function LigacoesProvider({ children }: { children: ReactNode }) {
       case 'call-was-finished':
         // Quando o desligamento vem via API (POST /agent/call/:id/hangup),
         // a 3C Plus pula call-was-hung-up e emite direto call-was-finished.
-        // Tratamos os dois igualmente. O guard evita reabrir QUALIFICACAO
-        // caso o usuario ja tenha qualificado antes do segundo evento chegar.
-        setLigacaoAtiva(prev => prev ? { ...prev, status: 'encerrada' } : prev);
-        setEstadoPagina(prev => prev === 'EM_LIGACAO' ? 'QUALIFICACAO' : prev);
-        setIlhaAtiva(false);
+        // Tratamos os dois igualmente.
+        if (tipoLigacao === 'massa') {
+          // Massa: salva chamada encerrada para qualificacao inline, limpa ativa,
+          // permanece em EM_LIGACAO aguardando proxima chamada do discador
+          const prev = ligacaoAtivaRef.current;
+          if (prev) setLigacaoEncerrada({ ...prev, status: 'encerrada' });
+          setLigacaoAtiva(null);
+          setIlhaAtiva(false);
+        } else {
+          // Individual: fluxo original — vai para tela de qualificacao
+          setLigacaoAtiva(prev => prev ? { ...prev, status: 'encerrada' } : prev);
+          setEstadoPagina(prev => prev === 'EM_LIGACAO' ? 'QUALIFICACAO' : prev);
+          setIlhaAtiva(false);
+        }
         break;
 
       case 'call-was-unanswered':
       case 'call-was-abandoned':
         setLigacaoAtiva(null);
-        // Em modo massa, o proximo chat ja vem do dialer via socket — nao precisa acionar nada.
-        setEstadoPagina('IDLE');
+        if (tipoLigacao === 'massa') {
+          // Massa: discador continua automaticamente, nao precisa qualificar
+          setLigacaoEncerrada(null);
+        } else {
+          setEstadoPagina('IDLE');
+        }
         break;
 
       default: break;
@@ -336,6 +362,7 @@ export function LigacoesProvider({ children }: { children: ReactNode }) {
     log('http', 'Parando ligacoes...');
     await real3c.logoutCampanha();
     setLigacaoAtiva(null);
+    setLigacaoEncerrada(null);
     setEstadoPagina('IDLE');
     setTipoLigacao(null);
     setConfiguracaoCampanha(null);
@@ -359,6 +386,7 @@ export function LigacoesProvider({ children }: { children: ReactNode }) {
     setSessao('OFFLINE');
     setStatusConexao({ agenteOnline: false, socketConectado: false, webrtcAtivo: false, sipRegistrado: false });
     setLigacaoAtiva(null);
+    setLigacaoEncerrada(null);
     setEventos([]);
     setEstadoPagina('IDLE');
     setTipoLigacao(null);
@@ -462,19 +490,25 @@ export function LigacoesProvider({ children }: { children: ReactNode }) {
   }
 
   function qualificarLigacao(qualificacao: QualificacaoLigacao) {
+    // Usado apenas no modo individual (tela QUALIFICACAO full-page)
     adicionarEvento({
       id: `evt-qual-${Date.now()}`, tipo: 'call-history-was-created', timestamp: new Date().toISOString(),
       qualificacao: qualificacao.nome, telefone: ligacaoAtiva?.telefone, pessoaNome: ligacaoAtiva?.aluno?.nome,
     });
     setLigacaoAtiva(null);
-    if (tipoLigacao === 'massa') {
-      // Dialer ja empurra proximo contato via socket; nao precisa acionar nada
-      setEstadoPagina('EM_LIGACAO');
-    } else {
-      setEstadoPagina('IDLE');
-      setTipoLigacao(null);
-      setTelefoneIndividual('');
-    }
+    setEstadoPagina('IDLE');
+    setTipoLigacao(null);
+    setTelefoneIndividual('');
+  }
+
+  // Qualificacao inline no modo massa — nao muda de pagina
+  function qualificarLigacaoInline(qualificacao: QualificacaoLigacao) {
+    if (!ligacaoEncerrada) return;
+    adicionarEvento({
+      id: `evt-qual-${Date.now()}`, tipo: 'call-history-was-created', timestamp: new Date().toISOString(),
+      qualificacao: qualificacao.nome, telefone: ligacaoEncerrada.telefone, pessoaNome: ligacaoEncerrada.aluno?.nome,
+    });
+    setLigacaoEncerrada(null);
   }
 
   function agendarCallback(agendamento: AgendamentoCallback) {
@@ -486,6 +520,7 @@ export function LigacoesProvider({ children }: { children: ReactNode }) {
     cleanupRef.current?.();
     cleanupRef.current = null;
     setLigacaoAtiva(null);
+    setLigacaoEncerrada(null);
     setEstadoPagina('IDLE');
     setTipoLigacao(null);
     setConfiguracaoCampanha(null);
@@ -536,11 +571,11 @@ export function LigacoesProvider({ children }: { children: ReactNode }) {
     <LigacoesContext.Provider value={{
       sessao, etapaConectando, statusConexao,
       estadoPagina, tipoLigacao, telefoneIndividual, configuracaoCampanha,
-      ligacaoAtiva, eventos, qualificacoes, modoAtivo,
+      ligacaoAtiva, ligacaoEncerrada, eventos, qualificacoes, modoAtivo,
       callbackAberto, negociacaoAberta, ilhaAtiva, debugLogs, webrtcUrl,
       irOnline, irOffline, desativarRamal, confirmarAudio,
       abrirSeletorTipo, selecionarTipo, confirmarCampanha, voltarParaSelecao,
-      setTelefoneIndividual, qualificarLigacao, agendarCallback,
+      setTelefoneIndividual, qualificarLigacao, qualificarLigacaoInline, agendarCallback,
       cancelarChamada, desligarChamada, minimizarParaIlha, voltarDaIlha,
       setCallbackAberto, setNegociacaoAberta, iniciarLigacaoComTelefone,
       limparDebugLogs,

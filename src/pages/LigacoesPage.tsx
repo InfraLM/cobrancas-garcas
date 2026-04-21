@@ -108,12 +108,15 @@ export default function LigacoesPage() {
       {lig.sessao === 'ONLINE' && lig.estadoPagina === 'EM_LIGACAO' && (
         <PainelLigacaoAtiva
           ligacao={lig.ligacaoAtiva}
+          ligacaoEncerrada={lig.ligacaoEncerrada}
+          qualificacoes={lig.qualificacoes}
           eventos={lig.eventos}
           onCriarNegociacao={() => lig.setNegociacaoAberta(true)}
           onAgendarCallback={() => lig.setCallbackAberto(true)}
           onDesligarChamada={lig.desligarChamada}
           onDesativarWebRTC={lig.irOffline}
           onVerMaisAluno={handleVerMaisAluno}
+          onQualificarInline={lig.qualificarLigacaoInline}
         />
       )}
 
