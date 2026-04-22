@@ -88,3 +88,11 @@ export const OPERADOR_LABELS: Record<Operador, string> = {
   em: 'Em',
   nao_em: 'Nao em',
 };
+
+export function camposPorCategoria(): Record<string, CampoSegmentacao[]> {
+  return CAMPOS_SEGMENTACAO.reduce<Record<string, CampoSegmentacao[]>>((acc, campo) => {
+    if (!acc[campo.categoria]) acc[campo.categoria] = [];
+    acc[campo.categoria].push(campo);
+    return acc;
+  }, {});
+}

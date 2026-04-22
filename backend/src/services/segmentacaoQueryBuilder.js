@@ -197,13 +197,20 @@ export function buildSegmentacaoQuery(condicoes, opts = {}) {
 
   // aluno_resumo nao e CTE, e JOIN direto — nao adicionar como CTE
 
+  const camposIgnorados = [];
   for (const cond of condicoes) {
     const mapping = CAMPO_MAP[cond.campo];
-    if (!mapping) continue;
+    if (!mapping) {
+      camposIgnorados.push(cond.campo || '(vazio)');
+      continue;
+    }
     if (mapping.join) {
       needsCtes.add(mapping.join);
       needsJoins.add(mapping.join);
     }
+  }
+  if (camposIgnorados.length > 0) {
+    console.warn('[segmentacaoQueryBuilder] Campos ignorados (nao existem em CAMPO_MAP):', camposIgnorados);
   }
 
   // Montar CTEs

@@ -1,5 +1,5 @@
 import type { Condicao, Operador } from '../../types/segmentacao';
-import { CAMPOS_SEGMENTACAO, camposPorCategoria, operadorLabel } from '../../types/segmentacao';
+import { CAMPOS_SEGMENTACAO, OPERADOR_LABELS, camposPorCategoria } from '../../types/segmentacao';
 import { X } from 'lucide-react';
 
 interface CondicaoLinhaProps {
@@ -9,17 +9,17 @@ interface CondicaoLinhaProps {
 }
 
 export default function CondicaoLinha({ condicao, onChange, onRemover }: CondicaoLinhaProps) {
-  const campo = CAMPOS_SEGMENTACAO.find(c => c.id === condicao.campoId);
+  const campo = CAMPOS_SEGMENTACAO.find(c => c.id === condicao.campo);
   const grupos = camposPorCategoria();
 
-  function handleCampoChange(campoId: string) {
-    const novoCampo = CAMPOS_SEGMENTACAO.find(c => c.id === campoId);
+  function handleCampoChange(novoCampoId: string) {
+    const novoCampo = CAMPOS_SEGMENTACAO.find(c => c.id === novoCampoId);
     onChange({
       ...condicao,
-      campoId,
+      campo: novoCampoId,
       operador: novoCampo?.operadores[0] || 'igual',
       valor: '',
-      valorFim: undefined,
+      valor2: undefined,
     });
   }
 
@@ -27,7 +27,7 @@ export default function CondicaoLinha({ condicao, onChange, onRemover }: Condica
     <div className="flex items-center gap-2">
       {/* Campo */}
       <select
-        value={condicao.campoId}
+        value={condicao.campo}
         onChange={(e) => handleCampoChange(e.target.value)}
         className="h-9 px-3 rounded-lg bg-white border border-gray-100 text-[0.8125rem] text-gray-900 outline-none focus:border-gray-300 transition-colors flex-1 min-w-0 appearance-none cursor-pointer"
       >
@@ -49,7 +49,7 @@ export default function CondicaoLinha({ condicao, onChange, onRemover }: Condica
           className="h-9 px-3 rounded-lg bg-white border border-gray-100 text-[0.8125rem] text-gray-900 outline-none focus:border-gray-300 transition-colors w-[140px] appearance-none cursor-pointer"
         >
           {campo.operadores.map((op) => (
-            <option key={op} value={op}>{operadorLabel[op]}</option>
+            <option key={op} value={op}>{OPERADOR_LABELS[op]}</option>
           ))}
         </select>
       )}
@@ -68,7 +68,7 @@ export default function CondicaoLinha({ condicao, onChange, onRemover }: Condica
 
       {campo && campo.tipo === 'lista' && (
         <select
-          value={condicao.valor}
+          value={String(condicao.valor ?? '')}
           onChange={(e) => onChange({ ...condicao, valor: e.target.value })}
           className="h-9 px-3 rounded-lg bg-white border border-gray-100 text-[0.8125rem] text-gray-900 outline-none focus:border-gray-300 transition-colors flex-1 min-w-0 appearance-none cursor-pointer"
         >
@@ -83,7 +83,7 @@ export default function CondicaoLinha({ condicao, onChange, onRemover }: Condica
         <div className="flex items-center gap-1.5">
           <input
             type="number"
-            value={condicao.valor}
+            value={String(condicao.valor ?? '')}
             onChange={(e) => onChange({ ...condicao, valor: e.target.value })}
             placeholder="Valor"
             className="h-9 px-3 rounded-lg bg-white border border-gray-100 text-[0.8125rem] text-gray-900 outline-none focus:border-gray-300 transition-colors w-[100px]"
@@ -93,8 +93,8 @@ export default function CondicaoLinha({ condicao, onChange, onRemover }: Condica
               <span className="text-[0.75rem] text-gray-400">e</span>
               <input
                 type="number"
-                value={condicao.valorFim || ''}
-                onChange={(e) => onChange({ ...condicao, valorFim: e.target.value })}
+                value={String(condicao.valor2 ?? '')}
+                onChange={(e) => onChange({ ...condicao, valor2: e.target.value })}
                 placeholder="Até"
                 className="h-9 px-3 rounded-lg bg-white border border-gray-100 text-[0.8125rem] text-gray-900 outline-none focus:border-gray-300 transition-colors w-[100px]"
               />
