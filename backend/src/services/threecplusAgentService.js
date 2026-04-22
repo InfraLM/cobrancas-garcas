@@ -243,7 +243,7 @@ export async function criarAgente3CPlus(user) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        email: user.email,
+        user: user.email,
         password: senha,
         company_domain: COMPANY_DOMAIN,
       }),
@@ -269,6 +269,7 @@ export async function autenticarAgente3CPlus(user) {
   const senha = gerarSenhaAleatoria();
 
   const formData = new URLSearchParams();
+  formData.append('name', user.nome);
   formData.append('password', senha);
   formData.append('password_confirmation', senha);
 
@@ -282,7 +283,7 @@ export async function autenticarAgente3CPlus(user) {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      email: user.email,
+      user: user.email,
       password: senha,
       company_domain: COMPANY_DOMAIN,
     }),
