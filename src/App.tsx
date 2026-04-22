@@ -19,6 +19,7 @@ import OcorrenciasPage from './pages/OcorrenciasPage';
 import RepositorioPage from './pages/RepositorioPage';
 import ConfiguracoesPage from './pages/ConfiguracoesPage';
 import UsuariosPage from './pages/UsuariosPage';
+import TemplatesWhatsappPage from './pages/TemplatesWhatsappPage';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, loading } = useAuth();
@@ -65,6 +66,7 @@ function App() {
             <Route path="/repositorio" element={<RepositorioPage />} />
             <Route path="/configuracoes" element={<ConfiguracoesPage />} />
             <Route path="/configuracoes/usuarios" element={<UsuariosPage />} />
+            <Route path="/configuracoes/templates-whatsapp" element={<TemplatesWhatsappPage />} />
             <Route path="*" element={<Navigate to="/atendimento/conversas" replace />} />
           </Route>
         </Routes>

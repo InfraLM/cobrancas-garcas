@@ -15,6 +15,7 @@ import ficouFacilRoutes from './ficouFacilRoutes.js';
 import dashboardRoutes from './dashboardRoutes.js';
 import titulosRoutes from './titulosRoutes.js';
 import webhooksRoutes from './webhooksRoutes.js';
+import templatesWhatsappRoutes from './templatesWhatsappRoutes.js';
 
 const router = Router();
 
@@ -37,5 +38,6 @@ router.use('/titulos', titulosRoutes);
 router.use('/ficou-facil', ficouFacilRoutes);
 router.use('/dashboard', dashboardRoutes);
 router.use('/webhooks', webhooksRoutes);
+router.use('/templates-whatsapp', templatesWhatsappRoutes);
 
 export default router;

@@ -1,19 +1,30 @@
 import { useState, useRef, type KeyboardEvent } from 'react';
 import { Send, Paperclip, Mic, Lock, Image, FileText, Square, X } from 'lucide-react';
+import BotaoTemplates from './BotaoTemplates';
+import ModalSelecionarTemplate from './ModalSelecionarTemplate';
+import type { DadosResolucao } from '../../utils/resolverTemplate';
 
 interface InputMensagemProps {
   onEnviar: (texto: string, interno: boolean) => void;
   onEnviarArquivo?: (file: File, tipo: 'image' | 'document') => void;
   onEnviarAudio?: (blob: Blob) => void;
   desabilitado?: boolean;
+  dadosTemplate?: DadosResolucao;
 }
 
-export default function InputMensagem({ onEnviar, onEnviarArquivo, onEnviarAudio, desabilitado }: InputMensagemProps) {
+export default function InputMensagem({
+  onEnviar,
+  onEnviarArquivo,
+  onEnviarAudio,
+  desabilitado,
+  dadosTemplate,
+}: InputMensagemProps) {
   const [texto, setTexto] = useState('');
   const [interno, setInterno] = useState(false);
   const [menuAnexo, setMenuAnexo] = useState(false);
   const [gravando, setGravando] = useState(false);
   const [tempoGravacao, setTempoGravacao] = useState(0);
+  const [modalTemplateAberto, setModalTemplateAberto] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const docInputRef = useRef<HTMLInputElement>(null);
@@ -127,6 +138,19 @@ export default function InputMensagem({ onEnviar, onEnviarArquivo, onEnviarAudio
     return `${m}:${sec.toString().padStart(2, '0')}`;
   }
 
+  function handleInserirTemplate(textoResolvido: string) {
+    setTexto(textoResolvido);
+    // Ajusta altura do textarea para mostrar o conteudo inserido
+    requestAnimationFrame(() => {
+      const el = textareaRef.current;
+      if (el) {
+        el.style.height = 'auto';
+        el.style.height = Math.min(el.scrollHeight, 120) + 'px';
+        el.focus();
+      }
+    });
+  }
+
   // ─── Recording mode ───────────────────────────────────
   if (gravando) {
     return (
@@ -219,6 +243,14 @@ export default function InputMensagem({ onEnviar, onEnviarArquivo, onEnviarAudio
           )}
         </div>
 
+        {/* Template button */}
+        {dadosTemplate && (
+          <BotaoTemplates
+            onClick={() => setModalTemplateAberto(true)}
+            desabilitado={desabilitado}
+          />
+        )}
+
         {/* Text input */}
         <div className="flex-1 relative">
           <textarea
@@ -277,6 +309,16 @@ export default function InputMensagem({ onEnviar, onEnviarArquivo, onEnviarAudio
           <Send size={16} />
         </button>
       </div>
+
+      {/* Modal de templates */}
+      {dadosTemplate && (
+        <ModalSelecionarTemplate
+          aberto={modalTemplateAberto}
+          onFechar={() => setModalTemplateAberto(false)}
+          onInserir={handleInserirTemplate}
+          dados={dadosTemplate}
+        />
+      )}
     </div>
   );
 }

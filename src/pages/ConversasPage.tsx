@@ -428,6 +428,11 @@ export default function ConversasPage() {
               onEnviarArquivo={handleEnviarArquivo}
               onEnviarAudio={handleEnviarAudio}
               desabilitado={conversaAtiva.status === 'ENCERRADA'}
+              dadosTemplate={{
+                aluno: alunoVinculado,
+                conversa: conversaAtiva,
+                agente: user,
+              }}
             />
           </>
         ) : (

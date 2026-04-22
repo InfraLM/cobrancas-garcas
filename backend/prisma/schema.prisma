@@ -72,6 +72,22 @@ model RegraSegmentacao {
   @@map("regra_segmentacao")
 }
 
+model TemplateWhatsapp {
+  id            Int      @id @default(autoincrement())
+  nome          String
+  categoria     String
+  conteudo      String   @db.Text
+  icone         String?
+  ativo         Boolean  @default(true)
+  criadoPor     Int
+  criadoPorNome String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([categoria, ativo])
+  @@map("template_whatsapp")
+}
+
 // =============================================
 // CLONE DAS TABELAS DO SEI
 // PKs sem autoincrement (IDs vem da API do SEI)

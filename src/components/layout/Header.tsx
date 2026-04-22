@@ -17,6 +17,7 @@ const routeMap: Record<string, { titulo: string; breadcrumb?: string }> = {
   '/repositorio':            { titulo: 'Repositório' },
   '/configuracoes':          { titulo: 'Configurações' },
   '/configuracoes/usuarios': { titulo: 'Usuários', breadcrumb: 'Configurações' },
+  '/configuracoes/templates-whatsapp': { titulo: 'Templates WhatsApp', breadcrumb: 'Configurações' },
 };
 
 export default function Header() {

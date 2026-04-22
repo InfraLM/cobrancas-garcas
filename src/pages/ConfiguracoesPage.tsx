@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom';
-import { Users, UserCircle, Plug, ListChecks, FileText, type LucideIcon } from 'lucide-react';
+import { Users, UserCircle, Plug, ListChecks, FileText, MessageSquareQuote, type LucideIcon } from 'lucide-react';
 
 interface ConfigCard {
   label: string;
@@ -27,6 +27,7 @@ const sections: ConfigSection[] = [
     titulo: 'Atendimento',
     cards: [
       { label: 'Qualificações', descricao: 'Critérios de tabulação das ligações', icone: ListChecks, path: '/configuracoes/qualificacoes', ativo: false },
+      { label: 'Templates WhatsApp', descricao: 'Mensagens rápidas com variáveis', icone: MessageSquareQuote, path: '/configuracoes/templates-whatsapp', ativo: true },
       { label: 'Templates', descricao: 'Modelos de documentos e termos', icone: FileText, path: '/configuracoes/templates', ativo: false },
     ],
   },
