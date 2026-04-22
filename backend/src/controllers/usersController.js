@@ -1,13 +1,26 @@
 import { prisma } from '../config/database.js';
 import { criarAgente3CPlus, autenticarAgente3CPlus, buscarAgenteExistente, listarInstancias, listarEquipes, listarCampanhas, listarCampanhasComVinculo, listarEquipesComVinculo, adicionarAgenteCampanha, removerAgenteCampanha, atualizarEquipesUsuario } from '../services/threecplusAgentService.js';
 
+/**
+ * Mascara o token 3C Plus no response — substitui por '***' quando existe,
+ * null quando nao. A UI usa esse sinal para saber se o usuario esta "Integrado"
+ * sem que o token real trafegue para o cliente.
+ */
+function maskToken(user) {
+  if (!user) return user;
+  return {
+    ...user,
+    threecplusAgentToken: user.threecplusAgentToken ? '***' : null,
+  };
+}
+
 export async function listar(req, res, next) {
   try {
     const users = await prisma.user.findMany({
       orderBy: { criadoEm: 'desc' },
-      omit: { threecplusAgentToken: true, googleId: true },
+      omit: { googleId: true },
     });
-    res.json(users);
+    res.json(users.map(maskToken));
   } catch (error) {
     next(error);
   }
@@ -19,7 +32,7 @@ export async function obter(req, res, next) {
       where: { id: Number(req.params.id) },
     });
     if (!user) return res.status(404).json({ error: 'Usuário não encontrado' });
-    res.json(user);
+    res.json(maskToken(user));
   } catch (error) {
     next(error);
   }
@@ -86,7 +99,7 @@ export async function criar(req, res, next) {
       },
     });
 
-    res.status(201).json(user);
+    res.status(201).json(maskToken(user));
   } catch (error) {
     next(error);
   }
@@ -182,7 +195,7 @@ export async function atualizar(req, res, next) {
       }
     }
 
-    res.json(user);
+    res.json(maskToken(user));
   } catch (error) {
     next(error);
   }
@@ -224,7 +237,7 @@ export async function criarAgente(req, res, next) {
 
     console.log(`[Users] Agente 3C Plus criado para ${user.nome}: userId=${resultado.userId}, agentId=${resultado.agentId}`);
 
-    res.json(updated);
+    res.json(maskToken(updated));
   } catch (error) {
     next(error);
   }
@@ -249,7 +262,7 @@ export async function coletarToken(req, res, next) {
 
     console.log(`[Users] Token 3C Plus coletado para ${user.nome}`);
 
-    res.json(updated);
+    res.json(maskToken(updated));
   } catch (error) {
     next(error);
   }

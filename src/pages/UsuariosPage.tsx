@@ -88,8 +88,9 @@ export default function UsuariosPage() {
     setMenuAberto(null);
     setActionLoading(user.id);
     try {
-      await coletarToken3CPlus(user.id);
-      await carregarUsuarios();
+      const atualizado = await coletarToken3CPlus(user.id);
+      // Atualiza state local imediatamente com o user retornado (ja vem com threecplusAgentToken='***')
+      setUsuarios(prev => prev.map(u => u.id === user.id ? atualizado : u));
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Erro ao coletar token');
     } finally {
