@@ -57,9 +57,12 @@ app.get('/api/health', (req, res) => {
 
 // Qualquer acesso que nao seja /api/* redireciona para o frontend.
 // Evita expor a API para quem tentar acessar o dominio do backend no browser.
+// Usa app.use() em vez de app.get('*') porque Express 5 removeu suporte a
+// pattern '*' literal no path-to-regexp e isso crasha a startup.
 const FRONTEND_URL = process.env.FRONTEND_URL || 'https://cobranca.lmedu.com.br';
-app.get('*', (req, res, next) => {
+app.use((req, res, next) => {
   if (req.path.startsWith('/api/')) return next();
+  if (req.method !== 'GET' && req.method !== 'HEAD') return next();
   res.redirect(302, FRONTEND_URL);
 });
 
