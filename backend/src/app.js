@@ -55,6 +55,14 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
+// Qualquer acesso que nao seja /api/* redireciona para o frontend.
+// Evita expor a API para quem tentar acessar o dominio do backend no browser.
+const FRONTEND_URL = process.env.FRONTEND_URL || 'https://cobranca.lmedu.com.br';
+app.get('*', (req, res, next) => {
+  if (req.path.startsWith('/api/')) return next();
+  res.redirect(302, FRONTEND_URL);
+});
+
 // Error handler global (deve ser o ultimo middleware)
 app.use(errorHandler);
 

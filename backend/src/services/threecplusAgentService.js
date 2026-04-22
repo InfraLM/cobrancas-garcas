@@ -43,7 +43,23 @@ async function fetchJson(url, options = {}) {
 
   if (!res.ok) {
     const text = await res.text();
-    const preview = text.slice(0, 120);
+    // Tenta extrair mensagem estruturada de erro da 3C Plus (title + errors detalhados)
+    try {
+      const json = JSON.parse(text);
+      if (json.errors && typeof json.errors === 'object') {
+        const campos = Object.entries(json.errors)
+          .map(([campo, msgs]) => `${campo}: ${Array.isArray(msgs) ? msgs.join('; ') : msgs}`)
+          .join(' | ');
+        throw new Error(`3C Plus ${res.status} — ${json.title || 'Erro'}: ${campos}`);
+      }
+      if (json.title || json.detail) {
+        throw new Error(`3C Plus ${res.status}: ${json.title || ''} ${json.detail || ''}`.trim());
+      }
+    } catch (parseErr) {
+      if (parseErr.message?.startsWith('3C Plus')) throw parseErr;
+      // nao era JSON — cai pro fallback abaixo
+    }
+    const preview = text.slice(0, 500);
     throw new Error(`3C Plus ${res.status}: ${preview}`);
   }
 
@@ -55,13 +71,54 @@ async function fetchJson(url, options = {}) {
   return JSON.parse(text);
 }
 
+/**
+ * Gera senha que atende aos criterios da 3C Plus:
+ * - Pelo menos uma maiuscula
+ * - Pelo menos um numero
+ * - Pelo menos um caractere especial
+ * - Sem repeticoes ou sequencias iguais (ex: aaa, 111, abc, ABC, 123)
+ */
 function gerarSenhaAleatoria() {
-  const chars = 'abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789!@#$%';
-  let senha = '';
-  for (let i = 0; i < 16; i++) {
-    senha += chars[Math.floor(Math.random() * chars.length)];
+  const lower = 'abcdefghijkmnpqrstuvwxyz';
+  const upper = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
+  const digits = '23456789';
+  const specials = '!@#$%&*';
+
+  function pick(set) { return set[Math.floor(Math.random() * set.length)]; }
+
+  function temSequenciaOuRepeticao(s) {
+    for (let i = 0; i < s.length - 2; i++) {
+      const a = s.charCodeAt(i), b = s.charCodeAt(i + 1), c = s.charCodeAt(i + 2);
+      // Repeticao (aaa, 111)
+      if (a === b && b === c) return true;
+      // Sequencia crescente (abc, 123)
+      if (b === a + 1 && c === b + 1) return true;
+      // Sequencia decrescente (cba, 321)
+      if (b === a - 1 && c === b - 1) return true;
+    }
+    return false;
   }
-  return senha;
+
+  for (let tentativa = 0; tentativa < 50; tentativa++) {
+    // Garantir pelo menos 1 de cada categoria
+    const obrigatorios = [pick(lower), pick(upper), pick(digits), pick(specials)];
+    const extras = [];
+    const todos = lower + upper + digits + specials;
+    for (let i = 0; i < 12; i++) extras.push(pick(todos));
+
+    // Embaralhar
+    const arr = [...obrigatorios, ...extras];
+    for (let i = arr.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [arr[i], arr[j]] = [arr[j], arr[i]];
+    }
+
+    const senha = arr.join('');
+    if (!temSequenciaOuRepeticao(senha)) return senha;
+  }
+
+  // Fallback improvavel
+  return `Xx${Date.now().toString(36)}!9`;
 }
 
 /**
@@ -103,18 +160,53 @@ export async function buscarAgenteExistente(email) {
 }
 
 /**
+ * Descobre o proximo extension_number livre, somando 1 ao maior existente.
+ * Fallback: 1000.
+ */
+async function proximoRamalLivre() {
+  try {
+    const data = await fetchJson(discadorUrl('/users'));
+    const users = data.data || data;
+    if (!Array.isArray(users)) return 1000;
+    const ramais = users
+      .map(u => Number(u.extension?.extension_number))
+      .filter(n => Number.isFinite(n) && n > 0);
+    if (ramais.length === 0) return 1000;
+    return Math.max(...ramais) + 1;
+  } catch {
+    return 1000;
+  }
+}
+
+/**
  * Cria um agente/usuario na 3C Plus via POST /users
  * Depois habilita o WebPhone (WebRTC)
  * Retorna { userId, agentId, extension, apiToken }
  */
 export async function criarAgente3CPlus(user) {
+  // Idempotencia: se ja existe agente com esse email na 3C Plus, vincula em vez de criar
+  const existente = await buscarAgenteExistente(user.email);
+  if (existente) {
+    console.log(`[3CPlus] Agente ja existe para ${user.email} — reusando userId=${existente.userId}`);
+    return {
+      userId: existente.userId,
+      agentId: existente.agentId,
+      extension: existente.extension,
+      apiToken: existente.apiToken,
+    };
+  }
+
   const senha = gerarSenhaAleatoria();
+  const ramal = await proximoRamalLivre();
 
   const formData = new URLSearchParams();
   formData.append('name', user.nome);
   formData.append('email', user.email);
   formData.append('password', senha);
   formData.append('password_confirmation', senha);
+  formData.append('role', 'agent');
+  formData.append('timezone', 'America/Sao_Paulo');
+  formData.append('extension_number', String(ramal));
 
   const createData = await fetchJson(discadorUrl('/users'), {
     method: 'POST',
