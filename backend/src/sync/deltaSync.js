@@ -185,18 +185,22 @@ async function syncTableDelta({ model, serviceId, pk }, dataUltimaSync) {
   const startTime = Date.now();
 
   console.log(`  [${model}] Buscando delta desde ${dataUltimaSync}...`);
-  const records = await fetchDelta(serviceId, dataUltimaSync);
+  let records = await fetchDelta(serviceId, dataUltimaSync);
 
   if (!Array.isArray(records) || records.length === 0) {
     const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
     console.log(`  [${model}] Nenhum registro alterado (${elapsed}s)`);
+    records = null;
     return { model, count: 0, elapsed };
   }
 
-  console.log(`  [${model}] ${records.length} registros alterados. Sincronizando...`);
+  const totalRecords = records.length;
+  console.log(`  [${model}] ${totalRecords} registros alterados. Sincronizando...`);
 
   const fieldTypes = getFieldTypes(model);
-  const sanitized = records.map(r => sanitizeRecord(mapearCampos(r, model), fieldTypes));
+  let sanitized = records.map(r => sanitizeRecord(mapearCampos(r, model), fieldTypes));
+  // Libera o JSON original — já temos a versão sanitizada
+  records = null;
 
   // Bulk upsert: deletar existentes + inserir tudo de uma vez
   const pks = sanitized.map(r => r[pk]).filter(v => v !== null && v !== undefined);
@@ -214,6 +218,8 @@ async function syncTableDelta({ model, serviceId, pk }, dataUltimaSync) {
     await prisma[model].createMany({ data: sanitized });
   }
   const upserted = sanitized.length;
+  sanitized = null;
+  pks.length = 0;
 
   const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
   console.log(`  [${model}] ${upserted} registros upserted (${elapsed}s)`);
@@ -244,26 +250,31 @@ export async function runDeltaSync(dataOverride) {
 
   const dataUltimaSync = dataOverride || calcularDataDMenos1();
 
-  console.log(`[DeltaSync] Inicio — delta desde ${dataUltimaSync} (${DELTA_TABLES.length} tabelas)`);
+  const memAntes = process.memoryUsage().heapUsed / 1024 / 1024;
+  console.log(`[DeltaSync] Inicio — delta desde ${dataUltimaSync} (${DELTA_TABLES.length} tabelas) | heap ${memAntes.toFixed(0)} MB`);
 
-  const results = await Promise.allSettled(
-    DELTA_TABLES.map(config => syncTableDelta(config, dataUltimaSync))
-  );
-
+  // Processa tabelas SEQUENCIALMENTE — evita carregar todas na memoria ao mesmo tempo.
+  // Com contareceber (~50k registros) + outras grandes rodando em paralelo o heap
+  // chegava a 2GB. Sequencial mantem o pico controlado (~1 tabela grande por vez).
   let totalRecords = 0;
   const errors = [];
 
-  results.forEach((result, i) => {
-    if (result.status === 'fulfilled') {
-      totalRecords += result.value.count;
-    } else {
-      const msg = result.reason?.message || String(result.reason);
-      errors.push({ table: DELTA_TABLES[i].model, error: msg });
-      console.error(`  [${DELTA_TABLES[i].model}] ERRO: ${msg}\n`);
+  for (let i = 0; i < DELTA_TABLES.length; i++) {
+    const config = DELTA_TABLES[i];
+    try {
+      const result = await syncTableDelta(config, dataUltimaSync);
+      totalRecords += result.count;
+    } catch (err) {
+      const msg = err?.message || String(err);
+      errors.push({ table: config.model, error: msg });
+      console.error(`  [${config.model}] ERRO: ${msg}\n`);
     }
-  });
+    // Sugere garbage collection entre tabelas (so roda se Node foi iniciado com --expose-gc)
+    if (global.gc) global.gc();
+  }
 
-  console.log(`[DeltaSync] Concluido — ${totalRecords} registros upserted, ${errors.length} erros`);
+  const memDepois = process.memoryUsage().heapUsed / 1024 / 1024;
+  console.log(`[DeltaSync] Concluido — ${totalRecords} registros upserted, ${errors.length} erros | heap ${memDepois.toFixed(0)} MB (delta +${(memDepois - memAntes).toFixed(0)} MB)`);
 
   // aluno_resumo agora e sincronizado diretamente do WebService SEI (seiviewalunoresumo)
   // Nao precisa mais de refresh local — o delta sync ja trata via DELTA_TABLES

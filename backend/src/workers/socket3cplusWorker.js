@@ -107,7 +107,10 @@ export function startSocketWorker() {
   if (heartbeatInterval) clearInterval(heartbeatInterval);
   heartbeatInterval = setInterval(() => {
     const status = socket?.connected ? '✅ conectado' : '⚠️  desconectado';
-    console.log(`[Worker] 💓 Heartbeat ${status} | ${new Date().toISOString()}`);
+    const mem = process.memoryUsage();
+    const heapMB = (mem.heapUsed / 1024 / 1024).toFixed(0);
+    const rssMB = (mem.rss / 1024 / 1024).toFixed(0);
+    console.log(`[Worker] 💓 Heartbeat ${status} | heap ${heapMB} MB | rss ${rssMB} MB | ${new Date().toISOString()}`);
   }, 60000);
 }
 
