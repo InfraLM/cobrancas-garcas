@@ -3,6 +3,7 @@ import { readFileSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import puppeteer from 'puppeteer-core';
+import chromium from '@sparticuz/chromium';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const TEMPLATE_PATH = join(__dirname, '..', 'templates', 'termoNegociacao.html');
@@ -198,14 +199,22 @@ export function gerarHtmlTermo(acordo) {
 export async function gerarPdfTermo(acordo) {
   const html = gerarHtmlTermo(acordo);
 
+  const isProduction = process.env.NODE_ENV === 'production';
+
   const browser = await puppeteer.launch({
     headless: true,
-    executablePath: process.env.CHROME_PATH || (
-      process.platform === 'win32' ? 'C:/Program Files/Google/Chrome/Application/chrome.exe'
-      : process.platform === 'darwin' ? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
-      : '/usr/bin/google-chrome'
-    ),
-    args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-gpu'],
+    // Producao (Railway/container Linux): usa o Chromium empacotado via @sparticuz/chromium.
+    // Dev (Windows/macOS/Linux com Chrome system): usa o binario do sistema via CHROME_PATH.
+    executablePath: isProduction
+      ? await chromium.executablePath()
+      : process.env.CHROME_PATH || (
+        process.platform === 'win32' ? 'C:/Program Files/Google/Chrome/Application/chrome.exe'
+        : process.platform === 'darwin' ? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
+        : '/usr/bin/google-chrome'
+      ),
+    args: isProduction
+      ? chromium.args
+      : ['--no-sandbox', '--disable-setuid-sandbox', '--disable-gpu'],
   });
 
   try {

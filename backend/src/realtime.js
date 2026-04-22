@@ -15,9 +15,20 @@ import { Server as IoServer } from 'socket.io';
 let io = null;
 
 export function setupRealtime(httpServer) {
+  const isDev = process.env.NODE_ENV === 'development';
+  const ALLOWED_ORIGINS = [
+    ...(isDev ? ['http://localhost:5173', 'http://localhost:3000'] : []),
+    'https://cobranca.lmedu.com.br',
+    process.env.FRONTEND_URL,
+  ].filter(Boolean);
+
   io = new IoServer(httpServer, {
     path: '/ws',
-    cors: { origin: '*', methods: ['GET', 'POST'] },
+    cors: {
+      origin: ALLOWED_ORIGINS,
+      methods: ['GET', 'POST'],
+      credentials: true,
+    },
     transports: ['websocket', 'polling'],
   });
 
