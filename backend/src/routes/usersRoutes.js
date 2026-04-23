@@ -6,6 +6,7 @@ import {
   getInstanciasWhatsapp, getGruposCanais, getCampanhas,
   getCampanhasVinculadas, syncCampanhas,
   getEquipesVinculadas, syncEquipes,
+  listarInstanciasUser, adicionarInstancia, editarInstancia, removerInstancia,
 } from '../controllers/usersController.js';
 
 const router = Router();
@@ -26,5 +27,11 @@ router.post('/:id/equipes/sync', requireAuth, syncEquipes);
 router.post('/:id/criar-agente-3cplus', requireAuth, criarAgente);
 router.post('/:id/coletar-token-3cplus', requireAuth, coletarToken);
 router.post('/:id/vincular-agente-3cplus', requireAuth, vincularAgente);
+
+// Instancias WhatsApp do user (N por user, pode compartilhar)
+router.get('/:id/instancias', requireAuth, listarInstanciasUser);
+router.post('/:id/instancias', requireAuth, adicionarInstancia);
+router.put('/:id/instancias/:instanciaDbId', requireAuth, editarInstancia);
+router.delete('/:id/instancias/:instanciaDbId', requireAuth, removerInstancia);
 
 export default router;

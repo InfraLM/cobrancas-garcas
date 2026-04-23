@@ -447,3 +447,123 @@ export async function syncEquipes(req, res, next) {
     next(error);
   }
 }
+
+// =============================================================
+// Instancias WhatsApp por user (N por user, pode compartilhar)
+// =============================================================
+
+function validarPayloadInstancia({ instanciaId, apelido, telefone }, parcial = false) {
+  if (!parcial || instanciaId !== undefined) {
+    if (typeof instanciaId !== 'string' || instanciaId.trim().length < 3 || instanciaId.length > 100) {
+      return 'instanciaId invalido (3-100 chars)';
+    }
+  }
+  if (!parcial || apelido !== undefined) {
+    if (typeof apelido !== 'string' || apelido.trim().length < 1 || apelido.length > 80) {
+      return 'apelido invalido (1-80 chars)';
+    }
+  }
+  if (telefone !== undefined && telefone !== null && telefone !== '') {
+    if (typeof telefone !== 'string' || telefone.length > 30) {
+      return 'telefone invalido';
+    }
+  }
+  return null;
+}
+
+export async function listarInstanciasUser(req, res, next) {
+  try {
+    const userId = Number(req.params.id);
+    if (Number.isNaN(userId)) return res.status(400).json({ error: 'ID invalido' });
+
+    const instancias = await prisma.instanciaWhatsappUser.findMany({
+      where: { userId },
+      orderBy: { criadoEm: 'asc' },
+    });
+    res.json(instancias);
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function adicionarInstancia(req, res, next) {
+  try {
+    const userId = Number(req.params.id);
+    if (Number.isNaN(userId)) return res.status(400).json({ error: 'ID invalido' });
+
+    const erro = validarPayloadInstancia(req.body);
+    if (erro) return res.status(400).json({ error: erro });
+
+    const user = await prisma.user.findUnique({ where: { id: userId }, select: { id: true } });
+    if (!user) return res.status(404).json({ error: 'Usuario nao encontrado' });
+
+    const nova = await prisma.instanciaWhatsappUser.create({
+      data: {
+        userId,
+        instanciaId: req.body.instanciaId.trim(),
+        apelido: req.body.apelido.trim(),
+        telefone: req.body.telefone ? String(req.body.telefone).trim() : null,
+      },
+    });
+
+    invalidarWhitelist();
+    res.status(201).json(nova);
+  } catch (error) {
+    if (error.code === 'P2002') {
+      return res.status(409).json({ error: 'Esta instancia ja esta vinculada a este usuario' });
+    }
+    next(error);
+  }
+}
+
+export async function editarInstancia(req, res, next) {
+  try {
+    const userId = Number(req.params.id);
+    const instanciaDbId = req.params.instanciaDbId;
+
+    const erro = validarPayloadInstancia(req.body, true);
+    if (erro) return res.status(400).json({ error: erro });
+
+    const existente = await prisma.instanciaWhatsappUser.findUnique({ where: { id: instanciaDbId } });
+    if (!existente || existente.userId !== userId) {
+      return res.status(404).json({ error: 'Instancia nao encontrada para esse usuario' });
+    }
+
+    const atualizada = await prisma.instanciaWhatsappUser.update({
+      where: { id: instanciaDbId },
+      data: {
+        ...(req.body.instanciaId !== undefined && { instanciaId: req.body.instanciaId.trim() }),
+        ...(req.body.apelido !== undefined && { apelido: req.body.apelido.trim() }),
+        ...(req.body.telefone !== undefined && {
+          telefone: req.body.telefone ? String(req.body.telefone).trim() : null,
+        }),
+      },
+    });
+
+    invalidarWhitelist();
+    res.json(atualizada);
+  } catch (error) {
+    if (error.code === 'P2002') {
+      return res.status(409).json({ error: 'Este instanciaId ja esta vinculado a este usuario' });
+    }
+    next(error);
+  }
+}
+
+export async function removerInstancia(req, res, next) {
+  try {
+    const userId = Number(req.params.id);
+    const instanciaDbId = req.params.instanciaDbId;
+
+    const existente = await prisma.instanciaWhatsappUser.findUnique({ where: { id: instanciaDbId } });
+    if (!existente || existente.userId !== userId) {
+      return res.status(404).json({ error: 'Instancia nao encontrada para esse usuario' });
+    }
+
+    await prisma.instanciaWhatsappUser.delete({ where: { id: instanciaDbId } });
+    invalidarWhitelist();
+    res.status(204).send();
+  } catch (error) {
+    next(error);
+  }
+}

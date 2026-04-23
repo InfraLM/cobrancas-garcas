@@ -1,12 +1,13 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Save, Loader2, Key, Bot, Wifi, Megaphone, CheckCircle2 } from 'lucide-react';
+import { Save, Loader2, Key, Bot, Wifi, Megaphone, CheckCircle2, MessageSquare, Plus, Trash2, Pencil, Check, X } from 'lucide-react';
 import Drawer from '../ui/Drawer';
-import type { User, UserRole } from '../../types';
+import type { User, UserRole, InstanciaWhatsappUser } from '../../types';
 import { ROLE_LABELS } from '../../types';
 import {
   criarUsuario, atualizarUsuario, buscarAgente3CPlus,
   listarCampanhasVinculadas, syncCampanhas,
   listarEquipesVinculadas, syncEquipes,
+  listarInstanciasUser, adicionarInstanciaUser, editarInstanciaUser, removerInstanciaUser,
 } from '../../services/users';
 import type { Agente3CPlus, CampanhaVinculada, EquipeVinculada } from '../../services/users';
 
@@ -33,6 +34,19 @@ export default function UsuarioDrawer({ usuario, onClose, onSalvo }: UsuarioDraw
   const [error, setError] = useState<string | null>(null);
   const [agenteDetectado, setAgenteDetectado] = useState<Agente3CPlus | null>(null);
   const [buscandoAgente, setBuscandoAgente] = useState(false);
+
+  // Instancias WhatsApp do user
+  const [instancias, setInstancias] = useState<InstanciaWhatsappUser[]>([]);
+  const [loadingInstancias, setLoadingInstancias] = useState(false);
+  const [novaInstanciaId, setNovaInstanciaId] = useState('');
+  const [novoApelido, setNovoApelido] = useState('');
+  const [novoTelefone, setNovoTelefone] = useState('');
+  const [salvandoNovaInstancia, setSalvandoNovaInstancia] = useState(false);
+  const [instanciaEditando, setInstanciaEditando] = useState<string | null>(null);
+  const [editApelido, setEditApelido] = useState('');
+  const [editTelefone, setEditTelefone] = useState('');
+  const [editInstanciaId, setEditInstanciaId] = useState('');
+  const [instanciaError, setInstanciaError] = useState<string | null>(null);
 
   const buscarAgente = useCallback(async (emailBusca: string) => {
     if (!emailBusca || !emailBusca.includes('@') || editando) return;
@@ -71,6 +85,88 @@ export default function UsuarioDrawer({ usuario, onClose, onSalvo }: UsuarioDraw
     }
     load();
   }, [editando, usuario?.id]);
+
+  // Carrega instancias do user (so em modo edicao)
+  useEffect(() => {
+    if (!editando || !usuario?.id) return;
+    setLoadingInstancias(true);
+    listarInstanciasUser(usuario.id)
+      .then(setInstancias)
+      .catch(() => setInstancias([]))
+      .finally(() => setLoadingInstancias(false));
+  }, [editando, usuario?.id]);
+
+  async function handleAdicionarInstancia() {
+    if (!usuario) return;
+    setInstanciaError(null);
+    const instanciaId = novaInstanciaId.trim();
+    const apelido = novoApelido.trim();
+    if (!instanciaId || instanciaId.length < 3) {
+      setInstanciaError('Informe o instanciaId (min 3 chars)');
+      return;
+    }
+    if (!apelido) {
+      setInstanciaError('Informe um apelido');
+      return;
+    }
+    setSalvandoNovaInstancia(true);
+    try {
+      const nova = await adicionarInstanciaUser(usuario.id, {
+        instanciaId,
+        apelido,
+        telefone: novoTelefone.trim() || undefined,
+      });
+      setInstancias(prev => [...prev, nova]);
+      setNovaInstanciaId('');
+      setNovoApelido('');
+      setNovoTelefone('');
+    } catch (err) {
+      setInstanciaError(err instanceof Error ? err.message : 'Erro ao adicionar instancia');
+    } finally {
+      setSalvandoNovaInstancia(false);
+    }
+  }
+
+  function iniciarEdicao(inst: InstanciaWhatsappUser) {
+    setInstanciaEditando(inst.id);
+    setEditInstanciaId(inst.instanciaId);
+    setEditApelido(inst.apelido);
+    setEditTelefone(inst.telefone || '');
+    setInstanciaError(null);
+  }
+
+  function cancelarEdicao() {
+    setInstanciaEditando(null);
+    setEditInstanciaId('');
+    setEditApelido('');
+    setEditTelefone('');
+  }
+
+  async function salvarEdicao() {
+    if (!usuario || !instanciaEditando) return;
+    try {
+      const atualizada = await editarInstanciaUser(usuario.id, instanciaEditando, {
+        instanciaId: editInstanciaId.trim(),
+        apelido: editApelido.trim(),
+        telefone: editTelefone.trim() || undefined,
+      });
+      setInstancias(prev => prev.map(i => (i.id === atualizada.id ? atualizada : i)));
+      cancelarEdicao();
+    } catch (err) {
+      setInstanciaError(err instanceof Error ? err.message : 'Erro ao salvar');
+    }
+  }
+
+  async function handleRemoverInstancia(id: string) {
+    if (!usuario) return;
+    if (!confirm('Remover esta instancia?')) return;
+    try {
+      await removerInstanciaUser(usuario.id, id);
+      setInstancias(prev => prev.filter(i => i.id !== id));
+    } catch (err) {
+      setInstanciaError(err instanceof Error ? err.message : 'Erro ao remover');
+    }
+  }
 
   function toggleCampanha(id: number) {
     setCampanhasSelecionadas(prev => {
@@ -365,6 +461,129 @@ export default function UsuarioDrawer({ usuario, onClose, onSalvo }: UsuarioDraw
               Equipes controlam acesso aos grupos de canais e instâncias WhatsApp
             </p>
           </section>
+
+          {/* Instancias WhatsApp vinculadas ao user */}
+          {editando && (
+            <section>
+              <h3 className="text-[0.6875rem] font-semibold uppercase tracking-wider text-gray-400 mb-3">
+                <span className="flex items-center gap-1.5"><MessageSquare size={12} /> Instâncias WhatsApp vinculadas</span>
+              </h3>
+
+              {instanciaError && (
+                <div className="mb-3 px-3 py-2 rounded-lg bg-red-50 border border-red-200 text-[0.75rem] text-red-700">
+                  {instanciaError}
+                </div>
+              )}
+
+              {loadingInstancias ? (
+                <div className="h-10 rounded-xl bg-gray-50 animate-pulse" />
+              ) : (
+                <div className="space-y-2">
+                  {instancias.length === 0 && (
+                    <p className="text-[0.75rem] text-on-surface-variant">Nenhuma instância vinculada ainda.</p>
+                  )}
+
+                  {instancias.map(inst => (
+                    <div key={inst.id} className="px-3 py-2.5 rounded-xl border border-gray-100 bg-gray-50">
+                      {instanciaEditando === inst.id ? (
+                        <div className="space-y-2">
+                          <input
+                            type="text"
+                            value={editApelido}
+                            onChange={(e) => setEditApelido(e.target.value)}
+                            placeholder="Apelido"
+                            className="w-full px-3 py-1.5 rounded-lg border border-gray-200 text-[0.8125rem] focus:outline-none focus:ring-1 focus:ring-primary"
+                          />
+                          <input
+                            type="text"
+                            value={editTelefone}
+                            onChange={(e) => setEditTelefone(e.target.value)}
+                            placeholder="Telefone (opcional)"
+                            className="w-full px-3 py-1.5 rounded-lg border border-gray-200 text-[0.8125rem] focus:outline-none focus:ring-1 focus:ring-primary"
+                          />
+                          <input
+                            type="text"
+                            value={editInstanciaId}
+                            onChange={(e) => setEditInstanciaId(e.target.value)}
+                            placeholder="Instance ID"
+                            className="w-full px-3 py-1.5 rounded-lg border border-gray-200 text-[0.75rem] font-mono focus:outline-none focus:ring-1 focus:ring-primary"
+                          />
+                          <div className="flex gap-2 justify-end">
+                            <button type="button" onClick={cancelarEdicao} className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-[0.75rem] text-gray-600 hover:bg-gray-100">
+                              <X size={12} /> Cancelar
+                            </button>
+                            <button type="button" onClick={salvarEdicao} className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-primary text-white text-[0.75rem] hover:bg-primary-container">
+                              <Check size={12} /> Salvar
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="flex items-start gap-3">
+                          <div className="flex-1 min-w-0">
+                            <p className="text-[0.8125rem] font-medium text-on-surface truncate">{inst.apelido}</p>
+                            <p className="text-[0.75rem] text-on-surface-variant">
+                              {inst.telefone || 'Sem telefone'}
+                            </p>
+                            <p className="text-[0.6875rem] text-gray-400 font-mono truncate mt-0.5" title={inst.instanciaId}>
+                              {inst.instanciaId.slice(0, 8)}…{inst.instanciaId.slice(-6)}
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-1 shrink-0">
+                            <button type="button" onClick={() => iniciarEdicao(inst)} className="p-1.5 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100" title="Editar">
+                              <Pencil size={13} />
+                            </button>
+                            <button type="button" onClick={() => handleRemoverInstancia(inst.id)} className="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50" title="Remover">
+                              <Trash2 size={13} />
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+
+                  {/* Form de nova instancia */}
+                  <div className="px-3 py-3 rounded-xl border border-dashed border-gray-200 space-y-2">
+                    <p className="text-[0.6875rem] font-medium text-gray-500">Adicionar instância</p>
+                    <input
+                      type="text"
+                      value={novoApelido}
+                      onChange={(e) => setNovoApelido(e.target.value)}
+                      placeholder="Apelido (ex: WhatsApp Cobrança)"
+                      maxLength={80}
+                      className="w-full px-3 py-1.5 rounded-lg border border-gray-200 text-[0.8125rem] focus:outline-none focus:ring-1 focus:ring-primary"
+                    />
+                    <input
+                      type="text"
+                      value={novoTelefone}
+                      onChange={(e) => setNovoTelefone(e.target.value)}
+                      placeholder="Telefone vinculado (opcional)"
+                      className="w-full px-3 py-1.5 rounded-lg border border-gray-200 text-[0.8125rem] focus:outline-none focus:ring-1 focus:ring-primary"
+                    />
+                    <input
+                      type="text"
+                      value={novaInstanciaId}
+                      onChange={(e) => setNovaInstanciaId(e.target.value)}
+                      placeholder="Instance ID (copie do log do backend)"
+                      className="w-full px-3 py-1.5 rounded-lg border border-gray-200 text-[0.75rem] font-mono focus:outline-none focus:ring-1 focus:ring-primary"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleAdicionarInstancia}
+                      disabled={salvandoNovaInstancia}
+                      className="flex items-center gap-1.5 h-8 px-3 rounded-lg bg-primary/[0.08] text-primary text-[0.75rem] font-medium hover:bg-primary/[0.12] disabled:opacity-50"
+                    >
+                      {salvandoNovaInstancia ? <Loader2 size={12} className="animate-spin" /> : <Plus size={12} />}
+                      Adicionar
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              <p className="mt-2 text-[0.6875rem] text-on-surface-variant">
+                Só mensagens vindas destas instâncias são processadas. O Instance ID aparece nos logs do backend quando uma mensagem chega (buscar por <span className="font-mono">[Whatsapp] 📬 Instancia vista</span>).
+              </p>
+            </section>
+          )}
         </div>
 
         {/* Footer */}

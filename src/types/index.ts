@@ -48,3 +48,19 @@ export const ROLE_LABELS: Record<UserRole, string> = {
 export interface ApiError {
   error: string;
 }
+
+export interface InstanciaWhatsappUser {
+  id: string;
+  userId: number;
+  instanciaId: string;
+  apelido: string;
+  telefone: string | null;
+  criadoEm: string;
+  atualizadoEm: string;
+}
+
+export interface NovaInstanciaWhatsapp {
+  instanciaId: string;
+  apelido: string;
+  telefone?: string;
+}

@@ -29,7 +29,7 @@ async function carregarDoBanco() {
     where: { ativo: true },
     select: {
       threecplusAgentId: true,
-      instanciaWhatsappId: true,
+      instanciasWhatsapp: { select: { instanciaId: true } },
     },
   });
 
@@ -37,7 +37,9 @@ async function carregarDoBanco() {
   instanciaIds.clear();
   for (const u of users) {
     if (u.threecplusAgentId) agenteIds.add(u.threecplusAgentId);
-    if (u.instanciaWhatsappId) instanciaIds.add(String(u.instanciaWhatsappId));
+    for (const i of u.instanciasWhatsapp) {
+      if (i.instanciaId) instanciaIds.add(String(i.instanciaId));
+    }
   }
 
   ultimoRefresh = Date.now();

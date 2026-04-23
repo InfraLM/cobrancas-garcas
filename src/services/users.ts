@@ -1,5 +1,5 @@
 import { api } from './api';
-import type { User, UserFormData } from '../types';
+import type { User, UserFormData, InstanciaWhatsappUser, NovaInstanciaWhatsapp } from '../types';
 
 export async function listarUsuarios(): Promise<User[]> {
   return api.get<User[]>('/users');
@@ -89,4 +89,29 @@ export async function buscarAgente3CPlus(email: string): Promise<Agente3CPlus | 
   const result = await api.get<Agente3CPlus | { encontrado: false }>(`/users/buscar-agente-3cplus?email=${encodeURIComponent(email)}`);
   if ('encontrado' in result && !result.encontrado) return null;
   return result as Agente3CPlus;
+}
+
+// --- Instancias WhatsApp por user (N por user, pode compartilhar) ---
+
+export async function listarInstanciasUser(userId: number): Promise<InstanciaWhatsappUser[]> {
+  return api.get<InstanciaWhatsappUser[]>(`/users/${userId}/instancias`);
+}
+
+export async function adicionarInstanciaUser(
+  userId: number,
+  data: NovaInstanciaWhatsapp,
+): Promise<InstanciaWhatsappUser> {
+  return api.post<InstanciaWhatsappUser>(`/users/${userId}/instancias`, data);
+}
+
+export async function editarInstanciaUser(
+  userId: number,
+  instanciaDbId: string,
+  data: Partial<NovaInstanciaWhatsapp>,
+): Promise<InstanciaWhatsappUser> {
+  return api.put<InstanciaWhatsappUser>(`/users/${userId}/instancias/${instanciaDbId}`, data);
+}
+
+export async function removerInstanciaUser(userId: number, instanciaDbId: string): Promise<void> {
+  return api.delete<void>(`/users/${userId}/instancias/${instanciaDbId}`);
 }

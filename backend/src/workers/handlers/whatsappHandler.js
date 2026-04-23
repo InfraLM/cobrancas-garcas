@@ -24,14 +24,25 @@ export async function onNovaMensagemWhatsapp(payload) {
     const chatData = payload?.chat || {};
     const msgData = payload?.message || {};
 
-    // Filtra por instancia — so processa mensagens das instancias WhatsApp
-    // vinculadas a users do nosso time. 3C Plus usa token de gestor, o que
-    // deixa o backend ouvir TODAS as instancias da empresa.
+    // Extrai identidade da instancia — usado tanto pro log "instancia vista"
+    // (ANTES do filtro, ajuda admin a descobrir ids reais) quanto pro filtro.
     const instanciaId =
       chatData?.instance?.id ||
       msgData?.instance_id ||
       chatData?.instance_id ||
       null;
+    const instanciaNome = chatData?.instance?.name || null;
+    const instanciaTelefone = chatData?.instance?.phone || null;
+
+    if (instanciaId) {
+      console.log(
+        `[Whatsapp] 📬 Instancia vista: id=${instanciaId} nome="${instanciaNome || '-'}" telefone=${instanciaTelefone || '-'}`
+      );
+    }
+
+    // Filtra por instancia — so processa mensagens das instancias WhatsApp
+    // vinculadas a users do nosso time. 3C Plus usa token de gestor, o que
+    // deixa o backend ouvir TODAS as instancias da empresa.
     if (!instanciaId || !isInstanciaNossa(instanciaId)) {
       registrarFiltrado();
       return;
