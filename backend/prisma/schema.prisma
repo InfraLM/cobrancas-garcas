@@ -2008,6 +2008,9 @@ model PagamentoAcordo {
   valorLiquido        Decimal?  @db.Decimal(12,2)
   taxaAsaas           Decimal?  @db.Decimal(12,2)
 
+  // Ultima mensagem de erro da API do Asaas (preenchido quando situacao='ERRO')
+  erroMensagem        String?
+
   acordo              AcordoFinanceiro @relation(fields: [acordoId], references: [id], onDelete: Cascade)
 
   @@index([acordoId])

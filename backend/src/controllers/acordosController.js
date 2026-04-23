@@ -1,7 +1,7 @@
 import { prisma } from '../config/database.js';
 import { gerarPdfTermo, gerarPdfBase64 } from '../services/termoNegociacaoService.js';
 import { enviarParaAssinatura, cancelarEnvelope } from '../services/clicksignService.js';
-import { criarOuBuscarCliente, criarCobranca, obterPixQrCode } from '../services/asaasService.js';
+import { criarOuBuscarCliente, criarCobranca, obterPixQrCode, cancelarCobranca } from '../services/asaasService.js';
 import { enviarLinkPagamento } from '../services/blipMensagemService.js';
 
 // -----------------------------------------------
@@ -481,54 +481,91 @@ export async function gerarCobrancas(req, res, next) {
       data: { asaasCustomerId: cliente.id },
     });
 
-    // 2. Criar cobranca para cada pagamento
+    // 2. Criar cobranca para cada pagamento — resiliente:
+    //    - Ignora pagamentos ja confirmados (asaasPaymentId preenchido com situacao diferente
+    //      de ERRO/CANCELADA) para nao duplicar
+    //    - Permite retry de pagamentos com situacao ERRO ou CANCELADA
+    //    - Erros individuais do Asaas nao abortam o loop — cada pagamento falho
+    //      fica marcado com situacao=ERRO + erroMensagem, os outros seguem
+    let sucessos = 0;
+    let falhas = 0;
+
     for (const pgto of acordo.pagamentos) {
-      if (pgto.asaasPaymentId) continue; // ja criado
+      const situacao = pgto.situacao || 'PENDENTE';
+      const podeCriar = !pgto.asaasPaymentId || situacao === 'ERRO' || situacao === 'CANCELADO';
+      if (!podeCriar) continue;
 
       const vencimento = new Date(pgto.dataVencimento).toISOString().slice(0, 10);
       const descricao = `Negociacao ${acordo.pessoaNome} - Pgto ${pgto.numeroPagamento}`;
 
-      const cobranca = await criarCobranca(cliente.id, {
-        valor: Number(pgto.valor),
-        vencimento,
-        tipo: pgto.formaPagamento,
-        descricao,
-        externalReference: acordo.id,
-        parcelas: pgto.parcelas,
-      });
+      try {
+        const cobranca = await criarCobranca(cliente.id, {
+          valor: Number(pgto.valor),
+          vencimento,
+          tipo: pgto.formaPagamento,
+          descricao,
+          externalReference: acordo.id,
+          parcelas: pgto.parcelas,
+        });
 
-      // Buscar PIX QR Code se for PIX
-      let pixQr = null;
-      if (pgto.formaPagamento === 'PIX' && cobranca.id) {
-        const pixData = await obterPixQrCode(cobranca.id);
-        pixQr = pixData?.payload || null;
+        // Buscar PIX QR Code se for PIX
+        let pixQr = null;
+        if (pgto.formaPagamento === 'PIX' && cobranca.id) {
+          const pixData = await obterPixQrCode(cobranca.id);
+          pixQr = pixData?.payload || null;
+        }
+
+        // Atualizar pagamento com dados do Asaas (limpa erroMensagem em retry bem-sucedido)
+        await prisma.pagamentoAcordo.update({
+          where: { id: pgto.id },
+          data: {
+            asaasPaymentId: cobranca.id,
+            asaasInvoiceUrl: cobranca.invoiceUrl,
+            asaasPixQrCode: pixQr,
+            asaasBankSlipUrl: cobranca.bankSlipUrl || null,
+            situacao: 'PENDENTE',
+            erroMensagem: null,
+          },
+        });
+        sucessos++;
+      } catch (err) {
+        const mensagem = err?.message || String(err);
+        // Extrai descricao legivel do JSON de erro do Asaas quando possivel
+        let mensagemLimpa = mensagem;
+        const jsonMatch = mensagem.match(/\{.*\}/);
+        if (jsonMatch) {
+          try {
+            const parsed = JSON.parse(jsonMatch[0]);
+            if (parsed?.errors?.[0]?.description) mensagemLimpa = parsed.errors[0].description;
+          } catch {}
+        }
+        console.warn(`[Acordo] Falha ao criar cobranca pgto=${pgto.numeroPagamento}: ${mensagemLimpa}`);
+        await prisma.pagamentoAcordo.update({
+          where: { id: pgto.id },
+          data: {
+            situacao: 'ERRO',
+            erroMensagem: mensagemLimpa.slice(0, 500),
+          },
+        });
+        falhas++;
       }
-
-      // Atualizar pagamento com dados do Asaas
-      await prisma.pagamentoAcordo.update({
-        where: { id: pgto.id },
-        data: {
-          asaasPaymentId: cobranca.id,
-          asaasInvoiceUrl: cobranca.invoiceUrl,
-          asaasPixQrCode: pixQr,
-          asaasBankSlipUrl: cobranca.bankSlipUrl || null,
-        },
-      });
     }
 
-    // Registrar ocorrencia
+    // Registrar ocorrencia (sempre, com descricao refletindo o resultado)
     try {
       await prisma.ocorrencia.create({
         data: {
           tipo: 'NEGOCIACAO_COBRANCA_CRIADA',
-          descricao: `${acordo.pagamentos.length} cobranças geradas no Asaas`,
+          descricao: `Geracao de cobrancas no Asaas — ${sucessos} OK, ${falhas} com erro`,
           origem: 'SISTEMA',
           pessoaCodigo: acordo.pessoaCodigo,
           pessoaNome: acordo.pessoaNome,
           acordoId: acordo.id,
         },
       });
-    } catch {}
+    } catch (e) {
+      console.warn('[Acordo] Falha ao registrar ocorrencia:', e?.message);
+    }
 
     // 3. Recarregar acordo atualizado
     const acordoAtualizado = await prisma.acordoFinanceiro.findUnique({
@@ -576,6 +613,74 @@ export async function enviarWhatsapp(req, res, next) {
     });
 
     res.json({ success: true });
+  } catch (error) {
+    next(error);
+  }
+}
+
+// Cancela uma cobranca individual no Asaas + marca no banco.
+// Depois do cancelamento, a UI mostra o botao "Gerar novamente" que
+// chama gerarCobrancas — que ja aceita retry para situacao CANCELADA/ERRO.
+export async function cancelarPagamento(req, res, next) {
+  try {
+    const { id: acordoId, pagamentoId } = req.params;
+
+    const pagamento = await prisma.pagamentoAcordo.findUnique({
+      where: { id: pagamentoId },
+    });
+    if (!pagamento || pagamento.acordoId !== acordoId) {
+      return res.status(404).json({ error: 'Pagamento nao encontrado para este acordo' });
+    }
+
+    if (pagamento.situacao === 'CANCELADO') {
+      return res.status(409).json({ error: 'Pagamento ja esta cancelado' });
+    }
+    if (pagamento.situacao === 'CONFIRMADO') {
+      return res.status(409).json({ error: 'Nao e possivel cancelar um pagamento ja confirmado. Use reembolso no painel do Asaas.' });
+    }
+
+    // Cancelamento no Asaas (ignora erro se a cobranca nao existe mais la —
+    // e.g. foi criada com erro ou ja deletada; o nosso banco tem a verdade local)
+    if (pagamento.asaasPaymentId) {
+      try {
+        await cancelarCobranca(pagamento.asaasPaymentId);
+      } catch (err) {
+        const msg = err?.message || String(err);
+        console.warn(`[Acordo] Falha ao cancelar pagamento ${pagamento.asaasPaymentId} no Asaas: ${msg}`);
+        // Se Asaas retornar 404 a gente ignora (cobranca nao existe la), qualquer
+        // outro erro retornamos pro cliente pra nao mascarar
+        if (!/HTTP 404/.test(msg) && !/does not exist/i.test(msg)) {
+          return res.status(502).json({ error: `Falha ao cancelar no Asaas: ${msg.slice(0, 200)}` });
+        }
+      }
+    }
+
+    const atualizado = await prisma.pagamentoAcordo.update({
+      where: { id: pagamentoId },
+      data: {
+        situacao: 'CANCELADO',
+        erroMensagem: null,
+      },
+    });
+
+    try {
+      const acordo = await prisma.acordoFinanceiro.findUnique({ where: { id: acordoId }, select: { pessoaCodigo: true, pessoaNome: true } });
+      await prisma.ocorrencia.create({
+        data: {
+          tipo: 'NEGOCIACAO_COBRANCA_CANCELADA',
+          descricao: `Cobranca cancelada (pgto ${pagamento.numeroPagamento})`,
+          origem: 'AGENTE',
+          pessoaCodigo: acordo?.pessoaCodigo || 0,
+          pessoaNome: acordo?.pessoaNome || null,
+          acordoId,
+          agenteNome: req.user?.nome || null,
+        },
+      });
+    } catch (e) {
+      console.warn('[Acordo] Falha ao registrar ocorrencia cancelamento:', e?.message);
+    }
+
+    res.json(atualizado);
   } catch (error) {
     next(error);
   }

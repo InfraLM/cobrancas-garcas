@@ -8,7 +8,7 @@ export type EtapaAcordo =
   | 'CANCELADO'
   | 'INADIMPLENTE';
 
-export type SituacaoPagamento = 'PENDENTE' | 'CONFIRMADO' | 'VENCIDO' | 'CANCELADO';
+export type SituacaoPagamento = 'PENDENTE' | 'CONFIRMADO' | 'VENCIDO' | 'CANCELADO' | 'ERRO';
 export type SituacaoDocumento = 'RASCUNHO' | 'ENVIADO' | 'ASSINADO' | 'RECUSADO' | 'EXPIRADO';
 export type FormaPagamento = 'BOLETO' | 'PIX' | 'CREDIT_CARD';
 
@@ -105,6 +105,9 @@ export interface PagamentoAcordo {
   valorPago?: number;
   valorLiquido?: number;           // netValue do Asaas
   taxaAsaas?: number;              // value - netValue
+
+  // Mensagem de erro do Asaas (presente quando situacao === 'ERRO')
+  erroMensagem?: string | null;
 }
 
 export interface DocumentoAcordo {
@@ -151,6 +154,7 @@ export const situacaoPagamentoLabel: Record<SituacaoPagamento, string> = {
   CONFIRMADO: 'Pago',
   VENCIDO: 'Vencido',
   CANCELADO: 'Cancelado',
+  ERRO: 'Erro',
 };
 
 export const ETAPAS_KANBAN: EtapaAcordo[] = [

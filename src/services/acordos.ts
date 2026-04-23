@@ -1,5 +1,5 @@
 import { api } from './api';
-import type { AcordoFinanceiro } from '../types/acordo';
+import type { AcordoFinanceiro, PagamentoAcordo } from '../types/acordo';
 
 interface ListarAcordosParams {
   etapa?: string;
@@ -119,4 +119,8 @@ export async function baixarDocumentoAssinado(id: string, nomeAluno: string): Pr
 
 export async function listarPorAluno(codigo: number): Promise<AcordoFinanceiro[]> {
   return api.get<AcordoFinanceiro[]>(`/acordos/por-aluno/${codigo}`);
+}
+
+export async function cancelarPagamento(acordoId: string, pagamentoId: string): Promise<PagamentoAcordo> {
+  return api.post<PagamentoAcordo>(`/acordos/${acordoId}/pagamentos/${pagamentoId}/cancelar`, {});
 }

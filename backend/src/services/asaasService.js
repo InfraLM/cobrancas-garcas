@@ -94,3 +94,12 @@ export async function obterLinhaDigitavel(paymentId) {
     return null;
   }
 }
+
+// -----------------------------------------------
+// Cancelar/excluir cobranca
+// -----------------------------------------------
+// Asaas permite DELETE em cobrancas que ainda nao foram pagas.
+// Para cobrancas ja processadas, deve-se usar refund (nao implementado aqui).
+export async function cancelarCobranca(paymentId) {
+  return asaasRequest('DELETE', `/payments/${paymentId}`);
+}

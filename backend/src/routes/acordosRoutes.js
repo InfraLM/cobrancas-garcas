@@ -14,6 +14,7 @@ import {
   listarPorAluno,
   gerarCobrancas,
   enviarWhatsapp,
+  cancelarPagamento,
 } from '../controllers/acordosController.js';
 
 const router = Router();
@@ -33,5 +34,6 @@ router.get('/:id/documento-assinado', requireAuth, documentoAssinado);
 router.get('/por-aluno/:codigo', requireAuth, listarPorAluno);
 router.post('/:id/gerar-cobrancas', requireAuth, gerarCobrancas);
 router.post('/:id/pagamentos/:pagamentoId/enviar-whatsapp', requireAuth, enviarWhatsapp);
+router.post('/:id/pagamentos/:pagamentoId/cancelar', requireAuth, cancelarPagamento);
 
 export default router;
