@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import type { AcordoFinanceiro } from '../../../types/acordo';
 import { formaPagamentoLabel } from '../../../types/acordo';
-import { cancelarAcordo } from '../../../services/acordos';
+import { cancelarAcordo, atualizarEtapa } from '../../../services/acordos';
 import StatusBadge from '../../ui/StatusBadge';
 import { FileSignature, RefreshCw, XCircle, Download, Clock, Send, Loader2, AlertTriangle, CheckCircle2, ArrowRight } from 'lucide-react';
 
@@ -28,6 +28,7 @@ export default function EtapaTermoEnviado({ acordo, onAtualizado }: Props) {
   const expirado = doc?.situacao === 'EXPIRADO';
   const [enviandoLembrete, setEnviandoLembrete] = useState(false);
   const [cancelando, setCancelando] = useState(false);
+  const [avancando, setAvancando] = useState(false);
 
   async function handleEnviarLembrete() {
     setEnviandoLembrete(true);
@@ -55,6 +56,19 @@ export default function EtapaTermoEnviado({ acordo, onAtualizado }: Props) {
       alert('Erro ao cancelar');
     } finally {
       setCancelando(false);
+    }
+  }
+
+  async function handleAvancarParaCobrancas() {
+    if (avancando) return;
+    setAvancando(true);
+    try {
+      await atualizarEtapa(acordo.id, 'ACORDO_GERADO');
+      onAtualizado?.();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Erro ao avancar para proxima etapa');
+    } finally {
+      setAvancando(false);
     }
   }
 
@@ -195,9 +209,12 @@ export default function EtapaTermoEnviado({ acordo, onAtualizado }: Props) {
         )}
 
         {assinado && (
-          <button className="flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-primary text-white font-semibold text-[0.8125rem] hover:bg-primary-container transition-colors shadow-sm">
-            Próxima etapa
-            <ArrowRight size={14} />
+          <button
+            onClick={handleAvancarParaCobrancas}
+            disabled={avancando}
+            className="flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-primary text-white font-semibold text-[0.8125rem] hover:bg-primary-container transition-colors shadow-sm disabled:opacity-50"
+          >
+            {avancando ? <Loader2 size={14} className="animate-spin" /> : <>Próxima etapa <ArrowRight size={14} /></>}
           </button>
         )}
       </div>

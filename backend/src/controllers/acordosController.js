@@ -321,15 +321,28 @@ export async function enviarAssinatura(req, res, next) {
       include: { parcelasOriginais: true, pagamentos: true, documento: true },
     });
 
-    // 4. Criar registro do documento
-    await prisma.documento.create({
-      data: {
+    // 4. Criar ou atualizar registro do documento (idempotente:
+    //    acordoId e @unique, entao reenvio atualiza os ids do ClickSign
+    //    em vez de falhar com P2002)
+    await prisma.documento.upsert({
+      where: { acordoId: acordo.id },
+      create: {
         acordoId: acordo.id,
         tipo: 'TERMO_ACORDO',
         clicksignDocumentKey: documentId,
         clicksignEnvelopeId: envelopeId,
         situacao: 'ENVIADO',
         enviadoEm: new Date(),
+      },
+      update: {
+        clicksignDocumentKey: documentId,
+        clicksignEnvelopeId: envelopeId,
+        situacao: 'ENVIADO',
+        enviadoEm: new Date(),
+        // Limpa campos de assinatura antiga ao reenviar
+        assinadoEm: null,
+        pdfAssinado: null,
+        urlAssinado: null,
       },
     });
 

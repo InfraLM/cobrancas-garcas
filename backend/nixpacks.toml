@@ -1,0 +1,33 @@
+# Nixpacks config para Railway
+#
+# Puppeteer-core + @sparticuz/chromium precisa de libs nativas do Linux
+# que nao estao presentes na imagem base do Nixpacks. Sem essas libs, o
+# Chromium falha com: "error while loading shared libraries: libnspr4.so"
+#
+# aptPkgs listadas abaixo cobrem as dependencias runtime do Chrome/Chromium
+# no Debian/Ubuntu (imagem base do Railway Nixpacks).
+
+[phases.setup]
+aptPkgs = [
+  "libnss3",
+  "libnspr4",
+  "libatk1.0-0",
+  "libatk-bridge2.0-0",
+  "libcups2",
+  "libxkbcommon0",
+  "libxcomposite1",
+  "libxdamage1",
+  "libxrandr2",
+  "libgbm1",
+  "libasound2",
+  "libpango-1.0-0",
+  "libcairo2",
+  "libexpat1",
+  "libdrm2",
+  "fonts-liberation",
+  "libx11-6",
+  "libx11-xcb1",
+  "libxcb1",
+  "libxext6",
+  "libxfixes3"
+]
