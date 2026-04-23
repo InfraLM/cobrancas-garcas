@@ -11,11 +11,32 @@
 import { prisma } from '../../config/database.js';
 import { upsertConversa } from '../../services/conversaCobrancaService.js';
 import { getRealtimeIo } from '../../realtime.js';
+import {
+  isInstanciaNossa,
+  registrarRecebido,
+  registrarProcessado,
+  registrarFiltrado,
+} from '../../services/threecplusWhitelist.js';
 
 export async function onNovaMensagemWhatsapp(payload) {
   try {
+    registrarRecebido();
     const chatData = payload?.chat || {};
     const msgData = payload?.message || {};
+
+    // Filtra por instancia — so processa mensagens das instancias WhatsApp
+    // vinculadas a users do nosso time. 3C Plus usa token de gestor, o que
+    // deixa o backend ouvir TODAS as instancias da empresa.
+    const instanciaId =
+      chatData?.instance?.id ||
+      msgData?.instance_id ||
+      chatData?.instance_id ||
+      null;
+    if (!instanciaId || !isInstanciaNossa(instanciaId)) {
+      registrarFiltrado();
+      return;
+    }
+    registrarProcessado();
 
     const mensagemExternaId = String(msgData.id || msgData.internal_id || '');
 

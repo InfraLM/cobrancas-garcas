@@ -17,7 +17,7 @@ httpServer.listen(PORT, () => {
   console.log(`Backend rodando em http://localhost:${PORT}`);
 
   // Worker 24/7 conectado ao socket.3c.plus
-  startSocketWorker();
+  startSocketWorker().catch(err => console.error('[Worker] Erro no start:', err.message));
 
   // Delta Sync SEI — roda a cada 10 minutos (d-1 para seguranca)
   console.log(`[DeltaSync] Agendado a cada ${DELTA_SYNC_INTERVAL / 60000} minutos`);

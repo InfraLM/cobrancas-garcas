@@ -22,12 +22,17 @@ import {
   onAgentInAcw,
   onAgentLoginFailed,
 } from './handlers/ligacaoHandler.js';
+import {
+  getWhitelists,
+  iniciarRefreshAutomatico,
+  lerContadoresEReset,
+} from '../services/threecplusWhitelist.js';
 
 const SOCKET_URL = 'https://socket.3c.plus';
 let socket = null;
 let heartbeatInterval = null;
 
-export function startSocketWorker() {
+export async function startSocketWorker() {
   const token = process.env.THREECPLUS_MANAGER_TOKEN;
   if (!token) {
     console.error('[Worker] ❌ THREECPLUS_MANAGER_TOKEN nao configurado. Worker nao iniciado.');
@@ -37,6 +42,14 @@ export function startSocketWorker() {
   if (socket?.connected) {
     console.log('[Worker] Ja conectado, ignorando reconexao.');
     return;
+  }
+
+  // Carrega whitelist ANTES de conectar — evita race com primeiros eventos
+  try {
+    await getWhitelists();
+    iniciarRefreshAutomatico();
+  } catch (err) {
+    console.error('[Worker] Erro ao carregar whitelist inicial:', err.message);
   }
 
   console.log('[Worker] 🔌 Conectando ao Socket 3C Plus...');
@@ -110,7 +123,8 @@ export function startSocketWorker() {
     const mem = process.memoryUsage();
     const heapMB = (mem.heapUsed / 1024 / 1024).toFixed(0);
     const rssMB = (mem.rss / 1024 / 1024).toFixed(0);
-    console.log(`[Worker] 💓 Heartbeat ${status} | heap ${heapMB} MB | rss ${rssMB} MB | ${new Date().toISOString()}`);
+    const ev = lerContadoresEReset();
+    console.log(`[Worker] 💓 Heartbeat ${status} | heap ${heapMB} MB | rss ${rssMB} MB | eventos recebidos ${ev.recebidos} / processados ${ev.processados} / filtrados ${ev.filtrados} | ${new Date().toISOString()}`);
   }, 60000);
 }
 

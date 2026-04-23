@@ -13,6 +13,32 @@
 import { prisma } from '../../config/database.js';
 import { getRealtimeIo } from '../../realtime.js';
 import { vincularPessoa } from '../../services/conversaCobrancaService.js';
+import {
+  isAgenteNosso,
+  registrarRecebido,
+  registrarProcessado,
+  registrarFiltrado,
+} from '../../services/threecplusWhitelist.js';
+
+/**
+ * Decide se um evento deve ser processado baseado no agentId no payload.
+ * Quando o evento tem agentId explicito, filtra por whitelist.
+ * Quando nao tem (call-history-was-created, call-was-abandoned, as vezes created/answered),
+ * faz lookup do registro_ligacao existente pelo telephonyId para herdar o agentId.
+ *
+ * Retorna true se deve processar, false se deve descartar.
+ */
+async function deveProcessar({ agentIdPayload, telephonyId }) {
+  if (agentIdPayload) {
+    return isAgenteNosso(agentIdPayload);
+  }
+  if (!telephonyId) return false;
+  const existente = await prisma.registroLigacao.findUnique({
+    where: { telephonyId },
+    select: { agenteId: true },
+  });
+  return !!(existente?.agenteId && isAgenteNosso(existente.agenteId));
+}
 
 // Persiste evento bruto para auditoria (append-only)
 async function persistirEventoRaw(tipo, payload) {
@@ -72,9 +98,16 @@ function unixParaDate(v) {
 // ─── Handlers individuais ──────────────────────────────────
 
 export async function onCallCreated(payload) {
-  await persistirEventoRaw('call-was-created', payload);
+  registrarRecebido();
   const call = payload?.call || {};
   const telId = String(call.telephony_id || payload?.telephony_id || '');
+  const agentIdPayload = Number(call.agent) || Number(payload?.agent?.id) || null;
+  if (!(await deveProcessar({ agentIdPayload, telephonyId: telId }))) {
+    registrarFiltrado();
+    return;
+  }
+  registrarProcessado();
+  await persistirEventoRaw('call-was-created', payload);
   const telefone = call.phone || '';
 
   // Vincular pessoa pelo telefone
@@ -100,9 +133,16 @@ export async function onCallCreated(payload) {
 }
 
 export async function onCallAnswered(payload) {
-  await persistirEventoRaw('call-was-answered', payload);
+  registrarRecebido();
   const call = payload?.call || {};
   const telId = String(call.telephony_id || payload?.telephony_id || '');
+  const agentIdPayload = Number(payload?.agent?.id) || Number(call.agent) || null;
+  if (!(await deveProcessar({ agentIdPayload, telephonyId: telId }))) {
+    registrarFiltrado();
+    return;
+  }
+  registrarProcessado();
+  await persistirEventoRaw('call-was-answered', payload);
 
   const dataAnsw = unixParaDate(call.answered_time) || new Date();
 
@@ -113,11 +153,18 @@ export async function onCallAnswered(payload) {
 }
 
 export async function onCallConnected(payload) {
-  await persistirEventoRaw('call-was-connected', payload);
+  registrarRecebido();
   const call = payload?.call || {};
   const agent = payload?.agent || {};
   const campaign = payload?.campaign || {};
   const telId = String(call.telephony_id || payload?.telephony_id || '');
+  const agentIdPayload = Number(agent.id) || Number(call.agent) || null;
+  if (!(await deveProcessar({ agentIdPayload, telephonyId: telId }))) {
+    registrarFiltrado();
+    return;
+  }
+  registrarProcessado();
+  await persistirEventoRaw('call-was-connected', payload);
 
   const dataConn = unixParaDate(call.connected_time) || new Date();
 
@@ -137,9 +184,16 @@ export async function onCallConnected(payload) {
 }
 
 export async function onCallHungUp(payload) {
-  await persistirEventoRaw('call-was-hung-up', payload);
+  registrarRecebido();
   const call = payload?.call || {};
   const telId = String(call.telephony_id || payload?.telephony_id || '');
+  const agentIdPayload = Number(payload?.agent?.id) || Number(call.agent) || null;
+  if (!(await deveProcessar({ agentIdPayload, telephonyId: telId }))) {
+    registrarFiltrado();
+    return;
+  }
+  registrarProcessado();
+  await persistirEventoRaw('call-was-hung-up', payload);
 
   const dataHang = unixParaDate(call.hangup_time) || new Date();
 
@@ -152,10 +206,17 @@ export async function onCallHungUp(payload) {
 }
 
 export async function onCallFinished(payload) {
-  await persistirEventoRaw('call-was-finished', payload);
+  registrarRecebido();
   const call = payload?.call || {};
   const agent = payload?.agent || {};
   const telId = String(call.telephony_id || payload?.telephony_id || '');
+  const agentIdPayload = Number(agent.id) || Number(call.agent) || null;
+  if (!(await deveProcessar({ agentIdPayload, telephonyId: telId }))) {
+    registrarFiltrado();
+    return;
+  }
+  registrarProcessado();
+  await persistirEventoRaw('call-was-finished', payload);
 
   const dataHang = unixParaDate(call.hangup_time);
 
@@ -170,25 +231,46 @@ export async function onCallFinished(payload) {
 }
 
 export async function onCallUnanswered(payload) {
-  await persistirEventoRaw('call-was-unanswered', payload);
+  registrarRecebido();
   const call = payload?.call || {};
   const telId = String(call.telephony_id || payload?.telephony_id || '');
+  const agentIdPayload = Number(payload?.agent?.id) || Number(call.agent) || null;
+  if (!(await deveProcessar({ agentIdPayload, telephonyId: telId }))) {
+    registrarFiltrado();
+    return;
+  }
+  registrarProcessado();
+  await persistirEventoRaw('call-was-unanswered', payload);
   await upsertRegistro(telId, { statusTexto: 'unanswered' });
   emitirEvento('call-was-unanswered', payload);
 }
 
 export async function onCallAbandoned(payload) {
-  await persistirEventoRaw('call-was-abandoned', payload);
+  registrarRecebido();
   const call = payload?.call || {};
   const telId = String(call.telephony_id || payload?.telephony_id || '');
+  const agentIdPayload = Number(payload?.agent?.id) || Number(call.agent) || null;
+  if (!(await deveProcessar({ agentIdPayload, telephonyId: telId }))) {
+    registrarFiltrado();
+    return;
+  }
+  registrarProcessado();
+  await persistirEventoRaw('call-was-abandoned', payload);
   await upsertRegistro(telId, { statusTexto: 'abandoned' });
   emitirEvento('call-was-abandoned', payload);
 }
 
 export async function onCallHistoryCreated(payload) {
-  await persistirEventoRaw('call-history-was-created', payload);
+  registrarRecebido();
   const hist = payload?.callHistory || {};
   const telId = String(hist.telephony_id || payload?.telephony_id || '');
+  // call-history-was-created sempre chega com agent.id=0 — decide pelo registro existente
+  if (!(await deveProcessar({ agentIdPayload: null, telephonyId: telId }))) {
+    registrarFiltrado();
+    return;
+  }
+  registrarProcessado();
+  await persistirEventoRaw('call-history-was-created', payload);
 
   await upsertRegistro(telId, {
     telefone: hist.number || undefined,
@@ -237,16 +319,37 @@ export async function onCallHistoryCreated(payload) {
 
 // Eventos de estado do agente (apenas retransmite + raw)
 export async function onAgentIsIdle(payload) {
+  registrarRecebido();
+  const agentId = Number(payload?.agent?.id) || Number(payload?.id) || null;
+  if (!agentId || !isAgenteNosso(agentId)) {
+    registrarFiltrado();
+    return;
+  }
+  registrarProcessado();
   await persistirEventoRaw('agent-is-idle', payload);
   emitirEvento('agent-is-idle', payload);
 }
 
 export async function onAgentInAcw(payload) {
+  registrarRecebido();
+  const agentId = Number(payload?.agent?.id) || Number(payload?.id) || null;
+  if (!agentId || !isAgenteNosso(agentId)) {
+    registrarFiltrado();
+    return;
+  }
+  registrarProcessado();
   await persistirEventoRaw('agent-in-acw', payload);
   emitirEvento('agent-in-acw', payload);
 }
 
 export async function onAgentLoginFailed(payload) {
+  registrarRecebido();
+  const agentId = Number(payload?.agent?.id) || Number(payload?.id) || null;
+  if (!agentId || !isAgenteNosso(agentId)) {
+    registrarFiltrado();
+    return;
+  }
+  registrarProcessado();
   await persistirEventoRaw('agent-login-failed', payload);
   emitirEvento('agent-login-failed', payload);
 }

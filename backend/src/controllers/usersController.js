@@ -1,5 +1,6 @@
 import { prisma } from '../config/database.js';
 import { criarAgente3CPlus, autenticarAgente3CPlus, buscarAgenteExistente, listarInstancias, listarEquipes, listarCampanhas, listarCampanhasComVinculo, listarEquipesComVinculo, adicionarAgenteCampanha, removerAgenteCampanha, atualizarEquipesUsuario } from '../services/threecplusAgentService.js';
+import { invalidarWhitelist } from '../services/threecplusWhitelist.js';
 
 /**
  * Mascara o token 3C Plus no response — substitui por '***' quando existe,
@@ -99,6 +100,7 @@ export async function criar(req, res, next) {
       },
     });
 
+    invalidarWhitelist();
     res.status(201).json(maskToken(user));
   } catch (error) {
     next(error);
@@ -195,6 +197,7 @@ export async function atualizar(req, res, next) {
       }
     }
 
+    invalidarWhitelist();
     res.json(maskToken(user));
   } catch (error) {
     next(error);
@@ -208,6 +211,7 @@ export async function excluir(req, res, next) {
     if (!existing) return res.status(404).json({ error: 'Usuário não encontrado' });
 
     await prisma.user.delete({ where: { id } });
+    invalidarWhitelist();
     res.status(204).send();
   } catch (error) {
     next(error);
@@ -237,6 +241,7 @@ export async function criarAgente(req, res, next) {
 
     console.log(`[Users] Agente 3C Plus criado para ${user.nome}: userId=${resultado.userId}, agentId=${resultado.agentId}`);
 
+    invalidarWhitelist();
     res.json(maskToken(updated));
   } catch (error) {
     next(error);
@@ -376,7 +381,8 @@ export async function vincularAgente(req, res, next) {
 
     console.log(`[Users] Agente 3C Plus vinculado para ${user.nome}: agentId=${agente.agentId}, ext=${agente.extension}, token=${agente.apiToken ? 'sim' : 'não'}`);
 
-    res.json(updated);
+    invalidarWhitelist();
+    res.json(maskToken(updated));
   } catch (error) {
     next(error);
   }
