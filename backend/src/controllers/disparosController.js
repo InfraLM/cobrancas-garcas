@@ -23,7 +23,11 @@ export async function historico(req, res, next) {
     const dias = Number(String(periodo).replace(/\D/g, '')) || 30;
     where.criadoEm = { gte: new Date(Date.now() - dias * 24 * 60 * 60 * 1000) };
 
-    const [disparos, total] = await Promise.all([
+    // whereResumo ignora o filtro de status — os cards do frontend sempre mostram todos
+    // os status do periodo, enquanto a lista respeita o filtro do usuario.
+    const { status: _, ...whereResumo } = where;
+
+    const [disparos, total, porStatus] = await Promise.all([
       prisma.disparoMensagem.findMany({
         where,
         orderBy: { criadoEm: 'desc' },
@@ -31,8 +35,17 @@ export async function historico(req, res, next) {
         take: Number(limit),
       }),
       prisma.disparoMensagem.count({ where }),
+      prisma.disparoMensagem.groupBy({
+        by: ['status'],
+        _count: true,
+        where: whereResumo,
+      }),
     ]);
-    res.json({ data: disparos, total, page: Number(page), limit: Number(limit) });
+
+    const resumoStatus = { ENVIADO: 0, PENDENTE: 0, FALHOU: 0, CANCELADO: 0 };
+    for (const r of porStatus) resumoStatus[r.status] = r._count;
+
+    res.json({ data: disparos, total, page: Number(page), limit: Number(limit), resumoStatus });
   } catch (error) {
     next(error);
   }

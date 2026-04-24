@@ -8,6 +8,7 @@ export default function HistoricoDisparosTab() {
   const [disparos, setDisparos] = useState<DisparoMensagem[]>([]);
   const [loading, setLoading] = useState(true);
   const [total, setTotal] = useState(0);
+  const [resumoStatus, setResumoStatus] = useState({ ENVIADO: 0, PENDENTE: 0, FALHOU: 0, CANCELADO: 0 });
   const [statusFiltro, setStatusFiltro] = useState<string>('');
   const [periodo, setPeriodo] = useState<string>('7d');
 
@@ -21,6 +22,7 @@ export default function HistoricoDisparosTab() {
       });
       setDisparos(r.data);
       setTotal(r.total);
+      setResumoStatus(r.resumoStatus);
     } catch (e) {
       console.error(e);
     } finally {
@@ -42,11 +44,6 @@ export default function HistoricoDisparosTab() {
     if (s === 'CANCELADO') return <Ban size={12} className="text-stone-500" />;
     return <Clock size={12} className="text-gray-400" />;
   }
-
-  const resumoStatus = disparos.reduce(
-    (acc, d) => { acc[d.status] = (acc[d.status] || 0) + 1; return acc; },
-    {} as Record<string, number>
-  );
 
   return (
     <div className="space-y-4">

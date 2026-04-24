@@ -52,6 +52,7 @@ export interface HistoricoResponse {
   total: number;
   page: number;
   limit: number;
+  resumoStatus: { ENVIADO: number; PENDENTE: number; FALHOU: number; CANCELADO: number };
 }
 
 export async function listarHistorico(params: { status?: string; pessoaCodigo?: number; periodo?: string; page?: number; limit?: number } = {}): Promise<HistoricoResponse> {
