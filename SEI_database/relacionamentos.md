@@ -569,3 +569,161 @@ WHERE cc.status = 'AGUARDANDO'
   AND cc."instanciaId" = '80e6ea859385137827c362646bf51222'
 ORDER BY cc."ultimaMensagemCliente" DESC;
 ```
+
+---
+
+## Tabelas CRM — Disparo de Mensagens (sprint 2026-04-24)
+
+Grupo novo para cobranca automatica via WhatsApp (Blip). **Todas em `cobranca.*`**.
+
+### `template_blip`
+Templates Meta aprovados na Blip com mapeamento estruturado de variaveis.
+
+| Coluna | Tipo | Descricao |
+|---|---|---|
+| id | uuid PK | |
+| nomeBlip | text UNIQUE | Nome aprovado na Meta (ex: `template_fluxo_antes_venc_rec_inativa1`) |
+| titulo | text | Titulo interno amigavel |
+| descricao | text? | |
+| conteudoPreview | text | Corpo com `{{1}} {{2}}` etc — pra preview |
+| variaveis | jsonb | `[{ indice, fonte }]` onde fonte mapeia pra um dos 9 resolvers |
+| categoria | text | PRE_VENCIMENTO \| POS_VENCIMENTO \| OUTRO |
+| escopo | text | AMBOS \| TITULO — inferido automaticamente pelas variaveis |
+| ativo | boolean default true | |
+
+**Indexes:** `(categoria, ativo)`
+
+**Fontes de variaveis** (em `reguaExecutorService.listarFontesDisponiveis`):
+- `NOME_ALUNO`, `PRIMEIRO_NOME` — escopo AMBOS
+- `VALOR_PARCELA`, `DATA_VENCIMENTO`, `LINK_PAGAMENTO_SEI` — exigem contareceber → forcam escopo TITULO
+- `DIAS_ATE_VENCIMENTO`, `DIAS_ATE_VENCIMENTO_FRIENDLY` — TITULO (ex: "em 7 dias", "amanha", "hoje")
+- `DIAS_APOS_VENCIMENTO`, `DIAS_APOS_VENCIMENTO_FRIENDLY` — TITULO (ex: "ha 5 dias")
+
+### `regua_cobranca`
+Fluxo/regua de cobranca automatica. Aceita apenas segmentacoes tipo TITULO (regras ALUNO ficam pra Disparo Manual).
+
+| Coluna | Tipo | Descricao |
+|---|---|---|
+| id | uuid PK | |
+| nome | text | |
+| ativo | boolean default false | Comeca inativa |
+| horarioPadrao | text default '09:00' | HH:MM default das etapas |
+| intervaloDisparoSeg | int default 2 | Wait entre disparos (rate limit Blip) |
+| ultimaExecucao | timestamp? | |
+
+**Indexes:** `(ativo)`
+
+### `etapa_regua`
+Cada "toque" da regua (ex: -7d antes, +2d depois).
+
+| Coluna | Tipo | Descricao |
+|---|---|---|
+| id | uuid PK | |
+| reguaId | uuid FK → regua_cobranca **CASCADE** | |
+| nome | text | Ex: "7 dias antes — rec inativa" |
+| diasRelativoVenc | int | Negativo = antes, zero = dia D, positivo = depois |
+| horario | text? | HH:MM override do padrao da regua |
+| templateBlipId | uuid FK → template_blip **RESTRICT** | Impede delete de template em uso |
+| segmentacaoId | uuid? | **Sem FK constraint** — campo aponta para regra_segmentacao |
+| ativo | boolean default true | |
+| ultimaExecucaoEm | timestamp? | Barreira `jaRodouHoje` no scheduler |
+
+**Indexes:** `(reguaId, ativo)`, `(templateBlipId)`, `(ultimaExecucaoEm)`
+
+### `disparo_mensagem`
+Cada envio — auditavel e idempotente.
+
+| Coluna | Tipo | Descricao |
+|---|---|---|
+| id | uuid PK | |
+| reguaId | uuid? | **Sem FK** (preserva historico se regua deletada) |
+| etapaReguaId | uuid? | **Sem FK** — idem |
+| templateBlipId | uuid | **Sem FK** — idem |
+| templateNomeBlip | text | Snapshot textual do nome |
+| pessoaCodigo | int | SEI |
+| pessoaNome | text | Snapshot |
+| contaReceberCodigo | int? | Titulo alvo (regra TITULO) |
+| telefone | text | |
+| parametros | jsonb | `{ "1": "R$ 100", "4": "https://sei.../..." }` — resolvido no enqueue |
+| status | text default 'PENDENTE' | PENDENTE \| ENVIADO \| FALHOU \| CANCELADO |
+| tentativas | int default 0 | Max 3 no worker |
+| blipMessageId | text? | Retorno Blip |
+| erroMensagem | text? | |
+| origem | text default 'REGUA_AUTO' | REGUA_AUTO \| DISPARO_MANUAL |
+| criadoEm, disparadoEm, atualizadoEm | timestamp | |
+| convertido, convertidoEm, diasAteConversao | | Reconciliacao (fase futura) |
+
+**Indexes:**
+- `(status, criadoEm)` — worker drena PENDENTES ordenados
+- `(reguaId, disparadoEm)` — historico por regua
+- `(pessoaCodigo)` — timeline do aluno
+- `(templateBlipId)` — metricas por template
+
+**UNIQUE:** `(etapaReguaId, pessoaCodigo, contaReceberCodigo)` — idempotencia principal. `createMany({ skipDuplicates: true })` respeita.
+
+### `regra_segmentacao` — colunas novas (sprint 2026-04-24)
+
+| Coluna | Tipo | Descricao |
+|---|---|---|
+| tipo | text default 'ALUNO' | ALUNO \| TITULO — define o que a regra retorna |
+| escopoUso | text default 'GLOBAL' | GLOBAL \| EMBUTIDA_REGUA |
+| reguaOwnerId | uuid? FK regua_cobranca **CASCADE** | Quando EMBUTIDA_REGUA, aponta pra regua dona |
+| totalTitulos | int? | Metrica cacheada para regras TITULO |
+
+**Indexes novos:** `(escopoUso, reguaOwnerId)`
+
+### Cascade delete — mapa completo
+
+```
+ReguaCobranca (delete)
+  ├─ EtapaRegua                CASCADE
+  └─ RegraSegmentacao (embutidas) CASCADE (via reguaOwnerId)
+
+TemplateBlip (delete)
+  └─ EtapaRegua                RESTRICT (impede delete em uso)
+
+DisparoMensagem (historico preservado — SEM cascade em nenhuma FK)
+  ├─ reguaId / etapaReguaId / templateBlipId sao nullable e sem constraint
+  └─ Objetivo: auditoria permanente
+```
+
+### Relacoes N:1 sem FK (intencionais)
+
+| De | Para | Por que sem FK |
+|---|---|---|
+| disparo_mensagem → regua_cobranca | reguaId | Historico preservado quando regua deletada |
+| disparo_mensagem → etapa_regua | etapaReguaId | Idem |
+| disparo_mensagem → template_blip | templateBlipId | Idem — templateNomeBlip e snapshot |
+| disparo_mensagem → pessoa | pessoaCodigo | pessoa e SEI read-only |
+| disparo_mensagem → contareceber | contaReceberCodigo | contareceber e SEI read-only; re-validado no worker |
+| etapa_regua → regra_segmentacao | segmentacaoId | Flexibilidade — integridade garantida na app |
+
+### Exemplo: metricas por etapa (30d)
+
+```sql
+SELECT
+  e.id, e.nome, e."diasRelativoVenc",
+  COUNT(d.*)::int AS total_30d,
+  COUNT(d.*) FILTER (WHERE d.status = 'ENVIADO')::int AS enviados_30d,
+  COUNT(d.*) FILTER (WHERE d.status = 'FALHOU')::int AS falhas_30d,
+  COUNT(d.*) FILTER (WHERE d.convertido = true)::int AS convertidos_30d
+FROM cobranca.etapa_regua e
+LEFT JOIN cobranca.disparo_mensagem d
+  ON d."etapaReguaId" = e.id AND d."criadoEm" >= NOW() - INTERVAL '30 days'
+WHERE e."reguaId" = :reguaId
+GROUP BY e.id, e.nome, e."diasRelativoVenc"
+ORDER BY e."diasRelativoVenc";
+```
+
+### Exemplo: historico de disparos de um aluno
+
+```sql
+SELECT d.criadoEm, d.status, d.templateNomeBlip, d.erroMensagem,
+       r.nome AS regua_nome, e.nome AS etapa_nome
+FROM cobranca.disparo_mensagem d
+LEFT JOIN cobranca.regua_cobranca r ON r.id = d."reguaId"
+LEFT JOIN cobranca.etapa_regua e ON e.id = d."etapaReguaId"
+WHERE d."pessoaCodigo" = :codigo
+ORDER BY d."criadoEm" DESC
+LIMIT 50;
+```

@@ -17,6 +17,9 @@ import titulosRoutes from './titulosRoutes.js';
 import webhooksRoutes from './webhooksRoutes.js';
 import templatesWhatsappRoutes from './templatesWhatsappRoutes.js';
 import pausasLigacaoRoutes from './pausasLigacaoRoutes.js';
+import templatesBlipRoutes from './templatesBlipRoutes.js';
+import disparosRoutes from './disparosRoutes.js';
+import reguasCobrancaRoutes from './reguasCobrancaRoutes.js';
 
 const router = Router();
 
@@ -41,5 +44,8 @@ router.use('/dashboard', dashboardRoutes);
 router.use('/webhooks', webhooksRoutes);
 router.use('/templates-whatsapp', templatesWhatsappRoutes);
 router.use('/pausas-ligacao', pausasLigacaoRoutes);
+router.use('/templates-blip', templatesBlipRoutes);
+router.use('/disparos', disparosRoutes);
+router.use('/reguas-cobranca', reguasCobrancaRoutes);
 
 export default router;

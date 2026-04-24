@@ -27,8 +27,26 @@ const TURMAS_EXCLUIDAS_SQL = '1,10,14,19,22,27,29';
 
 export async function listar(req, res, next) {
   try {
+    const { incluirEmbutidas, reguaOwnerId, tipo } = req.query;
+    const where = {};
+    // Por padrao lista so GLOBAIS (reutilizaveis). Se agente pede incluirEmbutidas, traz tudo.
+    // Se reguaOwnerId esta presente, lista SO as embutidas daquela regua + globais (pra escolha no EtapaModal).
+    if (reguaOwnerId) {
+      where.OR = [
+        { escopoUso: 'GLOBAL' },
+        { reguaOwnerId: String(reguaOwnerId) },
+      ];
+    } else if (incluirEmbutidas !== 'true') {
+      where.escopoUso = 'GLOBAL';
+    }
+    if (tipo === 'ALUNO' || tipo === 'TITULO') where.tipo = tipo;
+
     const regras = await prisma.regraSegmentacao.findMany({
+      where,
       orderBy: { criadoEm: 'desc' },
+      include: reguaOwnerId || incluirEmbutidas === 'true' ? {
+        reguaOwner: { select: { id: true, nome: true } },
+      } : undefined,
     });
     res.json({ data: regras });
   } catch (error) {
@@ -50,16 +68,21 @@ export async function obter(req, res, next) {
 
 export async function criar(req, res, next) {
   try {
-    const { nome, descricao, condicoes } = req.body;
+    const { nome, descricao, condicoes, tipo, reguaOwnerId } = req.body;
     if (!nome || !condicoes || !Array.isArray(condicoes) || condicoes.length === 0) {
       return res.status(400).json({ error: 'Nome e pelo menos uma condicao sao obrigatorios' });
     }
+    const tipoValido = tipo === 'TITULO' ? 'TITULO' : 'ALUNO';
+    const escopoUso = reguaOwnerId ? 'EMBUTIDA_REGUA' : 'GLOBAL';
 
     const regra = await prisma.regraSegmentacao.create({
       data: {
         nome,
         descricao: descricao || null,
+        tipo: tipoValido,
         condicoes,
+        escopoUso,
+        reguaOwnerId: reguaOwnerId || null,
         criadoPor: req.user?.id || 0,
         criadoPorNome: req.user?.nome || null,
       },
@@ -73,7 +96,7 @@ export async function criar(req, res, next) {
 
 export async function atualizar(req, res, next) {
   try {
-    const { nome, descricao, condicoes, ativa } = req.body;
+    const { nome, descricao, condicoes, ativa, tipo } = req.body;
     const regra = await prisma.regraSegmentacao.update({
       where: { id: req.params.id },
       data: {
@@ -81,6 +104,7 @@ export async function atualizar(req, res, next) {
         ...(descricao !== undefined && { descricao }),
         ...(condicoes !== undefined && { condicoes }),
         ...(ativa !== undefined && { ativa }),
+        ...(tipo !== undefined && { tipo: tipo === 'TITULO' ? 'TITULO' : 'ALUNO' }),
       },
     });
     res.json({ data: regra });
@@ -99,36 +123,84 @@ export async function remover(req, res, next) {
 }
 
 /**
+ * POST /api/segmentacoes/:id/promover-global
+ * Transforma uma regra EMBUTIDA em GLOBAL (reutilizavel).
+ */
+export async function promoverGlobal(req, res, next) {
+  try {
+    const existente = await prisma.regraSegmentacao.findUnique({ where: { id: req.params.id } });
+    if (!existente) return res.status(404).json({ error: 'Regra nao encontrada' });
+    if (existente.escopoUso === 'GLOBAL') {
+      return res.status(400).json({ error: 'Regra ja e global' });
+    }
+    const regra = await prisma.regraSegmentacao.update({
+      where: { id: req.params.id },
+      data: { escopoUso: 'GLOBAL', reguaOwnerId: null },
+    });
+    res.json({ data: regra });
+  } catch (error) {
+    next(error);
+  }
+}
+
+/**
  * POST /api/segmentacoes/executar
  * Executa condicoes avulsas (preview, sem salvar)
  */
 export async function executarAvulso(req, res, next) {
   try {
-    const { condicoes, page = 1, limit = 20, search = '' } = req.body;
+    const { condicoes, page = 1, limit = 20, search = '', tipo = 'ALUNO' } = req.body;
     if (!condicoes || !Array.isArray(condicoes) || condicoes.length === 0) {
       return res.status(400).json({ error: 'Condicoes obrigatorias' });
     }
+    const tipoValido = tipo === 'TITULO' ? 'TITULO' : 'ALUNO';
 
-    const sql = buildSegmentacaoQuery(condicoes, { page, limit, search });
+    const sql = buildSegmentacaoQuery(condicoes, { page, limit, search }, tipoValido);
     const rows = await prisma.$queryRawUnsafe(sql);
-    const total = rows.length > 0 ? rows[0].total : 0;
+    const total = rows.length > 0 ? Number(rows[0].total) : 0;
 
-    const baseData = rows.map(r => ({
-      codigo: r.codigo,
-      nome: r.nome,
-      cpf: r.cpf,
-      celular: r.celular,
-      matricula: r.matricula,
-      situacao: r.situacao_calculada,
-      situacaoFinanceira: r.situacao_financeira,
-      valorDevedor: Number(r.valor_devedor),
-    }));
-    const data = await anexarPausaAtiva(baseData);
+    const data = tipoValido === 'TITULO'
+      ? mapRowsTitulo(rows)
+      : await anexarPausaAtiva(mapRowsAluno(rows));
 
-    res.json({ data, total, page, limit });
+    res.json({ data, total, page, limit, tipo: tipoValido });
   } catch (error) {
     next(error);
   }
+}
+
+function mapRowsAluno(rows) {
+  return rows.map(r => ({
+    codigo: r.codigo,
+    nome: r.nome,
+    cpf: r.cpf,
+    celular: r.celular,
+    matricula: r.matricula,
+    situacao: r.situacao_calculada,
+    situacaoFinanceira: r.situacao_financeira,
+    valorDevedor: Number(r.valor_devedor),
+  }));
+}
+
+function mapRowsTitulo(rows) {
+  return rows.map(r => ({
+    codigo: r.codigo,
+    nome: r.nome,
+    cpf: r.cpf,
+    celular: r.celular,
+    matricula: r.matricula,
+    // Dados especificos do titulo
+    tituloCodigo: Number(r.titulo_codigo),
+    tituloValor: Number(r.titulo_valor || 0),
+    tituloValorRecebido: Number(r.titulo_valor_recebido || 0),
+    tituloDataVencimento: r.titulo_data_vencimento,
+    tituloToken: r.titulo_token,
+    tituloSituacao: r.titulo_situacao,
+    tituloTipoOrigem: r.titulo_tipo_origem,
+    tituloDiasAteVencimento: Number(r.titulo_dias_ate_venc || 0),
+    tituloDiasAposVencimento: Number(r.titulo_dias_apos_venc || 0),
+    tituloTurma: r.titulo_turma,
+  }));
 }
 
 /**
@@ -144,40 +216,42 @@ export async function executarRegra(req, res, next) {
 
     const { page = 1, limit = 20, search = '' } = req.body || {};
     const condicoes = regra.condicoes;
+    const tipo = regra.tipo || 'ALUNO';
 
-    const sql = buildSegmentacaoQuery(condicoes, { page, limit, search });
+    const sql = buildSegmentacaoQuery(condicoes, { page, limit, search }, tipo);
     const rows = await prisma.$queryRawUnsafe(sql);
-    const total = rows.length > 0 ? rows[0].total : 0;
+    const total = rows.length > 0 ? Number(rows[0].total) : 0;
 
-    // Calcular metricas totais
-    const countSql = buildSegmentacaoCountQuery(condicoes);
+    const countSql = buildSegmentacaoCountQuery(condicoes, tipo);
     const countResult = await prisma.$queryRawUnsafe(countSql);
-    const totalGeral = countResult[0]?.total || 0;
+    const totalGeral = Number(countResult[0]?.total || 0);
     const valorTotal = Number(countResult[0]?.valor_total || 0);
+    const alunosUnicos = tipo === 'TITULO' ? Number(countResult[0]?.alunos_unicos || 0) : totalGeral;
 
-    // Atualizar metricas na regra
     await prisma.regraSegmentacao.update({
       where: { id: req.params.id },
       data: {
         ultimaExecucao: new Date(),
-        totalAlunos: totalGeral,
+        totalAlunos: alunosUnicos,
+        totalTitulos: tipo === 'TITULO' ? totalGeral : null,
         valorInadimplente: valorTotal,
       },
     });
 
-    const baseData = rows.map(r => ({
-      codigo: r.codigo,
-      nome: r.nome,
-      cpf: r.cpf,
-      celular: r.celular,
-      matricula: r.matricula,
-      situacao: r.situacao_calculada,
-      situacaoFinanceira: r.situacao_financeira,
-      valorDevedor: Number(r.valor_devedor),
-    }));
-    const data = await anexarPausaAtiva(baseData);
+    const data = tipo === 'TITULO'
+      ? mapRowsTitulo(rows)
+      : await anexarPausaAtiva(mapRowsAluno(rows));
 
-    res.json({ data, total, totalGeral, valorTotal, page, limit });
+    res.json({
+      data,
+      total,
+      totalGeral,
+      valorTotal,
+      alunosUnicos,
+      page,
+      limit,
+      tipo,
+    });
   } catch (error) {
     next(error);
   }
@@ -198,19 +272,23 @@ export async function subirCampanha(req, res, next) {
     });
     if (!regra) return res.status(404).json({ error: 'Regra nao encontrada' });
 
-    // Executar regra sem limite para pegar TODOS os alunos
-    const sql = buildSegmentacaoQuery(regra.condicoes, { page: 1, limit: 99999 });
+    const tipo = regra.tipo || 'ALUNO';
+
+    // Executar regra sem limite
+    const sql = buildSegmentacaoQuery(regra.condicoes, { page: 1, limit: 99999 }, tipo);
     const rows = await prisma.$queryRawUnsafe(sql);
 
-    const alunos = rows.map(r => ({
-      codigo: r.codigo,
-      nome: r.nome,
-      celular: r.celular,
-    }));
+    // Ligação e por aluno, nao por titulo — deduplica por codigo quando TITULO
+    const mapa = new Map();
+    for (const r of rows) {
+      if (!mapa.has(r.codigo)) {
+        mapa.set(r.codigo, { codigo: r.codigo, nome: r.nome, celular: r.celular });
+      }
+    }
+    const alunos = [...mapa.values()];
 
     const resultado = await subirSegmentacaoParaCampanha(alunos, regra.nome);
-
-    console.log(`[Segmentacao] Regra "${regra.nome}" subida para campanha: ${resultado.totalSubidos} contatos`);
+    console.log(`[Segmentacao] Regra "${regra.nome}" (${tipo}) subida: ${resultado.totalSubidos}/${alunos.length} contatos`);
 
     res.json({ data: resultado });
   } catch (error) {

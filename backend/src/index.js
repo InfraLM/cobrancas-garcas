@@ -3,6 +3,8 @@ import app from './app.js';
 import { setupRealtime } from './realtime.js';
 import { startSocketWorker } from './workers/socket3cplusWorker.js';
 import { runDeltaSync } from './sync/deltaSync.js';
+import { startReguaScheduler } from './services/reguaSchedulerService.js';
+import { startReguaWorker } from './services/reguaWorkerService.js';
 
 const PORT = process.env.PORT || 3001;
 const DELTA_SYNC_INTERVAL = 10 * 60 * 1000; // 10 minutos
@@ -25,4 +27,8 @@ httpServer.listen(PORT, () => {
   setInterval(() => {
     runDeltaSync().catch(err => console.error('[DeltaSync] Erro:', err.message));
   }, DELTA_SYNC_INTERVAL);
+
+  // Scheduler de reguas (1x/dia no horario configurado) + worker de disparo continuo
+  startReguaScheduler();
+  startReguaWorker();
 });

@@ -1,13 +1,14 @@
 import { useState, useEffect, useCallback } from 'react';
 import type { RegraSegmentacao } from '../types/segmentacao';
-import { listarRegras, excluirRegra, executarRegra, subirParaCampanha } from '../services/segmentacao';
-import type { SubirCampanhaResult } from '../services/segmentacao';
+import { listarRegras, listarRegrasComFiltros, excluirRegra, executarRegra, subirParaCampanha } from '../services/segmentacao';
+import type { SubirCampanhaResult, TituloDaSegmentacao } from '../services/segmentacao';
 import { removerEmMassa, criarPausa, removerPausa } from '../services/pausasLigacao';
 import RegrasTable from '../components/segmentacao/RegrasTable';
 import NovaRegraModal from '../components/segmentacao/NovaRegraModal';
 import AlunosTable from '../components/alunos/AlunosTable';
+import TitulosDaSegmentacaoTable from '../components/segmentacao/TitulosDaSegmentacaoTable';
 import SearchInput from '../components/ui/SearchInput';
-import { Plus, Loader2, ArrowLeft, Pencil, Upload, CheckCircle, FileDown, Pause, Play } from 'lucide-react';
+import { Plus, Loader2, ArrowLeft, Pencil, Upload, CheckCircle, FileDown, Pause, Play, User, Receipt } from 'lucide-react';
 import type { AlunoListItem } from '../services/alunos';
 import ExportarSegmentacaoModal from '../components/segmentacao/ExportarSegmentacaoModal';
 
@@ -19,14 +20,17 @@ export default function SegmentacaoPage() {
   const [regraEditando, setRegraEditando] = useState<RegraSegmentacao | null>(null);
 
   const [regraAtiva, setRegraAtiva] = useState<RegraSegmentacao | null>(null);
-  const [resultado, setResultado] = useState<AlunoListItem[]>([]);
+  const [resultadoAlunos, setResultadoAlunos] = useState<AlunoListItem[]>([]);
+  const [resultadoTitulos, setResultadoTitulos] = useState<TituloDaSegmentacao[]>([]);
   const [resultadoTotal, setResultadoTotal] = useState(0);
   const [resultadoValor, setResultadoValor] = useState(0);
+  const [resultadoAlunosUnicos, setResultadoAlunosUnicos] = useState(0);
   const [executando, setExecutando] = useState(false);
   const [subindo, setSubindo] = useState(false);
   const [subidoResult, setSubidoResult] = useState<SubirCampanhaResult | null>(null);
   const [despausandoMassa, setDespausandoMassa] = useState(false);
   const [linhaMexendo, setLinhaMexendo] = useState<number | null>(null);
+  const [mostrarEmbutidas, setMostrarEmbutidas] = useState(false);
 
   async function toggleLinhaPausa(aluno: AlunoListItem) {
     if (linhaMexendo === aluno.codigo) return;
@@ -34,10 +38,10 @@ export default function SegmentacaoPage() {
     try {
       if (aluno.pausaAtiva) {
         await removerPausa(aluno.pausaAtiva.id, 'Despausado na tela de segmentacao');
-        setResultado((prev) => prev.map((a) => a.codigo === aluno.codigo ? { ...a, pausaAtiva: null } : a));
+        setResultadoAlunos((prev) => prev.map((a) => a.codigo === aluno.codigo ? { ...a, pausaAtiva: null } : a));
       } else {
         const pausa = await criarPausa({ pessoaCodigo: aluno.codigo, motivo: 'AGENTE_DECISAO' });
-        setResultado((prev) => prev.map((a) => a.codigo === aluno.codigo ? {
+        setResultadoAlunos((prev) => prev.map((a) => a.codigo === aluno.codigo ? {
           ...a,
           pausaAtiva: {
             id: pausa.id,
@@ -60,14 +64,16 @@ export default function SegmentacaoPage() {
   const carregar = useCallback(async () => {
     setLoading(true);
     try {
-      const data = await listarRegras();
+      const data = mostrarEmbutidas
+        ? await listarRegrasComFiltros({ incluirEmbutidas: true })
+        : await listarRegras();
       setRegras(data);
     } catch (err) {
       console.error('Erro ao carregar regras:', err);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [mostrarEmbutidas]);
 
   useEffect(() => { carregar(); }, [carregar]);
 
@@ -80,7 +86,15 @@ export default function SegmentacaoPage() {
     setExecutando(true);
     try {
       const res = await executarRegra(regra.id, { limit: 50 });
-      setResultado(res.data);
+      if (res.tipo === 'TITULO') {
+        setResultadoTitulos(res.data as TituloDaSegmentacao[]);
+        setResultadoAlunos([]);
+        setResultadoAlunosUnicos(res.alunosUnicos || 0);
+      } else {
+        setResultadoAlunos(res.data as AlunoListItem[]);
+        setResultadoTitulos([]);
+        setResultadoAlunosUnicos(res.totalGeral);
+      }
       setResultadoTotal(res.totalGeral);
       setResultadoValor(res.valorTotal);
       carregar();
@@ -115,20 +129,29 @@ export default function SegmentacaoPage() {
   }
 
   if (regraAtiva) {
+    const tipoRegra = regraAtiva.tipo || 'ALUNO';
+    const isTitulo = tipoRegra === 'TITULO';
     return (
       <div className="space-y-5">
         <div className="flex items-center gap-3">
-          <button onClick={() => { setRegraAtiva(null); setResultado([]); }} className="flex items-center gap-1 text-[0.8125rem] text-gray-500 hover:text-gray-900 transition-colors">
+          <button onClick={() => { setRegraAtiva(null); setResultadoAlunos([]); setResultadoTitulos([]); }} className="flex items-center gap-1 text-[0.8125rem] text-gray-500 hover:text-gray-900 transition-colors">
             <ArrowLeft size={16} /> Voltar
           </button>
           <h2 className="text-lg font-semibold text-on-surface">{regraAtiva.nome}</h2>
+          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[0.6875rem] font-medium ${isTitulo ? 'bg-violet-50 text-violet-700' : 'bg-sky-50 text-sky-700'}`}>
+            {isTitulo ? <Receipt size={11} /> : <User size={11} />}
+            {isTitulo ? 'Por título' : 'Por aluno'}
+          </span>
           <button onClick={() => { setRegraEditando(regraAtiva); setNovaRegraAberta(true); }}
             className="flex items-center gap-1 text-[0.75rem] text-gray-400 hover:text-gray-700 transition-colors ml-2">
             <Pencil size={13} /> Editar
           </button>
           <button
             onClick={async () => {
-              if (!confirm(`Subir ${resultadoTotal} alunos para a campanha de ligacao em massa?`)) return;
+              const msg = isTitulo
+                ? `Subir ${resultadoAlunosUnicos} aluno(s) (${resultadoTotal} títulos) para a campanha de ligação em massa?`
+                : `Subir ${resultadoTotal} alunos para a campanha de ligação em massa?`;
+              if (!confirm(msg)) return;
               setSubindo(true);
               setSubidoResult(null);
               try {
@@ -157,10 +180,22 @@ export default function SegmentacaoPage() {
         </div>
 
         <div className="flex items-center gap-4 text-[0.8125rem]">
-          <span className="text-on-surface font-medium">{resultadoTotal} alunos</span>
-          <span className="text-red-600 font-medium">
-            {resultadoValor.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} inadimplente
-          </span>
+          {isTitulo ? (
+            <>
+              <span className="text-on-surface font-medium">{resultadoTotal} títulos</span>
+              <span className="text-gray-500">{resultadoAlunosUnicos} aluno{resultadoAlunosUnicos !== 1 ? 's' : ''} únicos</span>
+              <span className="text-red-600 font-medium">
+                {resultadoValor.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} total
+              </span>
+            </>
+          ) : (
+            <>
+              <span className="text-on-surface font-medium">{resultadoTotal} alunos</span>
+              <span className="text-red-600 font-medium">
+                {resultadoValor.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} inadimplente
+              </span>
+            </>
+          )}
           {executando && <Loader2 size={16} className="animate-spin text-gray-400" />}
         </div>
 
@@ -185,7 +220,9 @@ export default function SegmentacaoPage() {
         )}
 
         {(() => {
-          const pausadosNoPreview = resultado.filter(a => a.pausaAtiva);
+          // Banner de pausa so aplica ao modo ALUNO
+          if (isTitulo) return null;
+          const pausadosNoPreview = resultadoAlunos.filter(a => a.pausaAtiva);
           if (pausadosNoPreview.length === 0) return null;
           return (
             <div className="flex items-center gap-3 p-3 rounded-xl bg-amber-50 border border-amber-200">
@@ -224,8 +261,11 @@ export default function SegmentacaoPage() {
           );
         })()}
 
+        {isTitulo ? (
+          <TitulosDaSegmentacaoTable titulos={resultadoTitulos} />
+        ) : (
         <AlunosTable
-          alunos={resultado}
+          alunos={resultadoAlunos}
           onSelecionar={() => {}}
           renderAcoes={(aluno) => {
             const pausado = Boolean(aluno.pausaAtiva);
@@ -252,6 +292,7 @@ export default function SegmentacaoPage() {
             );
           }}
         />
+        )}
 
         <NovaRegraModal aberto={novaRegraAberta} onFechar={() => { setNovaRegraAberta(false); setRegraEditando(null); }} onSalva={handleSalva} regraEditando={regraEditando} />
 
@@ -273,6 +314,15 @@ export default function SegmentacaoPage() {
         <div className="w-72">
           <SearchInput valor={busca} onChange={setBusca} placeholder="Buscar regra..." />
         </div>
+        <label className="flex items-center gap-1.5 text-[0.75rem] text-gray-500 cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={mostrarEmbutidas}
+            onChange={e => setMostrarEmbutidas(e.target.checked)}
+            className="w-3.5 h-3.5"
+          />
+          Mostrar embutidas em régua
+        </label>
         <span className="text-[0.8125rem] text-gray-400 ml-auto">{regrasFiltradas.length} regras</span>
         <button
           onClick={() => setNovaRegraAberta(true)}

@@ -76,17 +76,24 @@ model RegraSegmentacao {
   id                String    @id @default(uuid())
   nome              String
   descricao         String?
+  tipo              String    @default("ALUNO") // ALUNO | TITULO
   condicoes         Json
   ativa             Boolean   @default(true)
+  escopoUso         String    @default("GLOBAL") // GLOBAL | EMBUTIDA_REGUA
+  reguaOwnerId      String?
   criadoPor         Int
   criadoPorNome     String?
   criadoEm          DateTime  @default(now())
   atualizadoEm      DateTime  @updatedAt
   ultimaExecucao    DateTime?
   totalAlunos       Int?
+  totalTitulos      Int?
   valorInadimplente Decimal?  @db.Decimal(12, 2)
 
+  reguaOwner        ReguaCobranca? @relation("SegmentacoesEmbutidas", fields: [reguaOwnerId], references: [id], onDelete: Cascade)
+
   @@index([ativa])
+  @@index([escopoUso, reguaOwnerId])
   @@map("regra_segmentacao")
 }
 
@@ -1921,6 +1928,111 @@ model PausaLigacao {
   @@index([acordoId])
   @@index([pausaAte])
   @@map("pausa_ligacao")
+}
+
+// ============================================================
+// REGUA DE COBRANCA AUTOMATICA (WhatsApp via Blip)
+// ============================================================
+
+model TemplateBlip {
+  id              String   @id @default(uuid())
+  nomeBlip        String   @unique       // nome cadastrado e aprovado na Blip/Meta
+  titulo          String                 // titulo interno amigavel
+  descricao       String?
+  conteudoPreview String                 // corpo do template com {{1}} {{2}} etc
+  variaveis       Json                   // [{ indice: 1, fonte: 'VALOR_PARCELA' }, ...]
+  categoria       String                 // PRE_VENCIMENTO | POS_VENCIMENTO | OUTRO
+  escopo          String   @default("AMBOS") // AMBOS | TITULO — inferido pelas variaveis
+  ativo           Boolean  @default(true)
+  criadoPor       Int
+  criadoPorNome   String?
+  criadoEm        DateTime @default(now())
+  atualizadoEm    DateTime @updatedAt
+
+  etapas          EtapaRegua[]
+
+  @@index([categoria, ativo])
+  @@map("template_blip")
+}
+
+model ReguaCobranca {
+  id                  String   @id @default(uuid())
+  nome                String
+  descricao           String?
+  ativo               Boolean  @default(false)
+  horarioPadrao       String   @default("09:00") // HH:MM
+  intervaloDisparoSeg Int      @default(2)
+  criadoPor           Int
+  criadoPorNome       String?
+  criadoEm            DateTime @default(now())
+  atualizadoEm        DateTime @updatedAt
+  ultimaExecucao      DateTime?
+
+  etapas                EtapaRegua[]
+  segmentacoesEmbutidas RegraSegmentacao[] @relation("SegmentacoesEmbutidas")
+
+  @@index([ativo])
+  @@map("regua_cobranca")
+}
+
+model EtapaRegua {
+  id                String   @id @default(uuid())
+  reguaId           String
+  nome              String
+  ordem             Int      @default(0)
+  diasRelativoVenc  Int                    // negativo = antes, positivo = depois
+  horario           String?                // HH:MM override do padrao da regua
+  templateBlipId    String
+  filtroRecorrencia String   @default("QUALQUER") // ATIVA | INATIVA | QUALQUER
+  filtroSituacao    String   @default("AR")        // AR | RE | QUALQUER
+  tiposOrigem       String[] @default([])          // ['MEN','MAT'...]
+  segmentacaoId     String?                         // FK opcional a RegraSegmentacao
+  ativo             Boolean  @default(true)
+  ultimaExecucaoEm  DateTime?                       // quando o scheduler processou esta etapa pela ultima vez
+  criadoEm          DateTime @default(now())
+  atualizadoEm      DateTime @updatedAt
+
+  regua             ReguaCobranca @relation(fields: [reguaId], references: [id], onDelete: Cascade)
+  template          TemplateBlip  @relation(fields: [templateBlipId], references: [id])
+
+  @@index([reguaId, ativo])
+  @@index([templateBlipId])
+  @@index([ultimaExecucaoEm])
+  @@map("etapa_regua")
+}
+
+model DisparoMensagem {
+  id                 String    @id @default(uuid())
+  reguaId            String?
+  etapaReguaId       String?
+  templateBlipId     String
+  templateNomeBlip   String                // snapshot do nome Blip
+  pessoaCodigo       Int
+  pessoaNome         String
+  contaReceberCodigo Int?
+  telefone           String
+  parametros         Json                  // { "1": "R$ 100,00", ... }
+
+  status             String    @default("PENDENTE") // PENDENTE | ENVIADO | FALHOU | CANCELADO
+  tentativas         Int       @default(0)
+  blipMessageId      String?
+  erroMensagem       String?
+  origem             String    @default("REGUA_AUTO") // REGUA_AUTO | DISPARO_MANUAL
+
+  criadoEm           DateTime  @default(now())
+  disparadoEm        DateTime?
+  atualizadoEm       DateTime  @updatedAt
+
+  convertido         Boolean   @default(false)
+  convertidoEm       DateTime?
+  diasAteConversao   Int?
+
+  @@unique([etapaReguaId, pessoaCodigo, contaReceberCodigo])
+  @@index([status, criadoEm])
+  @@index([reguaId, disparadoEm])
+  @@index([pessoaCodigo])
+  @@index([templateBlipId])
+  @@map("disparo_mensagem")
 }
 
 // ============================================================

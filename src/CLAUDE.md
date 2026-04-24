@@ -68,3 +68,31 @@ As rotas ficam em `/src/App.tsx` usando react-router-dom:
 
 Use contextos para estado global (auth, tema, etc). O padrao esta em `contexts/AuthContext.tsx`.
 Sempre crie o Provider e o hook de acesso juntos no mesmo arquivo.
+
+## Estrutura principal de modulos (atualizado 2026-04-24)
+
+- `components/alunos/` — AlunoDrawer, AlunosTable, AlunoTab*, PausarLigacaoModal
+- `components/conversas/` — chat cobranca (WhatsApp 3C Plus)
+- `components/ligacoes/` — WebRTC, click2call, painel ligacao ativa
+- `components/segmentacao/` — NovaRegraModal (toggle ALUNO/TITULO + reguaOwnerId + tipoFixo), RegrasTable, CondicaoLinha, TitulosDaSegmentacaoTable (preview de regra TITULO)
+- `components/disparos/` — NOVO modulo de cobranca automatica:
+  - `TemplatesBlipTab.tsx` — CRUD TemplateBlip com detectcao auto de `{{n}}` e mapeamento de variaveis + badges escopo
+  - `TemplateBlipModal.tsx` — editor com preview ao lado
+  - `DispararAgoraModal.tsx` — disparo manual: prever + enqueue + polling resumo
+  - `HistoricoDisparosTab.tsx` — disparos com filtros status/periodo
+  - `ReguasTab.tsx` — lista cards de regua com metricas 30d + botao "Nova"/"Criar do modelo"
+  - `NovaReguaModal.tsx` — cria regua (nome, descricao, horarioPadrao, intervaloDisparoSeg)
+  - `ReguaEditorDrawer.tsx` — editor com timeline visual + lista de etapas + botao "Executar agora"
+  - `EtapaModal.tsx` — config etapa (momento, template, segmentacao com criar inline, horario, simular)
+  - `TimelineEtapas.tsx` — visual SVG da linha do tempo com marco VENCIMENTO + bolinhas clicaveis
+- `components/workflow/` — Kanban negociacoes + acordo drawer
+- `contexts/` — Auth, Ligacoes, Realtime (Socket.io /ws)
+- `services/` — clients HTTP via `api.ts` (Bearer token automatico)
+
+## Padroes importantes (2026-04-24)
+
+- **Segmentacao embutida em regua**: NovaRegraModal aceita prop `reguaOwnerId` — quando presente, seg criada como `escopoUso=EMBUTIDA_REGUA` e nao aparece em /segmentacao por padrao. Toggle "Mostrar embutidas" no header de /segmentacao revela.
+- **Tipo de regra define preview**: SegmentacaoPage renderiza `TitulosDaSegmentacaoTable` (tipo=TITULO) ou `AlunosTable` (tipo=ALUNO). Cabecalho mostra badge + metricas adaptadas.
+- **Disparos filtram templates pelo escopo**: DispararAgoraModal filtra segmentacoes compativeis — template escopo=TITULO so aceita regras tipo=TITULO.
+- **Timeline visual da regua**: TimelineEtapas posiciona marcos proporcionalmente por diasRelativoVenc. Click em marco abre EtapaModal.
+- **Auto-save ao editar regua**: ReguaEditorDrawer usa onBlur em campos para salvar continuamente, sem botao "Salvar" explicito (exceto para mudancas criticas como Ativar/Desativar).

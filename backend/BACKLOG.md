@@ -580,3 +580,54 @@ Necessidades que afetam multiplas telas e devem ser resolvidas cedo.
 | Blacklist | pendente | 3 | 1 | — |
 | Ligacoes Ativas | pendente | 10 | 0 | 3cplus (socket, api, webrtc) |
 | Conversas WhatsApp | pendente | 15 | 3 | 3cplus (omni api, socket) |
+
+---
+
+## Sprint 2026-04-24 — Cobranca Automatica + Pausa + Busca + Segmentacao por Titulo
+
+### ✅ CONCLUIDO nesta sprint
+
+#### Pausa de ligacao por aluno
+- [MODEL] `pausa_ligacao` (CRM): origem, motivo, pausadoPor, pausaAte, soft-delete via removidoEm — ✅
+- [ROTA] `POST /pausas-ligacao`, `DELETE /:id`, `GET /por-aluno/:codigo`, `POST /remover-em-massa` — ✅
+- [SERVICE] `pausaLigacaoService.js` + `sincronizarPausaPorEtapa(acordo)` auto-pausa quando acordo entra em TERMO_ENVIADO/ACORDO_GERADO/SEI_VINCULADO/CHECANDO_PAGAMENTO — ✅
+- [INTEGRACAO] Filtro aplicado em `mailingService.subirSegmentacaoParaCampanha` antes do POST 3C Plus — ✅
+
+#### Busca por nome com pg_trgm
+- [MODEL] Migration: extensions `pg_trgm` + `unaccent` + funcao imutavel `cobranca.normalizar_busca(text)` + 6 indexes GIN trigram — ✅
+- [SERVICE] `utils/buscaNomeHelper.js`: buildWhereNome + buildOrderByRelevancia + buildBuscaClauses — ✅
+- [REFACTOR] 6 controllers migrados para usar helper: alunosController, acordosController, ocorrenciasController, cadastroRecorrenciaController, ficouFacilController, titulosController — ✅
+
+#### Segmentacao por Titulo
+- [MODEL] `RegraSegmentacao.tipo` (ALUNO|TITULO) + `RegraSegmentacao.totalTitulos` + `TemplateBlip.escopo` (AMBOS|TITULO) — ✅
+- [QUERY] `buildSegmentacaoTitulosQuery` novo + dispatcher `buildSegmentacaoQuery(cond, opts, tipo)` — ✅
+- [QUERY] CAMPO_MAP categorizado com `escopos: ['ALUNO'|'TITULO'|ambos]` + 6 campos de titulo novos (titulo_situacao, titulo_tipo_origem, titulo_valor, titulo_dias_ate_vencimento, titulo_dias_apos_vencimento, titulo_data_vencimento) — ✅
+- [QUERY] `buildSegmentacaoCountQuery(cond, tipo)` retorna total+alunos_unicos+valor_total pra TITULO — ✅
+
+#### Templates Blip + Disparos Manuais
+- [MODEL] `template_blip`: nomeBlip @unique, titulo, descricao, conteudoPreview, variaveis JSONB, categoria, escopo, ativo — ✅
+- [SERVICE] `reguaExecutorService.js`: resolverVariaveis + 9 fontes (NOME_ALUNO, PRIMEIRO_NOME, VALOR_PARCELA, DATA_VENCIMENTO, DIAS_ATE_VENCIMENTO, DIAS_ATE_VENCIMENTO_FRIENDLY, DIAS_APOS_VENCIMENTO, DIAS_APOS_VENCIMENTO_FRIENDLY, LINK_PAGAMENTO_SEI) — ✅
+- [ROTA] CRUD `/templates-blip` + endpoint `/fontes` + `/preview` — ✅
+- [INTEGRACAO] `blipMensagemService.enviarTemplate({ telefone, templateNome, parametros, botaoUrlParam })` generico — ✅
+- [MODEL] `disparo_mensagem`: status PENDENTE|ENVIADO|FALHOU|CANCELADO + UNIQUE(etapaReguaId, pessoaCodigo, contaReceberCodigo) — ✅
+- [ROTA] `/disparos/prever` + `/disparos/disparar-agora` + `/disparos/historico` + `/disparos/resumo` — ✅
+- [SEGURANCA] Validacao compat template-regra: template TITULO exige regra TITULO — ✅
+
+#### Regua automatica
+- [MODEL] `regua_cobranca` + `etapa_regua` (diasRelativoVenc, horario, templateBlipId FK, segmentacaoId, ultimaExecucaoEm) — ✅
+- [MODEL] `RegraSegmentacao.escopoUso` (GLOBAL|EMBUTIDA_REGUA) + `reguaOwnerId` FK cascade — ✅
+- [WORKER] `reguaSchedulerService.js`: tick 1min, `estaNoHorarioDa(etapa, regua)` + `jaRodouHoje(etapa)`, lock reentrancia via `trabalhandoTick`, `processarEtapa` com createMany em batches de 500 — ✅
+- [WORKER] `reguaWorkerService.js`: drain 5s, cancelamento auto de pendentes de regua desativada, defesa em profundidade (re-valida conta.situacao antes do envio) — ✅
+- [ROTA] CRUD `/reguas-cobranca` + `/etapas` nested + `/executar-agora` + `/simular` + `/preview` + `/metricas` + `/modelo-padrao` — ✅
+- [INTEGRACAO] Ao ativar regua (ativo: false→true): `executarReguaAgora` chamado em background — ✅
+
+### 🔜 PROXIMAS SPRINTS
+
+- [WORKER] Reconciliacao diaria de conversao — marcar `DisparoMensagem.convertido=true` quando `contareceber.situacao=RE` apos `disparadoEm`. Atribuicao: so ultimo disparo de sucesso antes do pagamento — P1
+- [MIDDLEWARE] Rate limit em `POST /disparos/disparar-agora`: cooldown de 5min por user. Mesmo sendo admin, evita disparo acidental de 10k mensagens — P1
+- [WORKER] Arquivamento de `disparo_mensagem` > 90 dias em tabela fria ou JSONB compactado. Crescimento estimado: 600-2500 rows/dia — P2
+- [SEGURANCA] Sanitizar `parametros` em responses do endpoint `/disparos/historico` — LINK_PAGAMENTO_SEI contem token (nao critico pois ja vai por WhatsApp, mas melhor ocultar em listagens) — P2
+- [MIDDLEWARE] `requireRole('ADMIN')` em rotas de escrita de regua/template — hoje single-tenant, mas bom hardening — P2
+- [ARQUITETURA] Regua por aluno (trigger-based): "aluno entrou na segmentacao pela primeira vez ha X dias". Util para boas-vindas, reconquista — P3
+- [INTEGRACAO] A/B test de templates numa mesma etapa (duas versoes enviadas em 50/50, metrica de conversao por variante) — P3
+- [ROTA] Dashboard de metricas avancado (graficos temporais, cohort, aging) — hoje so tem chip por etapa — P3

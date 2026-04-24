@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { listar, obter, criar, atualizar, remover, executarAvulso, executarRegra, exportarRegra, subirCampanha, limparCampanha, listarTurmas } from '../controllers/segmentacaoController.js';
+import { listar, obter, criar, atualizar, remover, promoverGlobal, executarAvulso, executarRegra, exportarRegra, subirCampanha, limparCampanha, listarTurmas } from '../controllers/segmentacaoController.js';
 import { requireAuth } from '../middleware/auth.js';
 
 const router = Router();
@@ -15,5 +15,6 @@ router.post('/limpar-campanha', requireAuth, limparCampanha);
 router.post('/:id/executar', requireAuth, executarRegra);
 router.post('/:id/subir-campanha', requireAuth, subirCampanha);
 router.post('/:id/exportar', requireAuth, exportarRegra);
+router.post('/:id/promover-global', requireAuth, promoverGlobal);
 
 export default router;
