@@ -267,84 +267,164 @@ async function calcularRecorrentesHistorico() {
 }
 
 // -----------------------------------------------
-// Novos alunos acumulados na janela + acumulado de cadastros de recorrencia
+// Novos alunos acumulados + % recorrencia (query portada literal do
+// arquivo dashboard/query-acumulado-alunos-recorrencia.txt)
 //
-// Semantica:
-//   - Janela = ultimas N semanas (12 por padrao).
-//   - Para cada semana S:
-//       novos_semana        = alunos matriculados (curso=1, nao-funcionario) com data em S
-//       novos_acumulado     = soma dos novos desde o inicio da janela ate S
-//       rec_acumulado       = quantos desses alunos (matriculados na janela) cadastraram
-//                             recorrencia ate o fim de S
-//       percentual          = rec_acumulado / novos_acumulado * 100
-//   - A "recorrencia cadastrada" nao considera inativacao (segue logica da query
-//     original do arquivo dashboard/query-acumulado-alunos-recorrencia.txt)
+// Logica preservada:
+//   - Whitelist de turmas (2,4,8,11,21,28) — cohort de medicina ativa
+//   - Exclui tipoorigem OUT (e MAT em CTEs de data-base/gap)
+//   - Funcionario = false
+//   - Trata cancelamento (com override da data magica 2025-02-04)
+//   - Trata trancamento via NEGOCIACAO (ILIKE TRANCAMENTO) e gap de 5 meses
+//   - Retorno de trancamento via NCR ou via gap
+//   - Acumulado SUM OVER dentro da janela
+//
+// Adaptacoes pra dashboard dinamico:
+//   - Janela rolling: ultimas 9 semanas completas, inicio no sabado
+//     (mesma "largura de semana" do original: sab -> sex)
 // -----------------------------------------------
 async function calcularAcumuladoAlunos() {
   const rows = await prisma.$queryRawUnsafe(`
-    WITH semanas AS (
-      SELECT
-        generate_series(0, 11) AS idx,
-        (date_trunc('week', CURRENT_DATE) - (generate_series(0, 11) * INTERVAL '1 week'))::date AS inicio,
-        (date_trunc('week', CURRENT_DATE) - (generate_series(0, 11) * INTERVAL '1 week') + INTERVAL '6 days')::date AS fim
+    WITH
+    base_matriculas AS (
+      SELECT DISTINCT cr.matriculaaluno AS matricula, cr.turma AS turma_codigo
+      FROM cobranca.contareceber cr
+      WHERE cr.turma IN (2,4,8,11,21,28)
+        AND COALESCE(cr.tipoorigem, '') <> 'OUT'
     ),
-    janela AS (
-      SELECT MIN(inicio) AS inicio_janela, MAX(fim) AS fim_janela FROM semanas
+    cadastro AS (
+      SELECT bm.matricula, bm.turma_codigo, tr.identificadorturma AS turma,
+        mt."data"::date AS data_matricula, p.cpf, p.nome AS nome_aluno, p.codigo AS pessoa_id
+      FROM base_matriculas bm
+      JOIN cobranca.matricula mt ON mt.matricula = bm.matricula
+      JOIN cobranca.pessoa p ON p.codigo = mt.aluno
+      JOIN cobranca.turma tr ON tr.codigo = bm.turma_codigo
+      WHERE COALESCE(p.funcionario, false) = false
     ),
-    alunos_base AS (
-      -- Primeira matricula curso=1 de cada aluno DENTRO da janela
-      SELECT DISTINCT ON (m.aluno)
-        m.aluno AS pessoa,
-        m.data::date AS data_matricula
-      FROM cobranca.matricula m
-      JOIN cobranca.pessoa p ON p.codigo = m.aluno
-      CROSS JOIN janela j
-      WHERE m.curso = 1
-        AND m.data::date BETWEEN j.inicio_janela AND j.fim_janela
-        AND p.aluno = true AND COALESCE(p.funcionario, false) = false
-      ORDER BY m.aluno, m.data ASC NULLS LAST
+    mp_ultimo AS (
+      SELECT DISTINCT ON (mp.matricula) mp.matricula,
+        mp.databasegeracaoparcelas::date AS data_base_parcelas,
+        mp.situacaomatriculaperiodo AS situacao_aluno
+      FROM cobranca.matriculaperiodo mp
+      ORDER BY mp.matricula, mp.databasegeracaoparcelas DESC NULLS LAST
+    ),
+    primeiro_venc_nao_mat AS (
+      SELECT cr.matriculaaluno AS matricula, MIN(cr.datavencimento::date) AS data_base_fallback
+      FROM cobranca.contareceber cr
+      WHERE cr.turma IN (2,4,8,11,21,28) AND COALESCE(cr.tipoorigem, '') NOT IN ('MAT','OUT')
+      GROUP BY cr.matriculaaluno
+    ),
+    data_base AS (
+      SELECT c.matricula,
+        COALESCE(mu.data_base_parcelas, pv.data_base_fallback, (c.data_matricula + INTERVAL '31 days')::date) AS data_base_parcelas,
+        mu.situacao_aluno
+      FROM cadastro c
+      LEFT JOIN mp_ultimo mu ON mu.matricula = c.matricula
+      LEFT JOIN primeiro_venc_nao_mat pv ON pv.matricula = c.matricula
+    ),
+    cancelamento AS (
+      SELECT cr.matriculaaluno AS matricula, MIN(cr.datacancelamento::date) AS data_cancelamento
+      FROM cobranca.contareceber cr
+      WHERE cr.turma IN (2,4,8,11,21,28) AND cr.datacancelamento IS NOT NULL AND COALESCE(cr.tipoorigem, '') <> 'OUT'
+      GROUP BY cr.matriculaaluno
+    ),
+    trancamento AS (
+      SELECT DISTINCT ON (nc.matriculaaluno) nc.matriculaaluno AS matricula,
+        nc.codigo AS codigo_trancamento, nc."data"::date AS data_trancamento
+      FROM cobranca.negociacaocontareceber nc
+      WHERE nc.justificativa ILIKE '%TRANCAMENTO%'
+      ORDER BY nc.matriculaaluno, nc."data" DESC NULLS LAST, nc.codigo DESC
+    ),
+    retorno_trancamento AS (
+      SELECT t.matricula, MIN(cr.datavencimento::date) AS data_retorno_trancamento
+      FROM trancamento t
+      JOIN cobranca.contareceber cr ON cr.matriculaaluno = t.matricula
+        AND cr.tipoorigem = 'NCR' AND TRIM(cr.codorigem) = t.codigo_trancamento::text
+      WHERE cr.turma IN (2,4,8,11,21,28) AND COALESCE(cr.tipoorigem, '') <> 'OUT'
+      GROUP BY t.matricula
+    ),
+    trancamento_gap_base AS (
+      SELECT cr.matriculaaluno AS matricula,
+        LAG(cr.datavencimento::date) OVER (PARTITION BY cr.matriculaaluno ORDER BY cr.datavencimento::date, cr.codigo) AS data_trancamento,
+        cr.datavencimento::date AS data_retorno_trancamento
+      FROM cobranca.contareceber cr
+      WHERE cr.turma IN (2,4,8,11,21,28) AND cr.situacao IN ('AR','RE','CF')
+        AND COALESCE(cr.tipoorigem, '') NOT IN ('MAT','OUT')
+    ),
+    trancamento_gap AS (
+      SELECT DISTINCT ON (tgb.matricula) tgb.matricula, tgb.data_trancamento, tgb.data_retorno_trancamento
+      FROM trancamento_gap_base tgb
+      WHERE tgb.data_trancamento IS NOT NULL
+        AND tgb.data_retorno_trancamento >= (tgb.data_trancamento + INTERVAL '5 months')
+      ORDER BY tgb.matricula, tgb.data_retorno_trancamento DESC NULLS LAST, tgb.data_trancamento DESC NULLS LAST
     ),
     recorrencia_ultimo AS (
-      -- Ultimo cadastro de recorrencia por pessoa (sem filtrar por inativacao)
-      SELECT DISTINCT ON (cc.pessoa)
-        cc.pessoa,
-        cc.datacadastro::date AS data_cadastro_recorrencia
+      SELECT DISTINCT ON (cc.pessoa) cc.pessoa AS pessoa_id,
+        cc.datacadastro::date AS data_cadastro_recorrencia,
+        cc.datainativacao::date AS datainativacao_recorrencia
       FROM cobranca.cartaocreditodebitorecorrenciapessoa cc
-      WHERE cc.pessoa IS NOT NULL
-      ORDER BY cc.pessoa, cc.datacadastro DESC NULLS LAST
+      ORDER BY cc.pessoa, cc.datacadastro DESC NULLS LAST, cc.codigo DESC
     ),
-    alunos_com_rec AS (
-      SELECT ab.pessoa, ab.data_matricula, ru.data_cadastro_recorrencia
-      FROM alunos_base ab
-      LEFT JOIN recorrencia_ultimo ru ON ru.pessoa = ab.pessoa
+    base_matricula AS (
+      SELECT c.matricula, c.pessoa_id, c.nome_aluno, c.cpf, c.turma, c.data_matricula,
+        CASE WHEN db.situacao_aluno = 'AT' AND ca.data_cancelamento = DATE '2025-02-04' THEN NULL
+          ELSE ca.data_cancelamento END AS data_cancelamento,
+        COALESCE(t.data_trancamento, tg.data_trancamento) AS data_trancamento,
+        COALESCE(rt.data_retorno_trancamento, tg.data_retorno_trancamento) AS data_retorno_trancamento,
+        ru.data_cadastro_recorrencia, ru.datainativacao_recorrencia
+      FROM cadastro c
+      LEFT JOIN data_base db ON db.matricula = c.matricula
+      LEFT JOIN cancelamento ca ON ca.matricula = c.matricula
+      LEFT JOIN trancamento t ON t.matricula = c.matricula
+      LEFT JOIN retorno_trancamento rt ON rt.matricula = c.matricula
+      LEFT JOIN trancamento_gap tg ON tg.matricula = c.matricula
+      LEFT JOIN recorrencia_ultimo ru ON ru.pessoa_id = c.pessoa_id
     ),
-    novos_por_semana AS (
-      SELECT s.idx, COUNT(*)::int AS novos
-      FROM alunos_com_rec a
-      CROSS JOIN semanas s
-      WHERE a.data_matricula BETWEEN s.inicio AND s.fim
-      GROUP BY s.idx
+    -- Janela "expandindo" desde 08/02/2026 ate o ultimo sabado completo.
+    -- Formato da semana: domingo -> sabado (ex: 2026-02-08 a 2026-02-14).
+    -- Conforme o tempo passa, novas semanas sao adicionadas automaticamente.
+    -- EXTRACT(DOW): domingo=0, sabado=6.
+    semanas AS (
+      SELECT
+        ROW_NUMBER() OVER (ORDER BY gs)::int AS semana,
+        gs::date AS inicio,
+        (gs + INTERVAL '6 days')::date AS fim
+      FROM generate_series(
+        DATE '2026-02-08',
+        (CURRENT_DATE - ((EXTRACT(DOW FROM CURRENT_DATE)::int + 1) % 7) * INTERVAL '1 day')::date,
+        INTERVAL '7 days'
+      ) AS gs
     ),
-    recorrentes_por_semana AS (
-      SELECT s.idx, COUNT(*)::int AS rec
-      FROM alunos_com_rec a
-      CROSS JOIN semanas s
-      WHERE a.data_cadastro_recorrencia IS NOT NULL
-        AND a.data_cadastro_recorrencia BETWEEN s.inicio AND s.fim
-      GROUP BY s.idx
+    janela AS (SELECT MIN(inicio) AS inicio_janela, MAX(fim) AS fim_janela FROM semanas),
+    novos_alunos_semana AS (
+      SELECT s.semana, s.inicio, s.fim, COUNT(*) AS novos_alunos_semana
+      FROM base_matricula bm CROSS JOIN semanas s
+      WHERE bm.data_matricula >= s.inicio AND bm.data_matricula <= s.fim
+        AND (bm.data_cancelamento IS NULL OR bm.data_cancelamento > s.fim)
+        AND NOT (bm.data_trancamento IS NOT NULL AND bm.data_trancamento <= s.fim
+          AND (bm.data_retorno_trancamento IS NULL OR bm.data_retorno_trancamento > s.fim))
+      GROUP BY s.semana, s.inicio, s.fim
+    ),
+    novos_alunos_recorrentes_semana AS (
+      SELECT s.semana, s.inicio, s.fim, COUNT(*) AS novos_alunos_recorrentes_semana
+      FROM base_matricula bm CROSS JOIN semanas s CROSS JOIN janela j
+      WHERE bm.data_matricula >= j.inicio_janela AND bm.data_matricula <= j.fim_janela
+        AND bm.data_cadastro_recorrencia IS NOT NULL
+        AND bm.data_cadastro_recorrencia >= s.inicio AND bm.data_cadastro_recorrencia <= s.fim
+        AND (bm.data_cancelamento IS NULL OR bm.data_cancelamento > s.fim)
+        AND NOT (bm.data_trancamento IS NOT NULL AND bm.data_trancamento <= s.fim
+          AND (bm.data_retorno_trancamento IS NULL OR bm.data_retorno_trancamento > s.fim))
+      GROUP BY s.semana, s.inicio, s.fim
     )
-    SELECT
-      12 - s.idx AS semana,
-      s.inicio,
-      s.fim,
-      COALESCE(n.novos, 0)::int AS novos_semana,
-      SUM(COALESCE(n.novos, 0)) OVER (ORDER BY s.inicio)::int AS novos_acumulado,
-      COALESCE(r.rec, 0)::int AS rec_semana,
-      SUM(COALESCE(r.rec, 0)) OVER (ORDER BY s.inicio)::int AS rec_acumulado
+    SELECT s.semana, s.inicio, s.fim,
+      COALESCE(n.novos_alunos_semana, 0)::int AS novos_semana,
+      SUM(COALESCE(n.novos_alunos_semana, 0)) OVER (ORDER BY s.semana ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)::int AS novos_acumulado,
+      COALESCE(r.novos_alunos_recorrentes_semana, 0)::int AS rec_semana,
+      SUM(COALESCE(r.novos_alunos_recorrentes_semana, 0)) OVER (ORDER BY s.semana ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)::int AS rec_acumulado
     FROM semanas s
-    LEFT JOIN novos_por_semana n ON n.idx = s.idx
-    LEFT JOIN recorrentes_por_semana r ON r.idx = s.idx
-    ORDER BY s.inicio
+    LEFT JOIN novos_alunos_semana n ON n.semana = s.semana
+    LEFT JOIN novos_alunos_recorrentes_semana r ON r.semana = s.semana
+    ORDER BY s.semana
   `);
 
   return rows.map(r => {
