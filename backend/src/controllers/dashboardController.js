@@ -76,7 +76,8 @@ async function calcularKPIs() {
     FROM cobranca.acordo_financeiro
   `);
 
-  // Recorrencia (mesma logica do grafico: registro ativo = cadastrado e nao inativado)
+  // Recorrencia ativa restrita ao mesmo universo de alunos do KPI totalAlunos
+  // (alunos matriculados em curso=1, nao-funcionarios) — pra taxaRecorrencia bater.
   const recorrencia = await prisma.$queryRawUnsafe(`
     WITH ultima_rec AS (
       SELECT DISTINCT ON (pessoa) pessoa, datacadastro, datainativacao
@@ -85,8 +86,9 @@ async function calcularKPIs() {
       ORDER BY pessoa, datacadastro DESC NULLS LAST
     )
     SELECT COUNT(*)::int AS total_com_recorrencia
-    FROM ultima_rec
-    WHERE datainativacao IS NULL OR datainativacao > CURRENT_TIMESTAMP
+    FROM ultima_rec ur
+    JOIN cobranca.aluno_resumo ar ON ar.codigo = ur.pessoa
+    WHERE ur.datainativacao IS NULL OR ur.datainativacao > CURRENT_TIMESTAMP
   `);
 
   return {
@@ -127,6 +129,7 @@ async function calcularAging() {
         AND cr.datavencimento < CURRENT_DATE
         AND cr.valor > COALESCE(cr.valorrecebido, 0)
         AND (cr.turma IS NULL OR cr.turma NOT IN (${TURMAS_EXCLUIDAS}))
+        AND COALESCE(cr.tipoorigem, '') NOT IN ('MAT', 'OUT')
         AND p.aluno = true
         AND (COALESCE(p.funcionario, false) = false OR p.codigo = 589)
     ) sub
@@ -169,7 +172,8 @@ async function calcularAgingHistorico() {
         AND cr.situacao IN ('AR', 'RE', 'CF')
         AND COALESCE(cr.tipoorigem, '') NOT IN ('MAT', 'OUT')
         AND (cr.turma IS NULL OR cr.turma NOT IN (${TURMAS_EXCLUIDAS}))
-        AND p.aluno = true AND COALESCE(p.funcionario, false) = false
+        AND p.aluno = true
+        AND (COALESCE(p.funcionario, false) = false OR p.codigo = 589)
         -- Nao havia sido pago ate o fim da semana
         AND NOT EXISTS (
           SELECT 1 FROM cobranca.contarecebernegociacaorecebimento crnr
@@ -263,7 +267,11 @@ async function calcularRecorrentesHistorico() {
 }
 
 // -----------------------------------------------
-// Acumulado de novos alunos + % recorrentes
+// Acumulado de alunos historico + % recorrencia ativa por snapshot semanal
+// Para cada semana S:
+//   acumulado = total de alunos matriculados (curso=1) ate o fim de S
+//   acumulado_recorrentes = subconjunto que tinha recorrencia ATIVA no fim de S
+//   percentual = acumulado_recorrentes / acumulado
 // -----------------------------------------------
 async function calcularAcumuladoAlunos() {
   const rows = await prisma.$queryRawUnsafe(`
@@ -273,51 +281,54 @@ async function calcularAcumuladoAlunos() {
         (date_trunc('week', CURRENT_DATE) - (generate_series(0, 11) * INTERVAL '1 week'))::date AS inicio,
         (date_trunc('week', CURRENT_DATE) - (generate_series(0, 11) * INTERVAL '1 week') + INTERVAL '6 days')::date AS fim
     ),
-    novos_por_semana AS (
-      SELECT
-        s.idx,
-        COUNT(DISTINCT m.aluno)::int AS novos
+    alunos_ate_semana AS (
+      SELECT s.idx, m.aluno
       FROM cobranca.matricula m
       JOIN cobranca.pessoa p ON p.codigo = m.aluno
       CROSS JOIN semanas s
       WHERE m.curso = 1
-        AND m.data::date BETWEEN s.inicio AND s.fim
+        AND m.data::date <= s.fim
         AND p.aluno = true AND COALESCE(p.funcionario, false) = false
-      GROUP BY s.idx
+      GROUP BY s.idx, m.aluno
     ),
-    novos_recorrentes AS (
-      SELECT
-        s.idx,
-        COUNT(DISTINCT cc.pessoa)::int AS novos_rec
-      FROM cobranca.cartaocreditodebitorecorrenciapessoa cc
-      JOIN cobranca.matricula m ON m.aluno = cc.pessoa AND m.curso = 1
-      JOIN cobranca.pessoa p ON p.codigo = cc.pessoa
-      CROSS JOIN semanas s
-      WHERE cc.datacadastro::date BETWEEN s.inicio AND s.fim
-        AND p.aluno = true AND COALESCE(p.funcionario, false) = false
-      GROUP BY s.idx
+    acumulado_por_semana AS (
+      SELECT idx, COUNT(DISTINCT aluno)::int AS acumulado
+      FROM alunos_ate_semana
+      GROUP BY idx
+    ),
+    recorrentes_por_semana AS (
+      SELECT a.idx, COUNT(DISTINCT a.aluno)::int AS acumulado_rec
+      FROM alunos_ate_semana a
+      JOIN semanas s ON s.idx = a.idx
+      WHERE EXISTS (
+        SELECT 1 FROM cobranca.cartaocreditodebitorecorrenciapessoa cc
+        WHERE cc.pessoa = a.aluno
+          AND cc.datacadastro::date <= s.fim
+          AND (cc.datainativacao IS NULL OR cc.datainativacao::date > s.fim)
+      )
+      GROUP BY a.idx
     )
     SELECT
       12 - s.idx AS semana,
       s.inicio,
       s.fim,
-      COALESCE(n.novos, 0) AS novos,
-      COALESCE(nr.novos_rec, 0) AS novos_recorrentes,
-      SUM(COALESCE(n.novos, 0)) OVER (ORDER BY s.inicio) AS acumulado,
-      SUM(COALESCE(nr.novos_rec, 0)) OVER (ORDER BY s.inicio) AS acumulado_recorrentes
+      COALESCE(a.acumulado, 0) AS acumulado,
+      COALESCE(r.acumulado_rec, 0) AS acumulado_recorrentes,
+      CASE WHEN COALESCE(a.acumulado, 0) > 0
+        THEN ROUND(COALESCE(r.acumulado_rec, 0)::numeric / a.acumulado * 100, 1)
+        ELSE 0 END AS percentual
     FROM semanas s
-    LEFT JOIN novos_por_semana n ON n.idx = s.idx
-    LEFT JOIN novos_recorrentes nr ON nr.idx = s.idx
+    LEFT JOIN acumulado_por_semana a ON a.idx = s.idx
+    LEFT JOIN recorrentes_por_semana r ON r.idx = s.idx
     ORDER BY s.inicio
   `);
 
   return rows.map(r => ({
     semana: Number(r.semana),
     label: `${new Date(r.inicio).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}`,
-    novos: Number(r.novos),
     acumulado: Number(r.acumulado),
     acumuladoRecorrentes: Number(r.acumulado_recorrentes),
-    percentualRecorrentes: Number(r.acumulado) > 0 ? Number((Number(r.acumulado_recorrentes) / Number(r.acumulado) * 100).toFixed(1)) : 0,
+    percentualRecorrentes: Number(r.percentual),
   }));
 }
 
@@ -456,7 +467,8 @@ async function calcularPagoPorAging() {
 // Recuperado por forma de pagamento
 // -----------------------------------------------
 async function calcularPagoPorForma() {
-  // Pagamentos do Asaas
+  // Pagamentos do Asaas — so contabiliza pagamentos CONFIRMADOS (dinheiro em caixa).
+  // qtd = pagamentos confirmados, valor = valorPago real (fallback em valor nominal).
   const asaas = await prisma.$queryRawUnsafe(`
     SELECT
       CASE
@@ -470,10 +482,11 @@ async function calcularPagoPorForma() {
         ELSE 'Outros'
       END AS forma,
       COUNT(*)::int AS qtd,
-      COALESCE(SUM(CASE WHEN pa.situacao = 'CONFIRMADO' THEN COALESCE(pa."valorPago", pa.valor) ELSE pa.valor END), 0)::numeric AS valor
+      COALESCE(SUM(COALESCE(pa."valorPago", pa.valor)), 0)::numeric AS valor
     FROM cobranca.pagamento_acordo pa
     JOIN cobranca.acordo_financeiro af ON af.id = pa."acordoId"
     WHERE af.etapa != 'CANCELADO'
+      AND pa.situacao = 'CONFIRMADO'
     GROUP BY forma
     ORDER BY valor DESC
   `);
