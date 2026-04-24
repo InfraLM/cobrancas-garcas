@@ -250,8 +250,8 @@ export default function DashboardPage() {
         </div>
 
         <div className="bg-white rounded-2xl p-5 shadow-sm">
-          <h3 className="text-[0.8125rem] font-bold mb-1">Base de Alunos + % com Recorrência Ativa</h3>
-          <p className="text-[0.6875rem] text-on-surface-variant mb-3">Total matriculados até a semana × % com cartão recorrente ativo</p>
+          <h3 className="text-[0.8125rem] font-bold mb-1">Novos Alunos Acumulados + % com Recorrência</h3>
+          <p className="text-[0.6875rem] text-on-surface-variant mb-3">Novas matrículas acumuladas na janela × % que cadastrou cartão recorrente</p>
           <ResponsiveContainer width="100%" height={250}>
             <ComposedChart data={acumuladoAlunos} margin={{ top: 5, right: 10, left: 5, bottom: 5 }}>
               <XAxis dataKey="label" tick={{ fontSize: 10, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
@@ -259,8 +259,8 @@ export default function DashboardPage() {
               <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 10, fill: '#94a3b8' }} tickFormatter={(v: number) => `${v}%`} domain={[0, 'auto']} axisLine={false} tickLine={false} />
               <Tooltip content={<CustomTooltip />} />
               <Legend wrapperStyle={{ fontSize: 10, paddingTop: 8 }} iconType="square" iconSize={8} />
-              <Bar yAxisId="left" dataKey="acumulado" name="Total de alunos" fill="#1e5a8a" radius={[3, 3, 0, 0]} />
-              <Line yAxisId="right" type="monotone" dataKey="percentualRecorrentes" name="% recorrência ativa" stroke="#ea580c" strokeWidth={2.5} dot={false} unit="%" />
+              <Bar yAxisId="left" dataKey="acumulado" name="Novos alunos (acumulado)" fill="#1e5a8a" radius={[3, 3, 0, 0]} />
+              <Line yAxisId="right" type="monotone" dataKey="percentualRecorrentes" name="% recorrência" stroke="#ea580c" strokeWidth={2.5} dot={false} unit="%" />
             </ComposedChart>
           </ResponsiveContainer>
         </div>

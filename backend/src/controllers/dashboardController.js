@@ -267,11 +267,18 @@ async function calcularRecorrentesHistorico() {
 }
 
 // -----------------------------------------------
-// Acumulado de alunos historico + % recorrencia ativa por snapshot semanal
-// Para cada semana S:
-//   acumulado = total de alunos matriculados (curso=1) ate o fim de S
-//   acumulado_recorrentes = subconjunto que tinha recorrencia ATIVA no fim de S
-//   percentual = acumulado_recorrentes / acumulado
+// Novos alunos acumulados na janela + acumulado de cadastros de recorrencia
+//
+// Semantica:
+//   - Janela = ultimas N semanas (12 por padrao).
+//   - Para cada semana S:
+//       novos_semana        = alunos matriculados (curso=1, nao-funcionario) com data em S
+//       novos_acumulado     = soma dos novos desde o inicio da janela ate S
+//       rec_acumulado       = quantos desses alunos (matriculados na janela) cadastraram
+//                             recorrencia ate o fim de S
+//       percentual          = rec_acumulado / novos_acumulado * 100
+//   - A "recorrencia cadastrada" nao considera inativacao (segue logica da query
+//     original do arquivo dashboard/query-acumulado-alunos-recorrencia.txt)
 // -----------------------------------------------
 async function calcularAcumuladoAlunos() {
   const rows = await prisma.$queryRawUnsafe(`
@@ -281,55 +288,78 @@ async function calcularAcumuladoAlunos() {
         (date_trunc('week', CURRENT_DATE) - (generate_series(0, 11) * INTERVAL '1 week'))::date AS inicio,
         (date_trunc('week', CURRENT_DATE) - (generate_series(0, 11) * INTERVAL '1 week') + INTERVAL '6 days')::date AS fim
     ),
-    alunos_ate_semana AS (
-      SELECT s.idx, m.aluno
+    janela AS (
+      SELECT MIN(inicio) AS inicio_janela, MAX(fim) AS fim_janela FROM semanas
+    ),
+    alunos_base AS (
+      -- Primeira matricula curso=1 de cada aluno DENTRO da janela
+      SELECT DISTINCT ON (m.aluno)
+        m.aluno AS pessoa,
+        m.data::date AS data_matricula
       FROM cobranca.matricula m
       JOIN cobranca.pessoa p ON p.codigo = m.aluno
-      CROSS JOIN semanas s
+      CROSS JOIN janela j
       WHERE m.curso = 1
-        AND m.data::date <= s.fim
+        AND m.data::date BETWEEN j.inicio_janela AND j.fim_janela
         AND p.aluno = true AND COALESCE(p.funcionario, false) = false
-      GROUP BY s.idx, m.aluno
+      ORDER BY m.aluno, m.data ASC NULLS LAST
     ),
-    acumulado_por_semana AS (
-      SELECT idx, COUNT(DISTINCT aluno)::int AS acumulado
-      FROM alunos_ate_semana
-      GROUP BY idx
+    recorrencia_ultimo AS (
+      -- Ultimo cadastro de recorrencia por pessoa (sem filtrar por inativacao)
+      SELECT DISTINCT ON (cc.pessoa)
+        cc.pessoa,
+        cc.datacadastro::date AS data_cadastro_recorrencia
+      FROM cobranca.cartaocreditodebitorecorrenciapessoa cc
+      WHERE cc.pessoa IS NOT NULL
+      ORDER BY cc.pessoa, cc.datacadastro DESC NULLS LAST
+    ),
+    alunos_com_rec AS (
+      SELECT ab.pessoa, ab.data_matricula, ru.data_cadastro_recorrencia
+      FROM alunos_base ab
+      LEFT JOIN recorrencia_ultimo ru ON ru.pessoa = ab.pessoa
+    ),
+    novos_por_semana AS (
+      SELECT s.idx, COUNT(*)::int AS novos
+      FROM alunos_com_rec a
+      CROSS JOIN semanas s
+      WHERE a.data_matricula BETWEEN s.inicio AND s.fim
+      GROUP BY s.idx
     ),
     recorrentes_por_semana AS (
-      SELECT a.idx, COUNT(DISTINCT a.aluno)::int AS acumulado_rec
-      FROM alunos_ate_semana a
-      JOIN semanas s ON s.idx = a.idx
-      WHERE EXISTS (
-        SELECT 1 FROM cobranca.cartaocreditodebitorecorrenciapessoa cc
-        WHERE cc.pessoa = a.aluno
-          AND cc.datacadastro::date <= s.fim
-          AND (cc.datainativacao IS NULL OR cc.datainativacao::date > s.fim)
-      )
-      GROUP BY a.idx
+      SELECT s.idx, COUNT(*)::int AS rec
+      FROM alunos_com_rec a
+      CROSS JOIN semanas s
+      WHERE a.data_cadastro_recorrencia IS NOT NULL
+        AND a.data_cadastro_recorrencia BETWEEN s.inicio AND s.fim
+      GROUP BY s.idx
     )
     SELECT
       12 - s.idx AS semana,
       s.inicio,
       s.fim,
-      COALESCE(a.acumulado, 0) AS acumulado,
-      COALESCE(r.acumulado_rec, 0) AS acumulado_recorrentes,
-      CASE WHEN COALESCE(a.acumulado, 0) > 0
-        THEN ROUND(COALESCE(r.acumulado_rec, 0)::numeric / a.acumulado * 100, 1)
-        ELSE 0 END AS percentual
+      COALESCE(n.novos, 0)::int AS novos_semana,
+      SUM(COALESCE(n.novos, 0)) OVER (ORDER BY s.inicio)::int AS novos_acumulado,
+      COALESCE(r.rec, 0)::int AS rec_semana,
+      SUM(COALESCE(r.rec, 0)) OVER (ORDER BY s.inicio)::int AS rec_acumulado
     FROM semanas s
-    LEFT JOIN acumulado_por_semana a ON a.idx = s.idx
+    LEFT JOIN novos_por_semana n ON n.idx = s.idx
     LEFT JOIN recorrentes_por_semana r ON r.idx = s.idx
     ORDER BY s.inicio
   `);
 
-  return rows.map(r => ({
-    semana: Number(r.semana),
-    label: `${new Date(r.inicio).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}`,
-    acumulado: Number(r.acumulado),
-    acumuladoRecorrentes: Number(r.acumulado_recorrentes),
-    percentualRecorrentes: Number(r.percentual),
-  }));
+  return rows.map(r => {
+    const acumulado = Number(r.novos_acumulado);
+    const acumuladoRec = Number(r.rec_acumulado);
+    return {
+      semana: Number(r.semana),
+      label: `${new Date(r.inicio).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}`,
+      novos: Number(r.novos_semana),
+      acumulado,
+      recorrentesSemana: Number(r.rec_semana),
+      acumuladoRecorrentes: acumuladoRec,
+      percentualRecorrentes: acumulado > 0 ? Number((acumuladoRec / acumulado * 100).toFixed(1)) : 0,
+    };
+  });
 }
 
 // -----------------------------------------------
