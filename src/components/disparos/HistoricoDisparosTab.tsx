@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Loader2, RefreshCw, CheckCircle, XCircle, Clock } from 'lucide-react';
+import { Loader2, RefreshCw, CheckCircle, XCircle, Clock, Ban } from 'lucide-react';
 import type { DisparoMensagem } from '../../types/disparoMensagem';
 import { STATUS_DISPARO_LABEL, STATUS_DISPARO_COR } from '../../types/disparoMensagem';
 import { listarHistorico } from '../../services/disparos';
@@ -39,6 +39,7 @@ export default function HistoricoDisparosTab() {
   function iconeStatus(s: DisparoMensagem['status']) {
     if (s === 'ENVIADO') return <CheckCircle size={12} className="text-emerald-600" />;
     if (s === 'FALHOU') return <XCircle size={12} className="text-red-600" />;
+    if (s === 'CANCELADO') return <Ban size={12} className="text-stone-500" />;
     return <Clock size={12} className="text-gray-400" />;
   }
 
@@ -69,6 +70,7 @@ export default function HistoricoDisparosTab() {
           <option value="ENVIADO">Enviados</option>
           <option value="PENDENTE">Pendentes</option>
           <option value="FALHOU">Falhas</option>
+          <option value="CANCELADO">Cancelados</option>
         </select>
         <button
           onClick={carregar}
@@ -81,7 +83,7 @@ export default function HistoricoDisparosTab() {
         </span>
       </div>
 
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-4 gap-3">
         <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-100">
           <p className="text-[0.6875rem] uppercase tracking-wider text-emerald-600 font-semibold">Enviados</p>
           <p className="text-xl font-bold text-emerald-700 mt-1">{resumoStatus.ENVIADO || 0}</p>
@@ -93,6 +95,10 @@ export default function HistoricoDisparosTab() {
         <div className="p-3 rounded-xl bg-red-50 border border-red-100">
           <p className="text-[0.6875rem] uppercase tracking-wider text-red-600 font-semibold">Falhas</p>
           <p className="text-xl font-bold text-red-700 mt-1">{resumoStatus.FALHOU || 0}</p>
+        </div>
+        <div className="p-3 rounded-xl bg-stone-50 border border-stone-100">
+          <p className="text-[0.6875rem] uppercase tracking-wider text-stone-500 font-semibold">Cancelados</p>
+          <p className="text-xl font-bold text-stone-700 mt-1">{resumoStatus.CANCELADO || 0}</p>
         </div>
       </div>
 
@@ -130,8 +136,8 @@ export default function HistoricoDisparosTab() {
                   {STATUS_DISPARO_LABEL[d.status]}
                 </span>
               </div>
-              {d.status === 'FALHOU' && d.erroMensagem && (
-                <div className="col-span-5 text-[0.6875rem] text-red-600 bg-red-50 rounded px-2 py-1 -mt-1">
+              {(d.status === 'FALHOU' || d.status === 'CANCELADO') && d.erroMensagem && (
+                <div className={`col-span-5 text-[0.6875rem] rounded px-2 py-1 -mt-1 ${d.status === 'FALHOU' ? 'text-red-600 bg-red-50' : 'text-stone-600 bg-stone-50'}`}>
                   {d.erroMensagem}
                 </div>
               )}

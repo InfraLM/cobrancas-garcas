@@ -87,21 +87,44 @@ export async function drenarUm() {
 
   // DEFESA EM PROFUNDIDADE: re-valida situacao do titulo antes do envio.
   // Isso evita enviar cobranca pra quem pagou ou cancelou entre enqueue e envio.
+  //
+  // Importante: conta == null NAO significa "cancelar". A tabela contareceber e populada
+  // via sync SEI (deleteMany + createMany), entao pode haver janela transitoria onde o
+  // registro some. Nesses casos re-enfileira pra tentar de novo.
   if (selecionado.contaReceberCodigo) {
     try {
       const conta = await prisma.contareceber.findUnique({
         where: { codigo: Number(selecionado.contaReceberCodigo) },
         select: { situacao: true },
       });
-      if (!conta || conta.situacao !== 'AR') {
+
+      if (!conta) {
+        // Registro sumiu transitoriamente (provavel sync SEI em curso). Re-enfileira.
+        const tentativas = (selecionado.tentativas || 0) + 1;
+        const novoStatus = tentativas >= MAX_TENTATIVAS ? 'FALHOU' : 'PENDENTE';
+        await prisma.disparoMensagem.update({
+          where: { id: selecionado.id },
+          data: {
+            status: novoStatus,
+            tentativas,
+            erroMensagem: novoStatus === 'FALHOU'
+              ? `Titulo ${selecionado.contaReceberCodigo} nao encontrado apos ${MAX_TENTATIVAS} tentativas`
+              : null,
+          },
+        });
+        console.warn(`[ReguaWorker] Titulo ${selecionado.contaReceberCodigo} nao encontrado (tentativa ${tentativas}/${MAX_TENTATIVAS}). Re-enfileirado.`);
+        return true;
+      }
+
+      if (conta.situacao !== 'AR') {
         await prisma.disparoMensagem.update({
           where: { id: selecionado.id },
           data: {
             status: 'CANCELADO',
-            erroMensagem: `Titulo nao mais AR (situacao=${conta?.situacao || 'NAO_ENCONTRADO'}). Cancelado antes do envio.`,
+            erroMensagem: `Titulo mudou de situacao para ${conta.situacao} antes do envio.`,
           },
         });
-        console.log(`[ReguaWorker] Disparo ${selecionado.id} cancelado — conta ${selecionado.contaReceberCodigo} situacao=${conta?.situacao}`);
+        console.log(`[ReguaWorker] Disparo ${selecionado.id} cancelado — conta ${selecionado.contaReceberCodigo} situacao=${conta.situacao}`);
         return true;
       }
     } catch (err) {
