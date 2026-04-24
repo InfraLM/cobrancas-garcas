@@ -24,20 +24,20 @@ export async function obterDashboard(req, res, next) {
     console.log('[Dashboard] Calculando metricas...');
     const startTime = Date.now();
 
-    // Rodar todas as queries em paralelo
-    const [kpis, aging, agingHistorico, recorrentesHistorico, acumuladoAlunos, ficouFacil, funil, pagoPorAging, pagoPorForma] = await Promise.all([
+    // Rodar todas as queries em paralelo (funil fica em endpoint proprio:
+    // GET /api/dashboard/funil — tem filtro de periodo dinamico).
+    const [kpis, aging, agingHistorico, recorrentesHistorico, acumuladoAlunos, ficouFacil, pagoPorAging, pagoPorForma] = await Promise.all([
       calcularKPIs(),
       calcularAging(),
       calcularAgingHistorico(),
       calcularRecorrentesHistorico(),
       calcularAcumuladoAlunos(),
       calcularFicouFacil(),
-      calcularFunil(),
       calcularPagoPorAging(),
       calcularPagoPorForma(),
     ]);
 
-    const data = { kpis, aging, agingHistorico, recorrentesHistorico, acumuladoAlunos, ficouFacil, funil, pagoPorAging, pagoPorForma, atualizadoEm: new Date().toISOString() };
+    const data = { kpis, aging, agingHistorico, recorrentesHistorico, acumuladoAlunos, ficouFacil, pagoPorAging, pagoPorForma, atualizadoEm: new Date().toISOString() };
 
     // Salvar cache
     cache = { data, timestamp: agora };
@@ -483,43 +483,90 @@ async function calcularFicouFacil() {
 }
 
 // -----------------------------------------------
-// Funil de cobranca (simplificado)
+// Funil de cobranca com filtro de periodo
+//
+// 5 etapas:
+//   - Base Inadimplente (snapshot atual, ignora periodo)
+//   - Tentativa de Contato: ligacao OU whatsapp enviado por agente no periodo.
+//     Disparos automaticos da regua NAO entram: eles usam Blip Router direto
+//     e nao populam mensagem_whatsapp (so disparo_mensagem).
+//   - Contato Realizado: subset da tentativa onde ligacao foi falada
+//     (tempoFalando > 0) OU aluno respondeu whatsapp (fromMe=false).
+//   - Negociado: acordos criados no periodo (exceto cancelados).
+//   - Recuperado: acordos concluidos no periodo.
+//
+// Valor de cada etapa = SUM(aluno_resumo.valorDevedor) dos alunos unicos
+// (exceto Negociado/Recuperado, que somam valorAcordo).
 // -----------------------------------------------
-async function calcularFunil() {
-  const [inadimplentes, tentativas, negociados, pagos] = await Promise.all([
-    // Base inadimplente
-    prisma.$queryRawUnsafe(`
-      SELECT COUNT(*)::int AS qtd, COALESCE(SUM("valorDevedor"), 0)::numeric AS valor
-      FROM cobranca.aluno_resumo WHERE "situacaoFinanceira" = 'INADIMPLENTE'
-    `),
-    // Tentativa de contato (alunos contatados via ligacao ou WhatsApp)
-    prisma.$queryRawUnsafe(`
-      SELECT COUNT(DISTINCT pessoa)::int AS qtd, 0::numeric AS valor FROM (
-        SELECT "pessoaCodigo" AS pessoa FROM cobranca.registro_ligacao WHERE "pessoaCodigo" IS NOT NULL
-        UNION
-        SELECT "pessoaCodigo" AS pessoa FROM cobranca.conversa_cobranca WHERE "pessoaCodigo" IS NOT NULL
-      ) sub
-    `),
-    // Negociado (tem acordo criado)
-    prisma.$queryRawUnsafe(`
-      SELECT COUNT(DISTINCT "pessoaCodigo")::int AS qtd,
-        COALESCE(SUM("valorAcordo"), 0)::numeric AS valor
-      FROM cobranca.acordo_financeiro WHERE etapa != 'CANCELADO'
-    `),
-    // Pago (acordo concluido)
-    prisma.$queryRawUnsafe(`
-      SELECT COUNT(DISTINCT "pessoaCodigo")::int AS qtd,
-        COALESCE(SUM("valorAcordo"), 0)::numeric AS valor
-      FROM cobranca.acordo_financeiro WHERE etapa = 'CONCLUIDO'
-    `),
-  ]);
+export async function obterFunil(req, res, next) {
+  try {
+    const dias = Number(String(req.query.periodo || '30d').replace(/\D/g, '')) || 30;
+    const desde = new Date(Date.now() - dias * 24 * 60 * 60 * 1000);
 
-  return [
-    { etapa: 'Base Inadimplente', qtd: inadimplentes[0].qtd, valor: Number(inadimplentes[0].valor) },
-    { etapa: 'Tentativa de Contato', qtd: tentativas[0].qtd, valor: Number(tentativas[0].valor) },
-    { etapa: 'Negociado', qtd: negociados[0].qtd, valor: Number(negociados[0].valor) },
-    { etapa: 'Recuperado', qtd: pagos[0].qtd, valor: Number(pagos[0].valor) },
-  ];
+    const [base, tentativa, realizado, negociado, recuperado] = await Promise.all([
+      prisma.$queryRawUnsafe(`
+        SELECT COUNT(*)::int AS qtd, COALESCE(SUM("valorDevedor"), 0)::numeric AS valor
+        FROM cobranca.aluno_resumo WHERE "situacaoFinanceira" = 'INADIMPLENTE'
+      `),
+      prisma.$queryRawUnsafe(`
+        WITH contactados AS (
+          SELECT DISTINCT "pessoaCodigo" AS pessoa
+          FROM cobranca.registro_ligacao
+          WHERE "pessoaCodigo" IS NOT NULL AND "dataHoraChamada" >= $1
+          UNION
+          SELECT DISTINCT "pessoaCodigo" AS pessoa
+          FROM cobranca.mensagem_whatsapp
+          WHERE "pessoaCodigo" IS NOT NULL AND "fromMe" = true AND "timestamp" >= $1
+        )
+        SELECT COUNT(DISTINCT c.pessoa)::int AS qtd,
+          COALESCE(SUM(ar."valorDevedor"), 0)::numeric AS valor
+        FROM contactados c
+        LEFT JOIN cobranca.aluno_resumo ar ON ar.codigo = c.pessoa
+      `, desde),
+      prisma.$queryRawUnsafe(`
+        WITH contactados_efetivos AS (
+          SELECT DISTINCT "pessoaCodigo" AS pessoa
+          FROM cobranca.registro_ligacao
+          WHERE "pessoaCodigo" IS NOT NULL
+            AND "dataHoraChamada" >= $1
+            AND COALESCE("tempoFalando", 0) > 0
+          UNION
+          SELECT DISTINCT "pessoaCodigo" AS pessoa
+          FROM cobranca.mensagem_whatsapp
+          WHERE "pessoaCodigo" IS NOT NULL AND "fromMe" = false AND "timestamp" >= $1
+        )
+        SELECT COUNT(DISTINCT c.pessoa)::int AS qtd,
+          COALESCE(SUM(ar."valorDevedor"), 0)::numeric AS valor
+        FROM contactados_efetivos c
+        LEFT JOIN cobranca.aluno_resumo ar ON ar.codigo = c.pessoa
+      `, desde),
+      prisma.$queryRawUnsafe(`
+        SELECT COUNT(DISTINCT "pessoaCodigo")::int AS qtd,
+          COALESCE(SUM("valorAcordo"), 0)::numeric AS valor
+        FROM cobranca.acordo_financeiro
+        WHERE etapa != 'CANCELADO' AND "criadoEm" >= $1
+      `, desde),
+      prisma.$queryRawUnsafe(`
+        SELECT COUNT(DISTINCT "pessoaCodigo")::int AS qtd,
+          COALESCE(SUM("valorAcordo"), 0)::numeric AS valor
+        FROM cobranca.acordo_financeiro
+        WHERE etapa = 'CONCLUIDO' AND "criadoEm" >= $1
+      `, desde),
+    ]);
+
+    res.json({
+      periodo: `${dias}d`,
+      funil: [
+        { etapa: 'Base Inadimplente', qtd: base[0].qtd, valor: Number(base[0].valor) },
+        { etapa: 'Tentativa de Contato', qtd: tentativa[0].qtd, valor: Number(tentativa[0].valor) },
+        { etapa: 'Contato Realizado', qtd: realizado[0].qtd, valor: Number(realizado[0].valor) },
+        { etapa: 'Negociado', qtd: negociado[0].qtd, valor: Number(negociado[0].valor) },
+        { etapa: 'Recuperado', qtd: recuperado[0].qtd, valor: Number(recuperado[0].valor) },
+      ],
+    });
+  } catch (error) {
+    next(error);
+  }
 }
 
 // -----------------------------------------------

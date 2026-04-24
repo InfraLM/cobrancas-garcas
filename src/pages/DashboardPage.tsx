@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { api } from '../services/api';
+import { obterFunilDashboard, type PeriodoFunil, type FunilEtapa } from '../services/dashboard';
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer,
   ComposedChart, Line, Cell,
@@ -11,7 +12,7 @@ import {
 
 interface DashboardData {
   kpis: any; aging: any[]; agingHistorico: any[]; recorrentesHistorico: any[];
-  acumuladoAlunos: any[]; ficouFacil: any; funil: any[]; pagoPorAging: any[]; pagoPorForma: any[];
+  acumuladoAlunos: any[]; ficouFacil: any; pagoPorAging: any[]; pagoPorForma: any[];
   atualizadoEm: string;
 }
 
@@ -45,6 +46,11 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
+  // Funil tem seu proprio state e endpoint (GET /dashboard/funil?periodo=XXd)
+  const [funil, setFunil] = useState<FunilEtapa[]>([]);
+  const [periodoFunil, setPeriodoFunil] = useState<PeriodoFunil>('30d');
+  const [loadingFunil, setLoadingFunil] = useState(false);
+
   const carregar = useCallback(async (forcar = false) => {
     try {
       if (forcar) setRefreshing(true); else setLoading(true);
@@ -53,11 +59,21 @@ export default function DashboardPage() {
     finally { setLoading(false); setRefreshing(false); }
   }, []);
 
+  const carregarFunil = useCallback(async (periodo: PeriodoFunil) => {
+    setLoadingFunil(true);
+    try {
+      const r = await obterFunilDashboard(periodo);
+      setFunil(r.funil);
+    } catch (err) { console.error('Erro funil:', err); }
+    finally { setLoadingFunil(false); }
+  }, []);
+
   useEffect(() => { carregar(); }, [carregar]);
+  useEffect(() => { carregarFunil(periodoFunil); }, [periodoFunil, carregarFunil]);
 
   if (loading || !data) return <div className="flex items-center justify-center h-[60vh]"><Loader2 size={32} className="animate-spin text-primary" /></div>;
 
-  const { kpis, aging, agingHistorico, recorrentesHistorico, acumuladoAlunos, ficouFacil, funil, pagoPorAging, pagoPorForma } = data;
+  const { kpis, aging, agingHistorico, recorrentesHistorico, acumuladoAlunos, ficouFacil, pagoPorAging, pagoPorForma } = data;
 
   return (
     <div className="space-y-5 pb-8">
@@ -87,35 +103,54 @@ export default function DashboardPage() {
 
       {/* Funil de cobranca */}
       <div className="bg-white rounded-2xl p-5 shadow-sm">
-        <h3 className="text-[0.8125rem] font-bold mb-4">Funil de Cobrança</h3>
-        <div className="grid grid-cols-4 gap-3">
-          {funil.map((f: any, i: number) => {
-            const pctAluno = funil[0].qtd > 0 ? (f.qtd / funil[0].qtd * 100) : 0;
-            const pctValor = funil[0].valor > 0 ? (f.valor / funil[0].valor * 100) : 0;
-            const cores = ['#ef4444', '#f59e0b', '#3b82f6', '#10b981'];
-            return (
-              <div key={f.etapa} className="relative">
-                <div className="rounded-xl p-4" style={{ backgroundColor: `${cores[i]}10` }}>
-                  <p className="text-[0.625rem] font-bold uppercase tracking-wider" style={{ color: cores[i] }}>{f.etapa}</p>
-                  <p className="text-2xl font-bold text-on-surface mt-2">{f.qtd}</p>
-                  <p className="text-[0.75rem] text-on-surface-variant">alunos</p>
-                  <p className="text-[0.875rem] font-bold mt-2" style={{ color: cores[i] }}>{fmtK(f.valor)}</p>
-                  <div className="flex gap-3 mt-2 text-[0.625rem] text-on-surface-variant">
-                    <span>{pctAluno.toFixed(0)}% CPFs</span>
-                    <span>{pctValor.toFixed(0)}% Valor</span>
-                  </div>
-                  {/* Barra de progresso */}
-                  <div className="mt-2 h-1.5 bg-gray-100 rounded-full overflow-hidden">
-                    <div className="h-full rounded-full" style={{ width: `${pctAluno}%`, backgroundColor: cores[i] }} />
-                  </div>
-                </div>
-                {i < funil.length - 1 && (
-                  <div className="absolute right-[-10px] top-1/2 -translate-y-1/2 text-gray-200 text-lg">›</div>
-                )}
-              </div>
-            );
-          })}
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-[0.8125rem] font-bold">Funil de Cobrança</h3>
+          <div className="flex items-center gap-2">
+            {loadingFunil && <Loader2 size={12} className="animate-spin text-gray-400" />}
+            <select
+              value={periodoFunil}
+              onChange={(e) => setPeriodoFunil(e.target.value as PeriodoFunil)}
+              className="h-8 px-2 rounded-lg border border-gray-200 text-[0.75rem] bg-white"
+            >
+              <option value="7d">Últimos 7 dias</option>
+              <option value="30d">Últimos 30 dias</option>
+              <option value="90d">Últimos 90 dias</option>
+            </select>
+          </div>
         </div>
+        {funil.length === 0 ? (
+          <div className="py-8 text-center text-[0.75rem] text-gray-400">Carregando funil…</div>
+        ) : (
+          <div className="grid grid-cols-5 gap-3">
+            {funil.map((f, i) => {
+              const pctAluno = funil[0].qtd > 0 ? (f.qtd / funil[0].qtd * 100) : 0;
+              const pctValor = funil[0].valor > 0 ? (f.valor / funil[0].valor * 100) : 0;
+              // Base (vermelho) → Tentativa (âmbar) → Contato Realizado (laranja) → Negociado (azul) → Recuperado (verde)
+              const cores = ['#ef4444', '#f59e0b', '#f97316', '#3b82f6', '#10b981'];
+              return (
+                <div key={f.etapa} className="relative">
+                  <div className="rounded-xl p-4" style={{ backgroundColor: `${cores[i]}10` }}>
+                    <p className="text-[0.625rem] font-bold uppercase tracking-wider" style={{ color: cores[i] }}>{f.etapa}</p>
+                    <p className="text-2xl font-bold text-on-surface mt-2">{f.qtd}</p>
+                    <p className="text-[0.75rem] text-on-surface-variant">alunos</p>
+                    <p className="text-[0.875rem] font-bold mt-2" style={{ color: cores[i] }}>{fmtK(f.valor)}</p>
+                    <div className="flex gap-3 mt-2 text-[0.625rem] text-on-surface-variant">
+                      <span>{pctAluno.toFixed(0)}% CPFs</span>
+                      <span>{pctValor.toFixed(0)}% Valor</span>
+                    </div>
+                    {/* Barra de progresso */}
+                    <div className="mt-2 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                      <div className="h-full rounded-full" style={{ width: `${pctAluno}%`, backgroundColor: cores[i] }} />
+                    </div>
+                  </div>
+                  {i < funil.length - 1 && (
+                    <div className="absolute right-[-10px] top-1/2 -translate-y-1/2 text-gray-200 text-lg">›</div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* Aging Atual + Aging Historico */}
