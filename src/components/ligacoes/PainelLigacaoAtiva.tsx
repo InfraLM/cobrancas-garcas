@@ -1,8 +1,9 @@
+import { useState } from 'react';
 import type { LigacaoAtiva, EventoLigacao, QualificacaoLigacao } from '../../types/ligacao';
 import { formatarTelefone } from '../../mocks/ligacoes';
 import LogEventos from './LogEventos';
 import TimerLigacao from './TimerLigacao';
-import { PhoneCall, PhoneOff, Banknote, PhoneForwarded, ExternalLink, BookOpen, CheckCircle } from 'lucide-react';
+import { PhoneCall, PhoneOff, Banknote, PhoneForwarded, ExternalLink, BookOpen, CheckCircle, Activity, X } from 'lucide-react';
 
 interface PainelLigacaoAtivaProps {
   ligacao: LigacaoAtiva | null;
@@ -37,10 +38,11 @@ export default function PainelLigacaoAtiva({
   const podeDesligar = ligacao && ['discando', 'tocando', 'conectada'].includes(ligacao.status) && !!ligacao.callId;
   const aluno = ligacao?.aluno;
   const fin = aluno?.financeiro;
+  const [logsAbertos, setLogsAbertos] = useState(false);
 
   return (
-    <div className="flex gap-4 flex-1 min-h-[500px] pt-3">
-      {/* Coluna esquerda — chamada + info do aluno inline */}
+    <div className="flex flex-1 min-h-[500px] pt-3">
+      {/* Conteudo principal — ocupa a largura inteira */}
       <div className="flex-1 flex flex-col min-w-0">
         {/* Call status header */}
         <div className="flex items-center gap-4 mb-5">
@@ -131,6 +133,25 @@ export default function PainelLigacaoAtiva({
           </div>
         )}
 
+        {/* Buscando aluno (pre-fetch ou fallback ainda em curso) */}
+        {emChamada && !aluno && ligacao?.alunoBuscando && (
+          <div className="bg-gray-900 rounded-xl border border-gray-800 p-4 mb-4 flex items-center gap-3">
+            <div className="w-4 h-4 border-2 border-gray-700 border-t-gray-300 rounded-full animate-spin" />
+            <p className="text-[0.8125rem] text-gray-400">Buscando dados do aluno...</p>
+          </div>
+        )}
+
+        {/* Aluno nao encontrado no SEI pelo telefone */}
+        {emChamada && !aluno && ligacao?.alunoNaoEncontrado && (
+          <div className="bg-amber-950/40 rounded-xl border border-amber-900/50 p-4 mb-4">
+            <p className="text-[0.8125rem] font-medium text-amber-300 mb-1">Telefone não vinculado a aluno</p>
+            <p className="text-[0.75rem] text-amber-200/70">
+              O número {formatarTelefone(ligacao.telefone)} não foi encontrado na base SEI.
+              Pergunte o nome/CPF do aluno para identificar manualmente.
+            </p>
+          </div>
+        )}
+
         {/* Botao desligar — sempre disponivel enquanto a chamada estiver ativa */}
         {podeDesligar && (
           <div className="mb-3">
@@ -207,10 +228,46 @@ export default function PainelLigacaoAtiva({
         </div>
       </div>
 
-      {/* Coluna direita — Log de eventos */}
-      <div className="w-[360px] shrink-0">
-        <LogEventos eventos={eventos} />
-      </div>
+      {/* Botao flutuante para abrir o log */}
+      <button
+        type="button"
+        onClick={() => setLogsAbertos(true)}
+        className="fixed bottom-6 right-6 z-30 flex items-center gap-2 h-10 px-4 rounded-full bg-gray-800 text-gray-200 text-[0.8125rem] font-medium hover:bg-gray-700 shadow-lg border border-gray-700"
+      >
+        <Activity size={14} />
+        Log <span className="text-gray-500">({eventos.length})</span>
+      </button>
+
+      {/* Drawer lateral direito com log de eventos */}
+      {logsAbertos && (
+        <div
+          onClick={() => setLogsAbertos(false)}
+          className="fixed inset-0 bg-black/40 z-40 transition-opacity"
+          aria-hidden
+        />
+      )}
+      <aside
+        className={`fixed top-0 right-0 h-screen w-[400px] z-50 p-3 transition-transform duration-200 ${
+          logsAbertos ? 'translate-x-0' : 'translate-x-full'
+        }`}
+      >
+        <div className="h-full flex flex-col">
+          <div className="flex items-center justify-between bg-gray-900 rounded-t-xl border border-b-0 border-gray-800 px-3 py-2">
+            <span className="text-[0.75rem] text-gray-300 font-medium">Log de eventos</span>
+            <button
+              type="button"
+              onClick={() => setLogsAbertos(false)}
+              className="p-1 rounded-md text-gray-500 hover:text-gray-300 hover:bg-gray-800"
+              aria-label="Fechar log"
+            >
+              <X size={14} />
+            </button>
+          </div>
+          <div className="flex-1 min-h-0">
+            <LogEventos eventos={eventos} />
+          </div>
+        </div>
+      </aside>
     </div>
   );
 }

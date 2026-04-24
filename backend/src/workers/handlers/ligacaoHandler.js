@@ -22,9 +22,13 @@ import {
 
 /**
  * Decide se um evento deve ser processado baseado no agentId no payload.
- * Quando o evento tem agentId explicito, filtra por whitelist.
- * Quando nao tem (call-history-was-created, call-was-abandoned, as vezes created/answered),
- * faz lookup do registro_ligacao existente pelo telephonyId para herdar o agentId.
+ * Quando o evento tem agentId explicito e valido (> 0), filtra por whitelist.
+ * Quando nao tem (modo massa: discador emite call-was-created com agent=0 antes
+ * de atribuir; ou call-history-was-created/call-was-abandoned que nao trazem agent),
+ * tenta herdar de um registro_ligacao ja existente. Se nao existe registro ainda
+ * (caso tipico do primeiro evento da chamada em modo massa), ACEITA o evento pra
+ * nao deixar o agente sem saber "discando pra X". O filtro rigido fica restrito
+ * aos eventos de estado do agente (agent-is-idle, agent-in-acw, agent-login-failed).
  *
  * Retorna true se deve processar, false se deve descartar.
  */
@@ -32,12 +36,18 @@ async function deveProcessar({ agentIdPayload, telephonyId }) {
   if (agentIdPayload) {
     return isAgenteNosso(agentIdPayload);
   }
-  if (!telephonyId) return false;
-  const existente = await prisma.registroLigacao.findUnique({
-    where: { telephonyId },
-    select: { agenteId: true },
-  });
-  return !!(existente?.agenteId && isAgenteNosso(existente.agenteId));
+  if (telephonyId) {
+    const existente = await prisma.registroLigacao.findUnique({
+      where: { telephonyId },
+      select: { agenteId: true },
+    });
+    if (existente?.agenteId) {
+      return isAgenteNosso(existente.agenteId);
+    }
+  }
+  // Sem agent_id e sem registro ainda: ACEITA. Eventos subsequentes com agent_id
+  // atribuido confirmarao se e nosso; se forem de outro time, ignoramos la.
+  return true;
 }
 
 // Persiste evento bruto para auditoria (append-only)

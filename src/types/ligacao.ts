@@ -126,6 +126,8 @@ export interface LigacaoAtiva {
   telefone: string;
   inicio: string; // ISO timestamp
   aluno: Aluno | null;
+  alunoBuscando?: boolean;       // true enquanto o lookup /aluno-por-telefone esta pendente
+  alunoNaoEncontrado?: boolean;  // true quando o lookup retornou sem match no SEI
   status: 'discando' | 'tocando' | 'conectada' | 'encerrada';
   amdStatus?: 'human' | 'voicemail';
 }

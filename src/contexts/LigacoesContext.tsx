@@ -174,6 +174,58 @@ export function LigacoesProvider({ children }: { children: ReactNode }) {
     setEventos(prev => [...prev, evento]);
   }, []);
 
+  // Helper: busca aluno por telefone e popula ligacaoAtiva, garantindo que
+  // a chamada ainda eh a mesma (proteja contra corrida quando chamadas rapidas
+  // acontecem em sequencia no modo massa).
+  const buscarAlunoParaLigacao = useCallback((telefone: string, callId: string) => {
+    if (!telefone || !callId) return;
+    // marca como buscando
+    setLigacaoAtiva(prev => (prev && prev.callId === callId ? { ...prev, alunoBuscando: true } : prev));
+    real3c.buscarAlunoPorTelefone(telefone).then(alunoLig => {
+      if (!alunoLig) {
+        log('sistema', 'Telefone nao vinculado a aluno SEI', { telefone });
+        setLigacaoAtiva(prev => (prev && prev.callId === callId
+          ? { ...prev, alunoBuscando: false, alunoNaoEncontrado: true }
+          : prev));
+        return;
+      }
+      log('sistema', `Aluno vinculado: ${alunoLig.nome} (${alunoLig.matricula})`, alunoLig);
+      const aluno: Aluno = {
+        codigo: alunoLig.codigo,
+        nome: alunoLig.nome,
+        cpf: alunoLig.cpf || '',
+        celular: alunoLig.celular || undefined,
+        email: alunoLig.email || undefined,
+        matricula: alunoLig.matricula || '',
+        situacaoMatricula: 'AT',
+        serasa: alunoLig.serasaAtivo,
+        bloquearContatoCrm: false,
+        naoEnviarMensagemCobranca: false,
+        cursoNome: '',
+        financeiro: {
+          totalParcelas: 0,
+          parcelasEmAtraso: alunoLig.parcelasAtraso,
+          parcelasAVencer: 0,
+          parcelasPagas: 0,
+          parcelasNegociadas: 0,
+          parcelasCanceladas: 0,
+          valorEmAberto: alunoLig.valorInadimplente,
+          valorInadimplente: alunoLig.valorInadimplente,
+          valorPago: 0,
+        },
+        plantoes: [],
+        serasaDetalhes: [],
+        parcelas: [],
+      };
+      setLigacaoAtiva(prev => (prev && prev.callId === callId
+        ? { ...prev, aluno, alunoBuscando: false, alunoNaoEncontrado: false }
+        : prev));
+    }).catch(err => {
+      log('erro', 'Falha ao buscar aluno por telefone', { error: String(err) });
+      setLigacaoAtiva(prev => (prev && prev.callId === callId ? { ...prev, alunoBuscando: false } : prev));
+    });
+  }, [log]);
+
   const handleEventoSocket = useCallback((evento: EventoLigacao) => {
     adicionarEvento(evento);
     log('socket', `Evento: ${evento.tipo}`, { telefone: evento.telefone, pessoaNome: evento.pessoaNome, metadados: evento.metadados });
@@ -194,12 +246,13 @@ export function LigacoesProvider({ children }: { children: ReactNode }) {
       case 'call-was-created': {
         // Captura callId (telephony_id) para poder usar no hangup
         const callId = call.telephony_id || call.id || undefined;
+        const telefone = evento.telefone || call.phone || '';
         // Nova chamada chegou — limpa qualificacao pendente da anterior
         setLigacaoEncerrada(null);
         setLigacaoAtiva({
           id: evento.id,
           callId,
-          telefone: evento.telefone || call.phone || '',
+          telefone,
           inicio: evento.timestamp,
           aluno: null,
           status: 'discando',
@@ -207,6 +260,10 @@ export function LigacoesProvider({ children }: { children: ReactNode }) {
         // Em massa, garantir que estamos em EM_LIGACAO (pode estar em QUALIFICACAO individual residual)
         if (tipoLigacao === 'massa') {
           setEstadoPagina('EM_LIGACAO');
+        }
+        // Pre-fetch do aluno ja no discando: quando atender, dados ja estao prontos
+        if (telefone && callId) {
+          buscarAlunoParaLigacao(telefone, String(callId));
         }
         break;
       }
@@ -220,45 +277,13 @@ export function LigacoesProvider({ children }: { children: ReactNode }) {
         // Humano atendeu — conversa comecou
         setLigacaoAtiva(prev => prev ? { ...prev, status: 'conectada', inicio: evento.timestamp } : prev);
 
-        // Buscar aluno REAL pelo telefone (nao mais mock)
+        // Fallback: se por algum motivo o pre-fetch no call-was-created nao trouxe
+        // o aluno ainda, tenta de novo agora.
+        const atual = ligacaoAtivaRef.current;
         const telefone = evento.telefone || call.phone || '';
-        if (telefone) {
-          real3c.buscarAlunoPorTelefone(telefone).then(alunoLig => {
-            if (!alunoLig) {
-              log('sistema', 'Telefone não vinculado a nenhum aluno SEI', { telefone });
-              return;
-            }
-            log('sistema', `Aluno vinculado: ${alunoLig.nome} (${alunoLig.matricula})`, alunoLig);
-            // Adapta AlunoLigacao (parcial) para tipo Aluno completo (campos ausentes sao neutros)
-            const aluno: Aluno = {
-              codigo: alunoLig.codigo,
-              nome: alunoLig.nome,
-              cpf: alunoLig.cpf || '',
-              celular: alunoLig.celular || undefined,
-              email: alunoLig.email || undefined,
-              matricula: alunoLig.matricula || '',
-              situacaoMatricula: 'AT',
-              serasa: alunoLig.serasaAtivo,
-              bloquearContatoCrm: false,
-              naoEnviarMensagemCobranca: false,
-              cursoNome: '',
-              financeiro: {
-                totalParcelas: 0,
-                parcelasEmAtraso: alunoLig.parcelasAtraso,
-                parcelasAVencer: 0,
-                parcelasPagas: 0,
-                parcelasNegociadas: 0,
-                parcelasCanceladas: 0,
-                valorEmAberto: alunoLig.valorInadimplente,
-                valorInadimplente: alunoLig.valorInadimplente,
-                valorPago: 0,
-              },
-              plantoes: [],
-              serasaDetalhes: [],
-              parcelas: [],
-            };
-            setLigacaoAtiva(prev => prev ? { ...prev, aluno } : prev);
-          }).catch(err => log('erro', 'Falha ao buscar aluno por telefone', { error: String(err) }));
+        const callId = call.telephony_id || call.id;
+        if (telefone && callId && atual && !atual.aluno && !atual.alunoBuscando) {
+          buscarAlunoParaLigacao(telefone, String(callId));
         }
         break;
       }
@@ -296,7 +321,7 @@ export function LigacoesProvider({ children }: { children: ReactNode }) {
 
       default: break;
     }
-  }, [adicionarEvento, tipoLigacao, log]);
+  }, [adicionarEvento, tipoLigacao, log, buscarAlunoParaLigacao]);
 
   // Atualiza ref do handler para o ultimo valor, sem resubscrever o realtime.
   useEffect(() => {
