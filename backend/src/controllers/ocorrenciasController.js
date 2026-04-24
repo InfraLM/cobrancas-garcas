@@ -1,4 +1,5 @@
 import { prisma } from '../config/database.js';
+import { buildWhereNome, normalizarBusca } from '../utils/buscaNomeHelper.js';
 
 /**
  * GET /api/ocorrencias?tipo=&search=&page=1&limit=50&de=&ate=
@@ -8,33 +9,69 @@ export async function listarGlobal(req, res, next) {
   try {
     const { tipo, search, page = 1, limit = 50, de, ate } = req.query;
     const offset = (Number(page) - 1) * Number(limit);
+    const termo = String(search || '').trim();
 
-    // Construir filtros
-    const where = {};
-    if (tipo) where.tipo = tipo;
-    if (search) {
-      where.OR = [
-        { pessoaNome: { contains: search, mode: 'insensitive' } },
-        { descricao: { contains: search, mode: 'insensitive' } },
-      ];
+    // Sem busca: Prisma puro, ordenado por criadoEm desc.
+    if (!termo) {
+      const where = {};
+      if (tipo) where.tipo = tipo;
+      if (de || ate) {
+        where.criadoEm = {};
+        if (de) where.criadoEm.gte = new Date(de);
+        if (ate) where.criadoEm.lte = new Date(ate + 'T23:59:59');
+      }
+      const [ocorrencias, total] = await Promise.all([
+        prisma.ocorrencia.findMany({
+          where, orderBy: { criadoEm: 'desc' }, skip: offset, take: Number(limit),
+        }),
+        prisma.ocorrencia.count({ where }),
+      ]);
+      return res.json({ data: ocorrencias, total, page: Number(page), limit: Number(limit) });
     }
-    if (de || ate) {
-      where.criadoEm = {};
-      if (de) where.criadoEm.gte = new Date(de);
-      if (ate) where.criadoEm.lte = new Date(ate + 'T23:59:59');
+
+    // Com busca: raw query combinando helper de nome + fallback em descricao (ILIKE normalizado).
+    const busca = buildWhereNome({
+      colunaNome: '"pessoaNome"',
+      termo,
+      paramStartIndex: 1,
+    });
+
+    const params = [...busca.params];
+    let idx = busca.nextIndex;
+
+    // Fallback na descricao: ILIKE normalizado (sem ranking, so filtro adicional)
+    const termoNorm = normalizarBusca(termo);
+    params.push(`%${termoNorm}%`);
+    const descricaoClause = `cobranca.normalizar_busca(descricao) LIKE $${idx++}`;
+
+    // Combina nome OR descricao
+    const filtros = [];
+    if (busca.filterClause) {
+      filtros.push(`(${busca.filterClause} OR ${descricaoClause})`);
+    } else {
+      filtros.push(descricaoClause);
     }
 
-    const [ocorrencias, total] = await Promise.all([
-      prisma.ocorrencia.findMany({
-        where,
-        orderBy: { criadoEm: 'desc' },
-        skip: offset,
-        take: Number(limit),
-      }),
-      prisma.ocorrencia.count({ where }),
-    ]);
+    if (tipo) { filtros.push(`tipo = $${idx++}`); params.push(tipo); }
+    if (de) { filtros.push(`"criadoEm" >= $${idx++}`); params.push(new Date(de)); }
+    if (ate) { filtros.push(`"criadoEm" <= $${idx++}`); params.push(new Date(ate + 'T23:59:59')); }
 
-    res.json({ data: ocorrencias, total, page: Number(page), limit: Number(limit) });
+    params.push(Number(limit), offset);
+    const limitIdx = idx++;
+    const offsetIdx = idx++;
+
+    const rows = await prisma.$queryRawUnsafe(`
+      SELECT *, COUNT(*) OVER()::int AS _total
+      FROM cobranca.ocorrencia
+      WHERE ${filtros.join(' AND ')}
+      ORDER BY "criadoEm" DESC
+      LIMIT $${limitIdx} OFFSET $${offsetIdx}
+    `, ...params);
+
+    const total = rows.length > 0 ? rows[0]._total : 0;
+    const data = rows.map(({ _total, ...rest }) => rest);
+
+    res.json({ data, total, page: Number(page), limit: Number(limit) });
   } catch (error) {
     next(error);
   }

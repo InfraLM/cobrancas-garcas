@@ -64,7 +64,7 @@ export default function NovaNegociacaoDrawer({ aberto, onFechar, alunoInicial, o
   const [buscando, setBuscando] = useState(false);
 
   useEffect(() => {
-    if (!busca || busca.length < 3) { setAlunosFiltrados([]); return; }
+    if (!busca || busca.trim().length < 2) { setAlunosFiltrados([]); return; }
     const timer = setTimeout(async () => {
       setBuscando(true);
       try {

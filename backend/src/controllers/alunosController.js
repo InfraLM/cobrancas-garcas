@@ -1,5 +1,6 @@
 import { prisma } from '../config/database.js';
 import { obterPausaAtivaPorPessoa } from '../services/pausaLigacaoService.js';
+import { buildBuscaClauses } from '../utils/buscaNomeHelper.js';
 
 const CURSO_PERMITIDO = 1;
 const TURMAS_EXCLUIDAS = [1, 10, 14, 19, 22, 27, 29];
@@ -20,7 +21,31 @@ export async function listar(req, res, next) {
     const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 20));
     const offset = (page - 1) * limit;
 
-    const searchDigits = search.replace(/\D/g, '');
+    // Monta busca (nome + cpf + matricula) com ranking de relevancia via pg_trgm.
+    const busca = buildBuscaClauses({
+      colunaNome: 'nome',
+      termo: search,
+      extras: { colunaCpf: 'cpf', colunaMatricula: 'matricula' },
+      paramStartIndex: 1,
+      fallbackOrderBy: 'nome',
+    });
+
+    // Concatena filtros de situacao/financeiro com os params da busca.
+    const filtroExtras = [];
+    const params = [...busca.params];
+    let idx = busca.nextIndex;
+    if (situacao) { filtroExtras.push(`situacao = $${idx++}`); params.push(situacao); }
+    if (financeiro) { filtroExtras.push(`"situacaoFinanceira" = $${idx++}`); params.push(financeiro); }
+
+    const whereParts = [];
+    if (busca.filterClause) whereParts.push(busca.filterClause);
+    if (filtroExtras.length) whereParts.push(...filtroExtras);
+
+    const whereClause = whereParts.length > 0 ? `WHERE ${whereParts.join(' AND ')}` : '';
+
+    params.push(limit, offset);
+    const limitIdx = idx++;
+    const offsetIdx = idx++;
 
     const rows = await prisma.$queryRawUnsafe(`
       SELECT codigo, nome, cpf, celular, matricula, turma,
@@ -30,16 +55,10 @@ export async function listar(req, res, next) {
         "parcelasAtraso" AS parcelas_atraso,
         COUNT(*) OVER()::int AS total
       FROM cobranca.aluno_resumo
-      WHERE ($1 = '' OR (
-        nome ILIKE '%' || $1 || '%'
-        OR COALESCE(matricula, '') ILIKE '%' || $1 || '%'
-        OR REGEXP_REPLACE(COALESCE(cpf,''), '[^0-9]', '', 'g') LIKE '%' || $2 || '%'
-      ))
-        AND ($3 = '' OR situacao = $3)
-        AND ($4 = '' OR "situacaoFinanceira" = $4)
-      ORDER BY nome
-      LIMIT $5 OFFSET $6
-    `, search, searchDigits.length >= 3 ? searchDigits : '', situacao, financeiro, limit, offset);
+      ${whereClause}
+      ORDER BY ${busca.orderClause}
+      LIMIT $${limitIdx} OFFSET $${offsetIdx}
+    `, ...params);
 
     const total = rows.length > 0 ? rows[0].total : 0;
 

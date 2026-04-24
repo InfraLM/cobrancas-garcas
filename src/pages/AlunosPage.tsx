@@ -29,7 +29,11 @@ export default function AlunosPage() {
   const LIMIT = 20;
 
   useEffect(() => {
-    const timer = setTimeout(() => setBuscaDebounced(busca), 400);
+    const timer = setTimeout(() => {
+      const t = busca.trim();
+      // So dispara se vazio ou com 2+ caracteres (evita flash com 1 letra)
+      if (t.length === 0 || t.length >= 2) setBuscaDebounced(busca);
+    }, 400);
     return () => clearTimeout(timer);
   }, [busca]);
 
@@ -100,6 +104,7 @@ export default function AlunosPage() {
             valor={busca}
             onChange={setBusca}
             placeholder="Buscar por nome ou CPF..."
+            minCaracteres={2}
           />
         </div>
 

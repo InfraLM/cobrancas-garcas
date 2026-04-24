@@ -4,6 +4,7 @@ import { enviarParaAssinatura, cancelarEnvelope } from '../services/clicksignSer
 import { criarOuBuscarCliente, criarCobranca, obterPixQrCode, cancelarCobranca } from '../services/asaasService.js';
 import { enviarLinkPagamento } from '../services/blipMensagemService.js';
 import { sincronizarPausaPorEtapa } from '../services/pausaLigacaoService.js';
+import { buildBuscaClauses } from '../utils/buscaNomeHelper.js';
 
 // -----------------------------------------------
 // GET /api/acordos — Listar acordos
@@ -11,31 +12,78 @@ import { sincronizarPausaPorEtapa } from '../services/pausaLigacaoService.js';
 export async function listar(req, res, next) {
   try {
     const { etapa, criadoPor, search, page = 1, limit = 50 } = req.query;
-    const where = {};
+    const termo = String(search || '').trim();
+    const pageNum = Number(page) || 1;
+    const limitNum = Number(limit) || 50;
+    const offset = (pageNum - 1) * limitNum;
 
-    if (etapa) where.etapa = etapa;
-    if (criadoPor) where.criadoPor = Number(criadoPor);
-    if (search) {
-      where.OR = [
-        { pessoaNome: { contains: search, mode: 'insensitive' } },
-        { pessoaCpf: { contains: search.replace(/\D/g, '') } },
-      ];
+    // Fluxo sem busca: Prisma puro, ordenado por criadoEm desc (comportamento historico).
+    if (!termo) {
+      const where = {};
+      if (etapa) where.etapa = etapa;
+      if (criadoPor) where.criadoPor = Number(criadoPor);
+
+      const [acordos, total] = await Promise.all([
+        prisma.acordoFinanceiro.findMany({
+          where,
+          include: {
+            pagamentos: { orderBy: { numeroPagamento: 'asc' } },
+            parcelasOriginais: { orderBy: { dataVencimento: 'asc' } },
+            documento: true,
+          },
+          orderBy: { criadoEm: 'desc' },
+          skip: offset,
+          take: limitNum,
+        }),
+        prisma.acordoFinanceiro.count({ where }),
+      ]);
+      return res.json({ acordos, total });
     }
 
-    const [acordos, total] = await Promise.all([
-      prisma.acordoFinanceiro.findMany({
-        where,
-        include: {
-          pagamentos: { orderBy: { numeroPagamento: 'asc' } },
-          parcelasOriginais: { orderBy: { dataVencimento: 'asc' } },
-          documento: true,
-        },
-        orderBy: { criadoEm: 'desc' },
-        skip: (Number(page) - 1) * Number(limit),
-        take: Number(limit),
-      }),
-      prisma.acordoFinanceiro.count({ where }),
-    ]);
+    // Fluxo com busca: raw query para IDs ordenados por relevancia (nome + cpf).
+    // Depois Prisma findMany por IN (ids) mantendo a ordem via Map.
+    const busca = buildBuscaClauses({
+      colunaNome: '"pessoaNome"',
+      termo,
+      extras: { colunaCpf: '"pessoaCpf"' },
+      paramStartIndex: 1,
+    });
+
+    const filtros = [busca.filterClause].filter(Boolean);
+    const params = [...busca.params];
+    let idx = busca.nextIndex;
+    if (etapa) { filtros.push(`etapa = $${idx++}`); params.push(etapa); }
+    if (criadoPor) { filtros.push(`"criadoPor" = $${idx++}`); params.push(Number(criadoPor)); }
+
+    params.push(limitNum, offset);
+    const limitIdx = idx++;
+    const offsetIdx = idx++;
+
+    const idsResult = await prisma.$queryRawUnsafe(`
+      SELECT id, COUNT(*) OVER()::int AS total
+      FROM cobranca.acordo_financeiro
+      WHERE ${filtros.join(' AND ')}
+      ORDER BY ${busca.orderClause}
+      LIMIT $${limitIdx} OFFSET $${offsetIdx}
+    `, ...params);
+
+    const ids = idsResult.map(r => r.id);
+    const total = idsResult.length > 0 ? idsResult[0].total : 0;
+
+    if (ids.length === 0) return res.json({ acordos: [], total: 0 });
+
+    const acordosData = await prisma.acordoFinanceiro.findMany({
+      where: { id: { in: ids } },
+      include: {
+        pagamentos: { orderBy: { numeroPagamento: 'asc' } },
+        parcelasOriginais: { orderBy: { dataVencimento: 'asc' } },
+        documento: true,
+      },
+    });
+
+    // Preserva ordem do ranking
+    const byId = new Map(acordosData.map(a => [a.id, a]));
+    const acordos = ids.map(id => byId.get(id)).filter(Boolean);
 
     res.json({ acordos, total });
   } catch (error) {

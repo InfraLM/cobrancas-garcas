@@ -1,4 +1,5 @@
 import { prisma } from '../config/database.js';
+import { buildWhereNome } from '../utils/buscaNomeHelper.js';
 
 const TURMAS_EXCLUIDAS = '1,10,14,19,22,27,29';
 const PESSOAS_EXCECAO = '589'; // Andre Garcia Ribeiro — testes
@@ -19,17 +20,21 @@ export async function listar(req, res, next) {
     const params = [];
     let paramIdx = 1;
 
-    if (search) {
-      const searchDigits = search.replace(/\D/g, '');
-      where += ` AND (p.nome ILIKE '%' || $${paramIdx} || '%' OR COALESCE(m.matricula,'') ILIKE '%' || $${paramIdx} || '%'`;
-      params.push(search);
-      paramIdx++;
-      if (searchDigits.length >= 3) {
-        where += ` OR REGEXP_REPLACE(COALESCE(p.cpf,''), '[^0-9]', '', 'g') LIKE '%' || $${paramIdx} || '%'`;
-        params.push(searchDigits);
-        paramIdx++;
+    // Busca com helper (nome normalizado + cpf + matricula). Titulos ordenam por
+    // vencimento, entao so usamos buildWhereNome (sem ranking).
+    const termo = String(search || '').trim();
+    if (termo) {
+      const busca = buildWhereNome({
+        colunaNome: 'p.nome',
+        termo,
+        extras: { colunaCpf: 'p.cpf', colunaMatricula: 'm.matricula' },
+        paramStartIndex: paramIdx,
+      });
+      if (busca.filterClause) {
+        where += ` AND ${busca.filterClause}`;
+        params.push(...busca.params);
+        paramIdx = busca.nextIndex;
       }
-      where += ')';
     }
 
     if (situacao) {

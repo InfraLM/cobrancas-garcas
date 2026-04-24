@@ -1,4 +1,5 @@
 import { prisma } from '../config/database.js';
+import { buildBuscaClauses } from '../utils/buscaNomeHelper.js';
 
 // -----------------------------------------------
 // GET /api/recorrencias — Listar cadastros
@@ -6,23 +7,45 @@ import { prisma } from '../config/database.js';
 export async function listar(req, res, next) {
   try {
     const { etapa, search, origem } = req.query;
-    const where = {};
+    const termo = String(search || '').trim();
 
-    if (etapa) where.etapa = etapa;
-    if (origem) where.origem = origem;
-    if (search) {
-      where.OR = [
-        { pessoaNome: { contains: search, mode: 'insensitive' } },
-        { pessoaCpf: { contains: search.replace(/\D/g, '') } },
-      ];
+    // Sem busca: Prisma puro (ordem criadoEm desc)
+    if (!termo) {
+      const where = {};
+      if (etapa) where.etapa = etapa;
+      if (origem) where.origem = origem;
+      const cadastros = await prisma.cadastroRecorrencia.findMany({
+        where, orderBy: { criadoEm: 'desc' },
+      });
+      return res.json(cadastros);
     }
 
-    const cadastros = await prisma.cadastroRecorrencia.findMany({
-      where,
-      orderBy: { criadoEm: 'desc' },
+    // Com busca: raw query para IDs ordenados por relevancia + findMany
+    const busca = buildBuscaClauses({
+      colunaNome: '"pessoaNome"',
+      termo,
+      extras: { colunaCpf: '"pessoaCpf"' },
+      paramStartIndex: 1,
     });
 
-    res.json(cadastros);
+    const filtros = [busca.filterClause].filter(Boolean);
+    const params = [...busca.params];
+    let idx = busca.nextIndex;
+    if (etapa) { filtros.push(`etapa = $${idx++}`); params.push(etapa); }
+    if (origem) { filtros.push(`origem = $${idx++}`); params.push(origem); }
+
+    const idsResult = await prisma.$queryRawUnsafe(`
+      SELECT id FROM cobranca.cadastro_recorrencia
+      WHERE ${filtros.join(' AND ')}
+      ORDER BY ${busca.orderClause}
+    `, ...params);
+
+    const ids = idsResult.map(r => r.id);
+    if (ids.length === 0) return res.json([]);
+
+    const cadastrosData = await prisma.cadastroRecorrencia.findMany({ where: { id: { in: ids } } });
+    const byId = new Map(cadastrosData.map(c => [c.id, c]));
+    res.json(ids.map(id => byId.get(id)).filter(Boolean));
   } catch (error) {
     next(error);
   }

@@ -1,5 +1,6 @@
 import { prisma } from '../config/database.js';
 import multer from 'multer';
+import { buildBuscaClauses } from '../utils/buscaNomeHelper.js';
 
 const TURMAS_EXCLUIDAS = '1,10,14,19,22,27,29';
 
@@ -54,22 +55,48 @@ export async function calcularValores(req, res, next) {
 export async function listar(req, res, next) {
   try {
     const { etapa, search } = req.query;
-    const where = {};
-    if (etapa) where.etapa = etapa;
-    if (search) {
-      where.OR = [
-        { pessoaNome: { contains: search, mode: 'insensitive' } },
-        { pessoaCpf: { contains: search.replace(/\D/g, '') } },
-      ];
+    const termo = String(search || '').trim();
+
+    // Sem busca: Prisma puro
+    if (!termo) {
+      const where = {};
+      if (etapa) where.etapa = etapa;
+      const registros = await prisma.ficouFacil.findMany({
+        where,
+        orderBy: { criadoEm: 'desc' },
+        include: { documentos: { select: { id: true, tipo: true, nomeArquivo: true, criadoEm: true } } },
+      });
+      return res.json(registros);
     }
 
-    const registros = await prisma.ficouFacil.findMany({
-      where,
-      orderBy: { criadoEm: 'desc' },
-      include: { documentos: { select: { id: true, tipo: true, nomeArquivo: true, criadoEm: true } } },
+    // Com busca: raw IDs ordenados por relevancia + findMany
+    const busca = buildBuscaClauses({
+      colunaNome: '"pessoaNome"',
+      termo,
+      extras: { colunaCpf: '"pessoaCpf"' },
+      paramStartIndex: 1,
     });
 
-    res.json(registros);
+    const filtros = [busca.filterClause].filter(Boolean);
+    const params = [...busca.params];
+    let idx = busca.nextIndex;
+    if (etapa) { filtros.push(`etapa = $${idx++}`); params.push(etapa); }
+
+    const idsResult = await prisma.$queryRawUnsafe(`
+      SELECT id FROM cobranca.ficou_facil
+      WHERE ${filtros.join(' AND ')}
+      ORDER BY ${busca.orderClause}
+    `, ...params);
+
+    const ids = idsResult.map(r => r.id);
+    if (ids.length === 0) return res.json([]);
+
+    const registrosData = await prisma.ficouFacil.findMany({
+      where: { id: { in: ids } },
+      include: { documentos: { select: { id: true, tipo: true, nomeArquivo: true, criadoEm: true } } },
+    });
+    const byId = new Map(registrosData.map(r => [r.id, r]));
+    res.json(ids.map(id => byId.get(id)).filter(Boolean));
   } catch (error) {
     next(error);
   }
