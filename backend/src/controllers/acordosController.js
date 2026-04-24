@@ -240,16 +240,31 @@ export async function atualizarEtapa(req, res, next) {
 
 // -----------------------------------------------
 // PATCH /api/acordos/:id/vincular-sei — Informar codigo SEI
+//
+// Suporta vinculacao retroativa: se o aluno pagou a cobranca antes do
+// agente conseguir criar a negociacao no SEI, o acordo vai direto para
+// CONCLUIDO (via webhook Asaas). Nesse caso, permitimos gravar o codigo
+// SEI sem voltar pra SEI_VINCULADO — mantem a etapa atual.
 // -----------------------------------------------
 export async function vincularSei(req, res, next) {
   try {
     const { codigoNegociacao } = req.body;
 
+    const existente = await prisma.acordoFinanceiro.findUnique({
+      where: { id: req.params.id },
+      select: { etapa: true },
+    });
+    if (!existente) return res.status(404).json({ error: 'Acordo nao encontrado' });
+
+    // Se ja foi concluido, preserva a etapa. Caso contrario, move para SEI_VINCULADO.
+    const manterEtapa = existente.etapa === 'CONCLUIDO';
+    const novaEtapa = manterEtapa ? existente.etapa : 'SEI_VINCULADO';
+
     const acordo = await prisma.acordoFinanceiro.update({
       where: { id: req.params.id },
       data: {
         negociacaoContaReceberCodigo: Number(codigoNegociacao),
-        etapa: 'SEI_VINCULADO',
+        etapa: novaEtapa,
         seiVinculadoEm: new Date(),
       },
     });

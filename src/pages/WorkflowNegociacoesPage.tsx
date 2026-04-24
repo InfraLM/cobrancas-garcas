@@ -62,10 +62,11 @@ export default function WorkflowNegociacoesPage() {
     return unsub;
   }, [realtime, carregarAcordos]);
 
-  // Metricas
-  const totalAcordos = acordos.length;
-  const valorTotal = acordos.reduce((acc, a) => acc + Number(a.valorAcordo), 0);
-  const concluidos = acordos.filter(a => a.etapa === 'CONCLUIDO').length;
+  // Metricas (ignora cancelados — ficam fora do Kanban tambem)
+  const acordosAtivos = acordos.filter(a => a.etapa !== 'CANCELADO');
+  const totalAcordos = acordosAtivos.length;
+  const valorTotal = acordosAtivos.reduce((acc, a) => acc + Number(a.valorAcordo), 0);
+  const concluidos = acordosAtivos.filter(a => a.etapa === 'CONCLUIDO').length;
 
   function handleCardClick(acordo: AcordoFinanceiro) {
     setAcordoSelecionado(acordo);

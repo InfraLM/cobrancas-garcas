@@ -1,6 +1,8 @@
+import { useState } from 'react';
 import type { AcordoFinanceiro } from '../../../types/acordo';
 import { formaPagamentoLabel } from '../../../types/acordo';
-import { CheckCircle2, AlertTriangle, CreditCard, QrCode, Landmark } from 'lucide-react';
+import { vincularSei } from '../../../services/acordos';
+import { CheckCircle2, AlertTriangle, CreditCard, QrCode, Landmark, Link2, Loader2 } from 'lucide-react';
 
 function formatarMoeda(v: number) {
   return Number(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -31,6 +33,25 @@ export default function EtapaConcluido({ acordo, onAtualizado }: Props) {
     ? Math.ceil((Date.now() - new Date(acordo.criadoEm).getTime()) / 86400000)
     : 0;
 
+  const [codigoSei, setCodigoSei] = useState('');
+  const [vinculando, setVinculando] = useState(false);
+  const [erro, setErro] = useState('');
+  const seiVinculado = !!acordo.negociacaoContaReceberCodigo;
+
+  async function handleVincularRetroativo() {
+    if (!codigoSei.trim()) return;
+    setVinculando(true);
+    setErro('');
+    try {
+      await vincularSei(acordo.id, parseInt(codigoSei));
+      onAtualizado?.();
+    } catch (err: any) {
+      setErro(err.message || 'Erro ao vincular');
+    } finally {
+      setVinculando(false);
+    }
+  }
+
   return (
     <div className="space-y-5">
       {/* Banner de sucesso */}
@@ -40,20 +61,51 @@ export default function EtapaConcluido({ acordo, onAtualizado }: Props) {
         <p className="text-[0.875rem] text-emerald-600">Valor recuperado: {formatarMoeda(totalPago)}</p>
       </div>
 
-      {/* Alerta SEI */}
-      <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4">
-        <div className="flex items-center gap-2">
-          <AlertTriangle size={14} className="text-amber-600 shrink-0" />
-          <div>
-            <p className="text-[0.8125rem] font-semibold text-amber-800">Lembre-se de dar baixa no SEI</p>
-            <p className="text-[0.75rem] text-amber-700 mt-0.5">
-              {acordo.negociacaoContaReceberCodigo
-                ? `Negociação SEI #${acordo.negociacaoContaReceberCodigo} — realize a baixa das parcelas recebidas.`
-                : 'A negociação não foi vinculada ao SEI. Verifique se é necessário registrar manualmente.'}
-            </p>
+      {/* Alerta + vinculo SEI (permite vincular retroativamente se aluno pagou
+          antes do agente conseguir criar a negociacao no SEI) */}
+      {seiVinculado ? (
+        <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4">
+          <div className="flex items-center gap-2">
+            <AlertTriangle size={14} className="text-amber-600 shrink-0" />
+            <div>
+              <p className="text-[0.8125rem] font-semibold text-amber-800">Lembre-se de dar baixa no SEI</p>
+              <p className="text-[0.75rem] text-amber-700 mt-0.5">
+                Negociação SEI #{acordo.negociacaoContaReceberCodigo} — realize a baixa das parcelas recebidas.
+              </p>
+            </div>
           </div>
         </div>
-      </div>
+      ) : (
+        <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 space-y-3">
+          <div className="flex items-start gap-2">
+            <AlertTriangle size={14} className="text-amber-600 shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <p className="text-[0.8125rem] font-semibold text-amber-800">Negociação SEI não vinculada</p>
+              <p className="text-[0.75rem] text-amber-700 mt-0.5">
+                O aluno pagou antes do vínculo. Crie a negociação no SEI agora e cole o código abaixo para manter o registro completo.
+              </p>
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={codigoSei}
+              onChange={(e) => setCodigoSei(e.target.value.replace(/\D/g, ''))}
+              placeholder="Código da negociação SEI"
+              className="flex-1 h-9 px-3 rounded-lg bg-white text-[0.8125rem] font-mono text-on-surface border border-amber-200 placeholder:text-on-surface-variant/40 outline-none focus:ring-2 focus:ring-amber-400/30"
+            />
+            <button
+              onClick={handleVincularRetroativo}
+              disabled={!codigoSei.trim() || vinculando}
+              className="px-4 h-9 rounded-lg bg-amber-600 text-white font-semibold text-[0.75rem] hover:bg-amber-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1.5"
+            >
+              {vinculando ? <Loader2 size={13} className="animate-spin" /> : <Link2 size={13} />}
+              Vincular
+            </button>
+          </div>
+          {erro && <p className="text-[0.75rem] text-red-600">{erro}</p>}
+        </div>
+      )}
 
       {/* Resumo financeiro */}
       <div className="bg-white/50 rounded-2xl p-4 shadow-sm shadow-black/[0.03] space-y-3">
