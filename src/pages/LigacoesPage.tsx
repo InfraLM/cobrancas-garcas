@@ -44,7 +44,7 @@ export default function LigacoesPage() {
 
   return (
     <div
-      className={`flex flex-col min-h-full -mx-6 -mt-1 px-6 pt-1 transition-colors duration-700 ${
+      className={`flex flex-col h-full overflow-hidden -mx-6 -mt-1 px-6 pt-1 transition-colors duration-700 ${
         escuro ? 'bg-gray-950' : ''
       }`}
     >

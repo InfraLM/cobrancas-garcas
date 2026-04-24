@@ -100,6 +100,9 @@ export function LigacoesProvider({ children }: { children: ReactNode }) {
   const [ligacaoAtiva, setLigacaoAtiva] = useState<LigacaoAtiva | null>(null);
   const [ligacaoEncerrada, setLigacaoEncerrada] = useState<LigacaoAtiva | null>(null);
   const ligacaoAtivaRef = useRef<LigacaoAtiva | null>(null);
+  // Cache de alunos pre-fetched por telephonyId. Permite ter os dados prontos no
+  // momento exato que o discador conecta a chamada ao agente (call-was-connected).
+  const alunoCacheRef = useRef<Map<string, Aluno>>(new Map());
   const [eventos, setEventos] = useState<EventoLigacao[]>([]);
   const [qualificacoes] = useState<QualificacaoLigacao[]>(qualificacoesMock);
   const [callbackAberto, setCallbackAberto] = useState(false);
@@ -174,12 +177,66 @@ export function LigacoesProvider({ children }: { children: ReactNode }) {
     setEventos(prev => [...prev, evento]);
   }, []);
 
-  // Helper: busca aluno por telefone e popula ligacaoAtiva, garantindo que
-  // a chamada ainda eh a mesma (proteja contra corrida quando chamadas rapidas
-  // acontecem em sequencia no modo massa).
-  const buscarAlunoParaLigacao = useCallback((telefone: string, callId: string) => {
+  // Converte AlunoLigacao (parcial, vindo do endpoint /aluno-por-telefone)
+  // para o tipo Aluno completo usado pela UI.
+  function adaptarAluno(alunoLig: any): Aluno {
+    return {
+      codigo: alunoLig.codigo,
+      nome: alunoLig.nome,
+      cpf: alunoLig.cpf || '',
+      celular: alunoLig.celular || undefined,
+      email: alunoLig.email || undefined,
+      matricula: alunoLig.matricula || '',
+      situacaoMatricula: 'AT',
+      serasa: alunoLig.serasaAtivo,
+      bloquearContatoCrm: false,
+      naoEnviarMensagemCobranca: false,
+      cursoNome: '',
+      financeiro: {
+        totalParcelas: 0,
+        parcelasEmAtraso: alunoLig.parcelasAtraso,
+        parcelasAVencer: 0,
+        parcelasPagas: 0,
+        parcelasNegociadas: 0,
+        parcelasCanceladas: 0,
+        valorEmAberto: alunoLig.valorInadimplente,
+        valorInadimplente: alunoLig.valorInadimplente,
+        valorPago: 0,
+      },
+      plantoes: [],
+      serasaDetalhes: [],
+      parcelas: [],
+    };
+  }
+
+  // Pre-fetch: busca aluno por telefone e coloca no cache (alunoCacheRef) indexado
+  // pelo telephonyId da chamada. Usado no call-was-created (modo massa) para ter
+  // os dados prontos quando o discador conectar a ligacao ao agente.
+  const preFetchAluno = useCallback((telefone: string, callId: string) => {
     if (!telefone || !callId) return;
-    // marca como buscando
+    real3c.buscarAlunoPorTelefone(telefone).then(alunoLig => {
+      if (!alunoLig) return;
+      alunoCacheRef.current.set(callId, adaptarAluno(alunoLig));
+    }).catch(() => { /* silencioso no pre-fetch */ });
+  }, []);
+
+  // Popula ligacaoAtiva com aluno. Usa cache de pre-fetch se disponivel,
+  // fallback para fetch imediato. Protege contra race (descarta retorno se
+  // a chamada atual nao e mais essa callId).
+  const carregarAlunoNaLigacao = useCallback((telefone: string, callId: string) => {
+    if (!telefone || !callId) return;
+
+    // Cache hit (pre-fetch ja resolveu)
+    const cached = alunoCacheRef.current.get(callId);
+    if (cached) {
+      log('sistema', `Aluno (cache): ${cached.nome}`, { callId });
+      setLigacaoAtiva(prev => (prev && prev.callId === callId
+        ? { ...prev, aluno: cached, alunoBuscando: false, alunoNaoEncontrado: false }
+        : prev));
+      return;
+    }
+
+    // Cache miss: busca agora
     setLigacaoAtiva(prev => (prev && prev.callId === callId ? { ...prev, alunoBuscando: true } : prev));
     real3c.buscarAlunoPorTelefone(telefone).then(alunoLig => {
       if (!alunoLig) {
@@ -190,33 +247,8 @@ export function LigacoesProvider({ children }: { children: ReactNode }) {
         return;
       }
       log('sistema', `Aluno vinculado: ${alunoLig.nome} (${alunoLig.matricula})`, alunoLig);
-      const aluno: Aluno = {
-        codigo: alunoLig.codigo,
-        nome: alunoLig.nome,
-        cpf: alunoLig.cpf || '',
-        celular: alunoLig.celular || undefined,
-        email: alunoLig.email || undefined,
-        matricula: alunoLig.matricula || '',
-        situacaoMatricula: 'AT',
-        serasa: alunoLig.serasaAtivo,
-        bloquearContatoCrm: false,
-        naoEnviarMensagemCobranca: false,
-        cursoNome: '',
-        financeiro: {
-          totalParcelas: 0,
-          parcelasEmAtraso: alunoLig.parcelasAtraso,
-          parcelasAVencer: 0,
-          parcelasPagas: 0,
-          parcelasNegociadas: 0,
-          parcelasCanceladas: 0,
-          valorEmAberto: alunoLig.valorInadimplente,
-          valorInadimplente: alunoLig.valorInadimplente,
-          valorPago: 0,
-        },
-        plantoes: [],
-        serasaDetalhes: [],
-        parcelas: [],
-      };
+      const aluno = adaptarAluno(alunoLig);
+      alunoCacheRef.current.set(callId, aluno);
       setLigacaoAtiva(prev => (prev && prev.callId === callId
         ? { ...prev, aluno, alunoBuscando: false, alunoNaoEncontrado: false }
         : prev));
@@ -244,55 +276,84 @@ export function LigacoesProvider({ children }: { children: ReactNode }) {
         break;
 
       case 'call-was-created': {
-        // Captura callId (telephony_id) para poder usar no hangup
         const callId = call.telephony_id || call.id || undefined;
         const telefone = evento.telefone || call.phone || '';
-        // Nova chamada chegou — limpa qualificacao pendente da anterior
-        setLigacaoEncerrada(null);
-        setLigacaoAtiva({
-          id: evento.id,
-          callId,
-          telefone,
-          inicio: evento.timestamp,
-          aluno: null,
-          status: 'discando',
-        });
-        // Em massa, garantir que estamos em EM_LIGACAO (pode estar em QUALIFICACAO individual residual)
+
         if (tipoLigacao === 'massa') {
+          // Modo dialer: o discador dispara varias chamadas em paralelo.
+          // NAO popular ligacaoAtiva ainda — so quando call-was-connected (com
+          // agent_id nosso) chegar, eh que o agente realmente recebe a chamada.
+          // Pre-fetch do aluno no cache para ter os dados prontos nessa hora.
+          if (telefone && callId) preFetchAluno(telefone, String(callId));
           setEstadoPagina('EM_LIGACAO');
-        }
-        // Pre-fetch do aluno ja no discando: quando atender, dados ja estao prontos
-        if (telefone && callId) {
-          buscarAlunoParaLigacao(telefone, String(callId));
+        } else {
+          // Modo click2call (individual): o agente iniciou a chamada, fluxo linear.
+          setLigacaoEncerrada(null);
+          setLigacaoAtiva({
+            id: evento.id,
+            callId,
+            telefone,
+            inicio: evento.timestamp,
+            aluno: null,
+            status: 'discando',
+          });
+          // Pre-fetch tambem (mesmo sabendo o aluno, garante consistencia)
+          if (telefone && callId) carregarAlunoNaLigacao(telefone, String(callId));
         }
         break;
       }
 
-      case 'call-was-connected':
-        // Rede 3C Plus conectou a chamada — esta tocando no celular do destinatario
-        setLigacaoAtiva(prev => prev ? { ...prev, status: 'tocando' } : prev);
+      case 'call-was-connected': {
+        const callId = call.telephony_id || call.id || undefined;
+        const telefone = evento.telefone || call.phone || '';
+
+        if (tipoLigacao === 'massa') {
+          // Modo dialer: ESTE eh o evento onde o agente recebe a chamada de verdade
+          // (o 3C Plus so emite call-was-connected com agent.id quando transfere
+          // a chamada pro agente apos AMD). Cria a ligacaoAtiva AQUI.
+          setLigacaoEncerrada(null);
+          setLigacaoAtiva({
+            id: evento.id,
+            callId,
+            telefone,
+            inicio: evento.timestamp,
+            aluno: null,
+            status: 'conectada',
+          });
+          // Popula aluno — usa cache de pre-fetch se disponivel, senao busca agora.
+          if (telefone && callId) carregarAlunoNaLigacao(telefone, String(callId));
+        } else {
+          // Modo click2call: rede conectou, celular do destinatario tocando.
+          setLigacaoAtiva(prev => prev ? { ...prev, status: 'tocando' } : prev);
+        }
         break;
+      }
 
       case 'call-was-answered': {
-        // Humano atendeu — conversa comecou
+        if (tipoLigacao === 'massa') {
+          // Em modo dialer, call-was-answered eh apenas "audio detectado" — pode
+          // ser secretaria eletronica. Ignoramos: so mostramos ligacao quando
+          // call-was-connected chegar (quando o discador transfere pro agente).
+          break;
+        }
+        // Modo individual: humano atendeu — conversa comecou.
         setLigacaoAtiva(prev => prev ? { ...prev, status: 'conectada', inicio: evento.timestamp } : prev);
-
-        // Fallback: se por algum motivo o pre-fetch no call-was-created nao trouxe
-        // o aluno ainda, tenta de novo agora.
+        // Fallback se pre-fetch nao trouxe o aluno
         const atual = ligacaoAtivaRef.current;
         const telefone = evento.telefone || call.phone || '';
         const callId = call.telephony_id || call.id;
         if (telefone && callId && atual && !atual.aluno && !atual.alunoBuscando) {
-          buscarAlunoParaLigacao(telefone, String(callId));
+          carregarAlunoNaLigacao(telefone, String(callId));
         }
         break;
       }
 
       case 'call-was-hung-up':
-      case 'call-was-finished':
+      case 'call-was-finished': {
         // Quando o desligamento vem via API (POST /agent/call/:id/hangup),
         // a 3C Plus pula call-was-hung-up e emite direto call-was-finished.
-        // Tratamos os dois igualmente.
+        const callId = call.telephony_id || call.id;
+        if (callId) alunoCacheRef.current.delete(String(callId));
         if (tipoLigacao === 'massa') {
           // Massa: salva chamada encerrada para qualificacao inline, limpa ativa,
           // permanece em EM_LIGACAO aguardando proxima chamada do discador
@@ -307,21 +368,33 @@ export function LigacoesProvider({ children }: { children: ReactNode }) {
           setIlhaAtiva(false);
         }
         break;
+      }
 
       case 'call-was-unanswered':
-      case 'call-was-abandoned':
+      case 'call-was-abandoned': {
+        // Em modo massa, esse evento pode vir de uma chamada paralela que nao
+        // chegou a conectar com o agente. Se o callId NAO bate com a ligacaoAtiva
+        // atual, apenas limpa o cache de pre-fetch. Caso contrario, limpa a UI.
+        const callId = call.telephony_id || call.id;
+        if (callId) alunoCacheRef.current.delete(String(callId));
+        const atual = ligacaoAtivaRef.current;
+        if (atual && callId && atual.callId !== String(callId)) {
+          // Chamada abandonada eh de outra tentativa do discador (paralela).
+          // Nao mexe na UI.
+          break;
+        }
         setLigacaoAtiva(null);
         if (tipoLigacao === 'massa') {
-          // Massa: discador continua automaticamente, nao precisa qualificar
           setLigacaoEncerrada(null);
         } else {
           setEstadoPagina('IDLE');
         }
         break;
+      }
 
       default: break;
     }
-  }, [adicionarEvento, tipoLigacao, log, buscarAlunoParaLigacao]);
+  }, [adicionarEvento, tipoLigacao, log, preFetchAluno, carregarAlunoNaLigacao]);
 
   // Atualiza ref do handler para o ultimo valor, sem resubscrever o realtime.
   useEffect(() => {
