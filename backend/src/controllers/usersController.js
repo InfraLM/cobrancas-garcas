@@ -254,6 +254,14 @@ export async function coletarToken(req, res, next) {
     const user = await prisma.user.findUnique({ where: { id } });
     if (!user) return res.status(404).json({ error: 'Usuário não encontrado' });
 
+    // ADMIN nao usa threecplusAgentToken do DB — usa env .THREECPLUS_AGENT_TOKEN.
+    // Alem disso, /authenticate invalida o token anterior, o que quebraria o .env silenciosamente.
+    if (user.role === 'ADMIN') {
+      return res.status(400).json({
+        error: "Gestor (ADMIN) usa token do .env. Use 'Coletar token' somente em usuários AGENTE.",
+      });
+    }
+
     if (!user.threecplusAgentId) {
       return res.status(400).json({ error: 'Agente não existe na 3C Plus. Crie primeiro.' });
     }
@@ -365,12 +373,17 @@ export async function vincularAgente(req, res, next) {
       return res.status(404).json({ error: `Nenhum agente encontrado na 3C Plus com o email ${user.email}` });
     }
 
+    // IDs publicos podem ser atualizados mesmo para ADMIN.
     const updateData = {
       threecplusUserId: agente.userId,
       threecplusAgentId: agente.agentId,
-      threecplusExtension: agente.extension,
     };
-    if (agente.apiToken) {
+    // Nao zerar extension com valor falsy (gestor sem extension na 3C Plus retorna null).
+    if (agente.extension) {
+      updateData.threecplusExtension = agente.extension;
+    }
+    // ADMIN nao armazena token no DB — getConfig/hangup usam env.
+    if (agente.apiToken && user.role !== 'ADMIN') {
       updateData.threecplusAgentToken = agente.apiToken;
     }
 
@@ -379,7 +392,7 @@ export async function vincularAgente(req, res, next) {
       data: updateData,
     });
 
-    console.log(`[Users] Agente 3C Plus vinculado para ${user.nome}: agentId=${agente.agentId}, ext=${agente.extension}, token=${agente.apiToken ? 'sim' : 'não'}`);
+    console.log(`[Users] Agente 3C Plus vinculado para ${user.nome}: agentId=${agente.agentId}, ext=${agente.extension}, token=${agente.apiToken ? 'sim' : 'não'}, role=${user.role}`);
 
     invalidarWhitelist();
     res.json(maskToken(updated));

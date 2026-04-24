@@ -28,6 +28,8 @@ export async function click2call(req, res, next) {
       return res.status(400).json({ error: 'phone e extension são obrigatórios' });
     }
 
+    console.log(`[3C+] Click2Call: user=${req.user?.email || '?'}, extension=${extension}`);
+
     const now = Date.now();
     if (click2call._lastCall && now - click2call._lastCall < 5000) {
       return res.status(429).json({ error: 'Aguarde 5 segundos entre chamadas' });
@@ -72,8 +74,10 @@ export async function getConfig(req, res, next) {
       where: { id: req.user.id },
     });
 
-    // Se usuario e gestor (token = manager token), usar token e extension do agente do .env
-    const isGestor = user?.threecplusAgentToken === process.env.THREECPLUS_MANAGER_TOKEN;
+    // Gestor (ADMIN) nao loga em campanha com manager token — 3C Plus nao permite.
+    // Para testar click2call, gestor usa um agent token "emprestado" do .env + ramal 228923.
+    // Agente normal usa o proprio token/ramal vinculados.
+    const isGestor = user?.role === 'ADMIN';
     const agentToken = isGestor ? process.env.THREECPLUS_AGENT_TOKEN : (user?.threecplusAgentToken || process.env.THREECPLUS_AGENT_TOKEN);
     const agentExtension = isGestor ? 228923 : (user?.threecplusExtension ? Number(user.threecplusExtension) : null);
     const campanhaId = user?.campanhaId || null;
@@ -84,7 +88,13 @@ export async function getConfig(req, res, next) {
       });
     }
 
-    console.log(`[Ligacoes] Config para ${user?.nome}: ext=${agentExtension}, campanha=${campanhaId}`);
+    if (!isGestor && !agentExtension) {
+      return res.status(500).json({
+        error: "Usuario sem extension configurada. Rode 'Vincular agente' em Configurações > Usuários.",
+      });
+    }
+
+    console.log(`[Ligacoes] Config para ${user?.nome}: ext=${agentExtension}, campanha=${campanhaId}, isGestor=${isGestor}`);
 
     res.json({
       agentToken,
@@ -108,7 +118,7 @@ export async function hangup(req, res, next) {
       where: { id: req.user.id },
     });
 
-    const isGestor = user?.threecplusAgentToken === process.env.THREECPLUS_MANAGER_TOKEN;
+    const isGestor = user?.role === 'ADMIN';
     const agentToken = isGestor ? process.env.THREECPLUS_AGENT_TOKEN : (user?.threecplusAgentToken || process.env.THREECPLUS_AGENT_TOKEN);
     if (!agentToken) {
       return res.status(500).json({ error: 'Token do agente não configurado' });
