@@ -1,6 +1,27 @@
 import { prisma } from '../config/database.js';
 import { buildSegmentacaoQuery, buildSegmentacaoCountQuery } from '../services/segmentacaoQueryBuilder.js';
 import { subirSegmentacaoParaCampanha, limparListasCampanha } from '../services/mailingService.js';
+import { listarPausasAtivasPorCodigos } from '../services/pausaLigacaoService.js';
+
+async function anexarPausaAtiva(registros) {
+  const codigos = registros.map(r => r.codigo).filter(Boolean);
+  if (codigos.length === 0) return registros;
+  const pausas = await listarPausasAtivasPorCodigos(codigos);
+  return registros.map(r => {
+    const p = pausas.get(r.codigo);
+    return {
+      ...r,
+      pausaAtiva: p ? {
+        id: p.id,
+        motivo: p.motivo,
+        origem: p.origem,
+        pausaAte: p.pausaAte,
+        pausadoEm: p.pausadoEm,
+        pausadoPorNome: p.pausadoPorNome,
+      } : null,
+    };
+  });
+}
 
 const TURMAS_EXCLUIDAS_SQL = '1,10,14,19,22,27,29';
 
@@ -92,7 +113,7 @@ export async function executarAvulso(req, res, next) {
     const rows = await prisma.$queryRawUnsafe(sql);
     const total = rows.length > 0 ? rows[0].total : 0;
 
-    const data = rows.map(r => ({
+    const baseData = rows.map(r => ({
       codigo: r.codigo,
       nome: r.nome,
       cpf: r.cpf,
@@ -102,6 +123,7 @@ export async function executarAvulso(req, res, next) {
       situacaoFinanceira: r.situacao_financeira,
       valorDevedor: Number(r.valor_devedor),
     }));
+    const data = await anexarPausaAtiva(baseData);
 
     res.json({ data, total, page, limit });
   } catch (error) {
@@ -143,7 +165,7 @@ export async function executarRegra(req, res, next) {
       },
     });
 
-    const data = rows.map(r => ({
+    const baseData = rows.map(r => ({
       codigo: r.codigo,
       nome: r.nome,
       cpf: r.cpf,
@@ -153,6 +175,7 @@ export async function executarRegra(req, res, next) {
       situacaoFinanceira: r.situacao_financeira,
       valorDevedor: Number(r.valor_devedor),
     }));
+    const data = await anexarPausaAtiva(baseData);
 
     res.json({ data, total, totalGeral, valorTotal, page, limit });
   } catch (error) {

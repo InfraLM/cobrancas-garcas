@@ -39,10 +39,21 @@ export async function listarTurmas(): Promise<string[]> {
   return res.data;
 }
 
+export interface PausadoDetalhe {
+  codigo: number;
+  nome: string;
+  motivo: string;
+  pausaAte?: string | null;
+}
+
 export interface SubirCampanhaResult {
   listId: number;
+  totalEncontrados?: number;
   totalSubidos: number;
+  totalEnviados?: number;
+  totalPausados?: number;
   totalSemTelefone: number;
+  pausados?: PausadoDetalhe[];
   campanha: number;
 }
 

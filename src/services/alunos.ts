@@ -3,6 +3,7 @@ import type {
   Aluno, ResumoFinanceiro, Parcela, Engajamento,
   Plantao, SuporteBlip, SerasaRegistro,
 } from '../types/aluno';
+import type { PausaAtivaResumo } from '../types/pausaLigacao';
 
 export interface AlunoListItem {
   codigo: number;
@@ -14,6 +15,7 @@ export interface AlunoListItem {
   situacao: string;
   situacaoFinanceira: string;
   valorDevedor: number;
+  pausaAtiva?: PausaAtivaResumo | null;
 }
 
 export interface ListarAlunosResponse {

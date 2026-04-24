@@ -1,5 +1,6 @@
 import { prisma } from '../config/database.js';
 import { getRealtimeIo } from '../realtime.js';
+import { sincronizarPausaPorEtapa } from '../services/pausaLigacaoService.js';
 
 // -----------------------------------------------
 // POST /api/webhooks/clicksign
@@ -94,6 +95,13 @@ export async function clicksignWebhook(req, res, next) {
             etapa: 'ACORDO_GERADO',
             acordoGeradoEm: new Date(),
           },
+        });
+
+        await sincronizarPausaPorEtapa({
+          acordoId: acordo.id,
+          etapa: 'ACORDO_GERADO',
+          pessoaCodigo: acordo.pessoaCodigo,
+          pessoaNome: acordo.pessoaNome,
         });
 
         // Atualizar documento com PDF
@@ -283,6 +291,13 @@ export async function asaasWebhook(req, res, next) {
           });
           console.log(`[Webhook Asaas] Todos os pagamentos confirmados — acordo ${acordoId} CONCLUIDO`);
 
+          await sincronizarPausaPorEtapa({
+            acordoId,
+            etapa: 'CONCLUIDO',
+            pessoaCodigo: acordoConcluido.pessoaCodigo,
+            pessoaNome: acordoConcluido.pessoaNome,
+          });
+
           // Ocorrencia de conclusao
           try {
             await prisma.ocorrencia.create({
@@ -327,6 +342,12 @@ export async function asaasWebhook(req, res, next) {
             await prisma.acordoFinanceiro.update({
               where: { id: acordoId },
               data: { etapa: 'CHECANDO_PAGAMENTO' },
+            });
+            await sincronizarPausaPorEtapa({
+              acordoId,
+              etapa: 'CHECANDO_PAGAMENTO',
+              pessoaCodigo: acordo.pessoaCodigo,
+              pessoaNome: acordo.pessoaNome,
             });
           }
         }

@@ -52,6 +52,17 @@ const CAMPO_MAP = {
   nao_enviar_cobranca: { sql: 'COALESCE(mr.naoenviarmensagemcobranca, false)', join: null },
   bloquear_contato: { sql: 'COALESCE(p.bloquearcontatocrm, false)', join: null },
 
+  // Pausa de ligacoes (CRM)
+  pausa_ligacao_ativa: {
+    sql: `EXISTS (
+      SELECT 1 FROM cobranca.pausa_ligacao pl
+      WHERE pl."pessoaCodigo" = p.codigo
+        AND pl."removidoEm" IS NULL
+        AND (pl."pausaAte" IS NULL OR pl."pausaAte" > NOW())
+    )`,
+    join: null,
+  },
+
   // Datas de vencimento
   data_vencimento: { sql: 'venc.proxima_vencimento', join: 'vencimento', tipo: 'data' },
   data_vencimento_mais_antiga: { sql: 'venc.vencimento_mais_antigo', join: 'vencimento', tipo: 'data' },
@@ -155,8 +166,13 @@ function buildOperatorClause(sqlExpr, operador, valor, valor2) {
   if (operador === 'sim') return `${sqlExpr} = true`;
   if (operador === 'nao') return `${sqlExpr} = false`;
 
-  // Para outros operadores, ignorar se valor esta vazio
-  if (valor === '' || valor === null || valor === undefined) return 'true';
+  // Para outros operadores, ignorar se valor esta vazio (filtro inerte).
+  // Loga pois 99% das vezes e sintoma de bug no frontend (ex: operador
+  // default nao compativel com o tipo do campo — booleano salvo com 'igual').
+  if (valor === '' || valor === null || valor === undefined) {
+    console.warn(`[segmentacaoQueryBuilder] Operador "${operador}" com valor vazio — filtro ignorado. Expr: ${String(sqlExpr).slice(0, 80)}`);
+    return 'true';
+  }
 
   switch (operador) {
     case 'igual': return `${sqlExpr} = ${escape(valor)}`;

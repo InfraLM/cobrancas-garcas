@@ -1,5 +1,8 @@
+import { useEffect, useState } from 'react';
 import type { Aluno, ResumoFinanceiro } from '../../types/aluno';
 import { situacaoMatriculaLabel } from '../../types/aluno';
+import type { PausaAtivaResumo } from '../../types/pausaLigacao';
+import { motivoPausaLabel } from '../../types/pausaLigacao';
 import Drawer from '../ui/Drawer';
 import Tabs from '../ui/Tabs';
 import StatusBadge, { varianteSituacaoMatricula } from '../ui/StatusBadge';
@@ -11,7 +14,9 @@ import AlunoTabSuporte from './AlunoTabSuporte';
 import AlunoTabOcorrencias from './AlunoTabOcorrencias';
 import AlunoTabRecorrencia from './AlunoTabRecorrencia';
 import AlunoTabRepositorio from './AlunoTabRepositorio';
-import { User, Wallet, BookOpen, Stethoscope, Headphones, Clock, CreditCard, FolderOpen, Loader2 } from 'lucide-react';
+import PausarLigacaoModal from './PausarLigacaoModal';
+import { removerPausa } from '../../services/pausasLigacao';
+import { User, Wallet, BookOpen, Stethoscope, Headphones, Clock, CreditCard, FolderOpen, Loader2, Pause, Play } from 'lucide-react';
 
 interface AlunoDrawerProps {
   aluno: Aluno | null;
@@ -22,6 +27,11 @@ interface AlunoDrawerProps {
 
 function formatarMoeda(valor: number) {
   return valor.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+}
+
+function formatarDataCurta(iso: string | null | undefined) {
+  if (!iso) return null;
+  try { return new Date(iso).toLocaleDateString('pt-BR'); } catch { return null; }
 }
 
 const tabsConfig = [
@@ -47,13 +57,38 @@ function getFinanceiro(aluno: Aluno): ResumoFinanceiro {
 function AlunoConteudo({ aluno }: { aluno: Aluno }) {
   const fin = getFinanceiro(aluno);
 
+  // Pausa gerenciada localmente pra refletir ação do agente sem refetch
+  const [pausaAtiva, setPausaAtiva] = useState<PausaAtivaResumo | null>(aluno.pausaAtiva ?? null);
+  const [modalAberto, setModalAberto] = useState(false);
+  const [despausando, setDespausando] = useState(false);
+
+  useEffect(() => { setPausaAtiva(aluno.pausaAtiva ?? null); }, [aluno.codigo, aluno.pausaAtiva]);
+
+  async function handleDespausar() {
+    if (!pausaAtiva) return;
+    const confirmaSistema = pausaAtiva.origem === 'SISTEMA'
+      ? confirm('Esta pausa foi criada automaticamente por um acordo em negociação. Deseja realmente despausar e permitir ligações?')
+      : true;
+    if (!confirmaSistema) return;
+
+    setDespausando(true);
+    try {
+      await removerPausa(pausaAtiva.id, 'Despausado manualmente no perfil do aluno');
+      setPausaAtiva(null);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Erro ao despausar');
+    } finally {
+      setDespausando(false);
+    }
+  }
+
   return (
     <>
       <div className="px-6 pt-6 pb-4">
         <h2 className="text-lg font-bold text-gray-900">{aluno.nome}</h2>
         <p className="text-[0.8125rem] text-gray-400 mt-0.5">{aluno.cursoNome || '—'}</p>
 
-        <div className="flex items-center gap-3 mt-2 text-[0.8125rem]">
+        <div className="flex items-center gap-3 mt-2 text-[0.8125rem] flex-wrap">
           {aluno.situacaoMatricula && (
             <StatusBadge
               texto={situacaoMatriculaLabel[aluno.situacaoMatricula] || aluno.situacaoMatricula}
@@ -66,6 +101,44 @@ function AlunoConteudo({ aluno }: { aluno: Aluno }) {
           )}
           {aluno.serasa && <StatusBadge texto="Serasa" variante="danger" comDot />}
           {aluno.naoEnviarMensagemCobranca && <StatusBadge texto="Nao cobrar" variante="warning" />}
+          {pausaAtiva && (
+            <span
+              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-50 text-amber-700 text-[0.75rem] font-medium"
+              title={[
+                `Motivo: ${motivoPausaLabel[pausaAtiva.motivo]}`,
+                pausaAtiva.pausaAte ? `Até ${formatarDataCurta(pausaAtiva.pausaAte)}` : 'Indefinida',
+                pausaAtiva.pausadoPorNome ? `Por ${pausaAtiva.pausadoPorNome}` : null,
+                pausaAtiva.origem === 'SISTEMA' ? 'Pausa automática (acordo ativo)' : null,
+              ].filter(Boolean).join(' · ')}
+            >
+              <Pause size={12} />
+              Pausado
+            </span>
+          )}
+        </div>
+
+        {/* Acao de pausar/despausar */}
+        <div className="mt-3">
+          {pausaAtiva ? (
+            <button
+              type="button"
+              onClick={handleDespausar}
+              disabled={despausando}
+              className="inline-flex items-center gap-1.5 text-[0.8125rem] text-emerald-700 hover:text-emerald-800 hover:underline disabled:opacity-50"
+            >
+              {despausando ? <Loader2 size={12} className="animate-spin" /> : <Play size={12} />}
+              Despausar ligações
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setModalAberto(true)}
+              className="inline-flex items-center gap-1.5 text-[0.8125rem] text-gray-600 hover:text-gray-800 hover:underline"
+            >
+              <Pause size={12} />
+              Pausar ligações
+            </button>
+          )}
         </div>
 
         {fin.valorInadimplente > 0 ? (
@@ -103,6 +176,23 @@ function AlunoConteudo({ aluno }: { aluno: Aluno }) {
           }
         }}
       </Tabs>
+
+      <PausarLigacaoModal
+        aberto={modalAberto}
+        onFechar={() => setModalAberto(false)}
+        pessoaCodigo={aluno.codigo}
+        pessoaNome={aluno.nome}
+        onPausada={(pausa) => setPausaAtiva({
+          id: pausa.id,
+          motivo: pausa.motivo,
+          observacao: pausa.observacao,
+          origem: pausa.origem,
+          acordoId: pausa.acordoId,
+          pausaAte: pausa.pausaAte,
+          pausadoEm: pausa.pausadoEm,
+          pausadoPorNome: pausa.pausadoPorNome,
+        })}
+      />
     </>
   );
 }

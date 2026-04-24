@@ -1,4 +1,5 @@
 import { prisma } from '../config/database.js';
+import { obterPausaAtivaPorPessoa } from '../services/pausaLigacaoService.js';
 
 const CURSO_PERMITIDO = 1;
 const TURMAS_EXCLUIDAS = [1, 10, 14, 19, 22, 27, 29];
@@ -104,7 +105,7 @@ export async function obter(req, res, next) {
     const p = pessoaRows[0];
 
     // Queries em paralelo
-    const [finRows, serasaRows] = await Promise.all([
+    const [finRows, serasaRows, pausaAtiva] = await Promise.all([
       prisma.$queryRawUnsafe(`
         SELECT
           COUNT(*)::int AS total_parcelas,
@@ -128,6 +129,7 @@ export async function obter(req, res, next) {
         WHERE cpf_cnpj_numerico = REGEXP_REPLACE(COALESCE($1, ''), '[^0-9]', '', 'g')
         ORDER BY enviado_em DESC
       `, p.cpf),
+      obterPausaAtivaPorPessoa(codigo),
     ]);
 
     const fin = finRows[0] || {};
@@ -179,6 +181,16 @@ export async function obter(req, res, next) {
           enviadoEm: s.enviado_em,
           baixadoEm: s.baixado_em,
         })),
+        pausaAtiva: pausaAtiva ? {
+          id: pausaAtiva.id,
+          motivo: pausaAtiva.motivo,
+          observacao: pausaAtiva.observacao,
+          origem: pausaAtiva.origem,
+          acordoId: pausaAtiva.acordoId,
+          pausaAte: pausaAtiva.pausaAte,
+          pausadoEm: pausaAtiva.pausadoEm,
+          pausadoPorNome: pausaAtiva.pausadoPorNome,
+        } : null,
       },
     });
   } catch (error) {

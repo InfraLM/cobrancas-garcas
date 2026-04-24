@@ -3,6 +3,7 @@ import { gerarPdfTermo, gerarPdfBase64 } from '../services/termoNegociacaoServic
 import { enviarParaAssinatura, cancelarEnvelope } from '../services/clicksignService.js';
 import { criarOuBuscarCliente, criarCobranca, obterPixQrCode, cancelarCobranca } from '../services/asaasService.js';
 import { enviarLinkPagamento } from '../services/blipMensagemService.js';
+import { sincronizarPausaPorEtapa } from '../services/pausaLigacaoService.js';
 
 // -----------------------------------------------
 // GET /api/acordos — Listar acordos
@@ -176,6 +177,13 @@ export async function atualizarEtapa(req, res, next) {
       include: { pagamentos: true, parcelasOriginais: true, documento: true },
     });
 
+    await sincronizarPausaPorEtapa({
+      acordoId: acordo.id,
+      etapa: acordo.etapa,
+      pessoaCodigo: acordo.pessoaCodigo,
+      pessoaNome: acordo.pessoaNome,
+    });
+
     res.json(acordo);
   } catch (error) {
     next(error);
@@ -196,6 +204,13 @@ export async function vincularSei(req, res, next) {
         etapa: 'SEI_VINCULADO',
         seiVinculadoEm: new Date(),
       },
+    });
+
+    await sincronizarPausaPorEtapa({
+      acordoId: acordo.id,
+      etapa: acordo.etapa,
+      pessoaCodigo: acordo.pessoaCodigo,
+      pessoaNome: acordo.pessoaNome,
     });
 
     res.json(acordo);
@@ -228,6 +243,13 @@ export async function cancelar(req, res, next) {
         motivoCancelamento: motivo,
         canceladoEm: new Date(),
       },
+    });
+
+    await sincronizarPausaPorEtapa({
+      acordoId: acordo.id,
+      etapa: acordo.etapa,
+      pessoaCodigo: acordo.pessoaCodigo,
+      pessoaNome: acordo.pessoaNome,
     });
 
     res.json(acordo);
@@ -319,6 +341,13 @@ export async function enviarAssinatura(req, res, next) {
         clicksignSignerId: signerId,
       },
       include: { parcelasOriginais: true, pagamentos: true, documento: true },
+    });
+
+    await sincronizarPausaPorEtapa({
+      acordoId: acordoAtualizado.id,
+      etapa: acordoAtualizado.etapa,
+      pessoaCodigo: acordoAtualizado.pessoaCodigo,
+      pessoaNome: acordoAtualizado.pessoaNome,
     });
 
     // 4. Criar ou atualizar registro do documento (idempotente:

@@ -1900,6 +1900,29 @@ model Ocorrencia {
   @@map("ocorrencia")
 }
 
+model PausaLigacao {
+  id              String    @id @default(uuid())
+  pessoaCodigo    Int
+  pessoaNome      String?
+  motivo          String    // EM_NEGOCIACAO | CLIENTE_SOLICITOU | AGENTE_DECISAO | OUTRO
+  observacao      String?
+  origem          String    // SISTEMA | AGENTE
+  acordoId        String?
+  pausadoPor      Int       // userId
+  pausadoPorNome  String?
+  pausadoEm       DateTime  @default(now())
+  pausaAte        DateTime?
+  removidoEm      DateTime?
+  removidoPor     Int?
+  removidoPorNome String?
+  motivoRemocao   String?
+
+  @@index([pessoaCodigo, removidoEm])
+  @@index([acordoId])
+  @@index([pausaAte])
+  @@map("pausa_ligacao")
+}
+
 // ============================================================
 // WORKFLOW DE NEGOCIACOES
 // ============================================================

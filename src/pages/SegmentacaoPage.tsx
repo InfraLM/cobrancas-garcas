@@ -1,11 +1,13 @@
 import { useState, useEffect, useCallback } from 'react';
 import type { RegraSegmentacao } from '../types/segmentacao';
 import { listarRegras, excluirRegra, executarRegra, subirParaCampanha } from '../services/segmentacao';
+import type { SubirCampanhaResult } from '../services/segmentacao';
+import { removerEmMassa, criarPausa, removerPausa } from '../services/pausasLigacao';
 import RegrasTable from '../components/segmentacao/RegrasTable';
 import NovaRegraModal from '../components/segmentacao/NovaRegraModal';
 import AlunosTable from '../components/alunos/AlunosTable';
 import SearchInput from '../components/ui/SearchInput';
-import { Plus, Loader2, ArrowLeft, Pencil, Upload, CheckCircle, FileDown } from 'lucide-react';
+import { Plus, Loader2, ArrowLeft, Pencil, Upload, CheckCircle, FileDown, Pause, Play } from 'lucide-react';
 import type { AlunoListItem } from '../services/alunos';
 import ExportarSegmentacaoModal from '../components/segmentacao/ExportarSegmentacaoModal';
 
@@ -22,7 +24,37 @@ export default function SegmentacaoPage() {
   const [resultadoValor, setResultadoValor] = useState(0);
   const [executando, setExecutando] = useState(false);
   const [subindo, setSubindo] = useState(false);
-  const [subidoResult, setSubidoResult] = useState<{ totalSubidos: number; totalSemTelefone: number } | null>(null);
+  const [subidoResult, setSubidoResult] = useState<SubirCampanhaResult | null>(null);
+  const [despausandoMassa, setDespausandoMassa] = useState(false);
+  const [linhaMexendo, setLinhaMexendo] = useState<number | null>(null);
+
+  async function toggleLinhaPausa(aluno: AlunoListItem) {
+    if (linhaMexendo === aluno.codigo) return;
+    setLinhaMexendo(aluno.codigo);
+    try {
+      if (aluno.pausaAtiva) {
+        await removerPausa(aluno.pausaAtiva.id, 'Despausado na tela de segmentacao');
+        setResultado((prev) => prev.map((a) => a.codigo === aluno.codigo ? { ...a, pausaAtiva: null } : a));
+      } else {
+        const pausa = await criarPausa({ pessoaCodigo: aluno.codigo, motivo: 'AGENTE_DECISAO' });
+        setResultado((prev) => prev.map((a) => a.codigo === aluno.codigo ? {
+          ...a,
+          pausaAtiva: {
+            id: pausa.id,
+            motivo: pausa.motivo,
+            origem: pausa.origem,
+            pausaAte: pausa.pausaAte,
+            pausadoEm: pausa.pausadoEm,
+            pausadoPorNome: pausa.pausadoPorNome,
+          },
+        } : a));
+      }
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Erro na acao');
+    } finally {
+      setLinhaMexendo(null);
+    }
+  }
   const [exportarAberto, setExportarAberto] = useState(false);
 
   const carregar = useCallback(async () => {
@@ -135,15 +167,15 @@ export default function SegmentacaoPage() {
         {subidoResult && (
           <div className="flex items-center gap-3 p-3 rounded-xl bg-emerald-50 border border-emerald-200">
             <CheckCircle size={18} className="text-emerald-600" />
-            <div>
-              <p className="text-[0.8125rem] font-medium text-emerald-700">
-                {subidoResult.totalSubidos} contatos subidos para a campanha de massa
+            <div className="text-[0.8125rem]">
+              <p className="font-medium text-emerald-700">
+                {(subidoResult.totalEnviados ?? subidoResult.totalSubidos)} contatos enviados para a campanha de massa
               </p>
-              {subidoResult.totalSemTelefone > 0 && (
-                <p className="text-[0.6875rem] text-emerald-600">
-                  {subidoResult.totalSemTelefone} alunos sem telefone (nao incluidos)
-                </p>
-              )}
+              <p className="text-[0.6875rem] text-emerald-600">
+                {subidoResult.totalEncontrados ?? '—'} encontrados
+                {subidoResult.totalPausados ? ` · ${subidoResult.totalPausados} pausados (excluídos)` : ''}
+                {subidoResult.totalSemTelefone ? ` · ${subidoResult.totalSemTelefone} sem telefone` : ''}
+              </p>
             </div>
           </div>
         )}
@@ -152,7 +184,74 @@ export default function SegmentacaoPage() {
           <p className="text-[0.8125rem] text-on-surface-variant">{regraAtiva.descricao}</p>
         )}
 
-        <AlunosTable alunos={resultado} onSelecionar={() => {}} />
+        {(() => {
+          const pausadosNoPreview = resultado.filter(a => a.pausaAtiva);
+          if (pausadosNoPreview.length === 0) return null;
+          return (
+            <div className="flex items-center gap-3 p-3 rounded-xl bg-amber-50 border border-amber-200">
+              <Pause size={16} className="text-amber-600 shrink-0" />
+              <div className="flex-1 min-w-0">
+                <p className="text-[0.8125rem] font-medium text-amber-800">
+                  {pausadosNoPreview.length} aluno{pausadosNoPreview.length > 1 ? 's' : ''} pausado{pausadosNoPreview.length > 1 ? 's' : ''} (nesta página)
+                </p>
+                <p className="text-[0.6875rem] text-amber-700">
+                  Pausados não recebem ligação em massa. Continuam contabilizados nos totais.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={async () => {
+                  const codigos = pausadosNoPreview.map(a => a.codigo);
+                  if (!confirm(`Despausar ${codigos.length} aluno(s)? Eles voltarão a receber ligações.`)) return;
+                  setDespausandoMassa(true);
+                  try {
+                    const r = await removerEmMassa(codigos, 'Despausa em massa na segmentação');
+                    alert(`${r.removidas} pausa(s) removida(s). Reexecute a regra para atualizar a lista.`);
+                    handleExecutar(regraAtiva);
+                  } catch (e) {
+                    alert(e instanceof Error ? e.message : 'Erro ao despausar');
+                  } finally {
+                    setDespausandoMassa(false);
+                  }
+                }}
+                disabled={despausandoMassa}
+                className="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg bg-amber-600 text-white text-[0.75rem] font-medium hover:bg-amber-700 disabled:opacity-50"
+              >
+                {despausandoMassa ? <Loader2 size={12} className="animate-spin" /> : <Play size={12} />}
+                Despausar {pausadosNoPreview.length}
+              </button>
+            </div>
+          );
+        })()}
+
+        <AlunosTable
+          alunos={resultado}
+          onSelecionar={() => {}}
+          renderAcoes={(aluno) => {
+            const pausado = Boolean(aluno.pausaAtiva);
+            const isLoading = linhaMexendo === aluno.codigo;
+            return (
+              <button
+                type="button"
+                onClick={() => toggleLinhaPausa(aluno)}
+                disabled={isLoading}
+                title={pausado ? 'Despausar ligacoes deste aluno' : 'Pausar ligacoes deste aluno'}
+                className={`inline-flex items-center gap-1 h-7 px-2 rounded-md text-[0.6875rem] font-medium transition-colors disabled:opacity-50 ${
+                  pausado
+                    ? 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
+                    : 'bg-gray-50 text-gray-500 hover:bg-amber-50 hover:text-amber-700'
+                }`}
+              >
+                {isLoading
+                  ? <Loader2 size={11} className="animate-spin" />
+                  : pausado
+                    ? <><Play size={11} /> Despausar</>
+                    : <><Pause size={11} /> Pausar</>
+                }
+              </button>
+            );
+          }}
+        />
 
         <NovaRegraModal aberto={novaRegraAberta} onFechar={() => { setNovaRegraAberta(false); setRegraEditando(null); }} onSalva={handleSalva} regraEditando={regraEditando} />
 

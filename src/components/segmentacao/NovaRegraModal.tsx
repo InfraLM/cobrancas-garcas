@@ -111,7 +111,15 @@ export default function NovaRegraModal({ aberto, onFechar, onSalva, regraEditand
               return (
                 <div key={idx} className="flex items-center gap-2 bg-gray-50 rounded-lg p-2">
                   {/* Campo */}
-                  <select value={cond.campo} onChange={e => updateCondicao(idx, { campo: e.target.value, operador: 'igual', valor: '' })}
+                  <select value={cond.campo} onChange={e => {
+                    const novoCampo = CAMPOS_SEGMENTACAO.find(c => c.id === e.target.value);
+                    updateCondicao(idx, {
+                      campo: e.target.value,
+                      operador: novoCampo?.operadores[0] || 'igual',
+                      valor: '',
+                      valor2: undefined,
+                    });
+                  }}
                     className="flex-1 h-8 px-2 rounded-md border border-gray-200 text-[0.75rem] bg-white">
                     <option value="">Selecione...</option>
                     {categorias.map(cat => (

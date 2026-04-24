@@ -76,6 +76,9 @@ export const CAMPOS_SEGMENTACAO: CampoSegmentacao[] = [
   // Flags
   { id: 'nao_enviar_cobranca', label: 'Nao enviar cobranca', categoria: 'Flags', tipo: 'booleano', operadores: ['sim', 'nao'] },
   { id: 'bloquear_contato', label: 'Bloquear contato CRM', categoria: 'Flags', tipo: 'booleano', operadores: ['sim', 'nao'] },
+
+  // Pausa de ligacoes (CRM)
+  { id: 'pausa_ligacao_ativa', label: 'Pausa de ligacao ativa', categoria: 'Flags', tipo: 'booleano', operadores: ['sim', 'nao'] },
 ];
 
 export const OPERADOR_LABELS: Record<Operador, string> = {

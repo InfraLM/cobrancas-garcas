@@ -1,3 +1,5 @@
+import type { PausaAtivaResumo } from './pausaLigacao';
+
 export interface Aluno {
   codigo: number;
   nome: string;
@@ -36,6 +38,8 @@ export interface Aluno {
   serasaDetalhes?: SerasaRegistro[];
   serasaRegistros?: SerasaRegistro[];
   parcelas?: Parcela[];
+
+  pausaAtiva?: PausaAtivaResumo | null;
 }
 
 export interface ResumoFinanceiro {

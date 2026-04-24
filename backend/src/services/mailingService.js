@@ -6,6 +6,8 @@
  * Auth: ?api_token=MANAGER_TOKEN
  */
 
+import { listarPausasAtivasPorCodigos } from './pausaLigacaoService.js';
+
 const DISCADOR_API = `https://${process.env.THREECPLUS_SUBDOMAIN || 'liberdademedica'}.3c.plus/api/v1`;
 const CAMPANHA_MASSA = 257976;
 
@@ -111,10 +113,30 @@ export async function limparListasCampanha(campaignId = CAMPANHA_MASSA) {
 }
 
 export async function subirSegmentacaoParaCampanha(alunos, nomeRegra) {
+  const totalEncontrados = alunos.length;
+
+  // Filtrar pausados ANTES de tudo — mantem o numero da segmentacao, mas nao envia para 3C
+  const pausasAtivas = await listarPausasAtivasPorCodigos(alunos.map(a => a.codigo));
+  const pausadosDetalhes = [];
+  const naoBloqueados = [];
+  for (const aluno of alunos) {
+    const pausa = pausasAtivas.get(aluno.codigo);
+    if (pausa) {
+      pausadosDetalhes.push({
+        codigo: aluno.codigo,
+        nome: aluno.nome,
+        motivo: pausa.motivo,
+        pausaAte: pausa.pausaAte,
+      });
+    } else {
+      naoBloqueados.push(aluno);
+    }
+  }
+
   const comTelefone = [];
   const semTelefone = [];
 
-  for (const aluno of alunos) {
+  for (const aluno of naoBloqueados) {
     const tel = (aluno.celular || '').replace(/\D/g, '');
     if (tel.length >= 10 && tel.length <= 11) {
       comTelefone.push({
@@ -128,7 +150,7 @@ export async function subirSegmentacaoParaCampanha(alunos, nomeRegra) {
   }
 
   if (comTelefone.length === 0) {
-    throw new Error('Nenhum aluno da segmentacao possui telefone valido');
+    throw new Error('Nenhum aluno elegivel possui telefone valido (apos filtro de pausas)');
   }
 
   // Criar lista com nome da regra + data
@@ -146,12 +168,16 @@ export async function subirSegmentacaoParaCampanha(alunos, nomeRegra) {
     totalSubidos += batch.length;
   }
 
-  console.log(`[Mailing] Segmentacao "${nomeRegra}" subida: ${totalSubidos} contatos, ${semTelefone.length} sem telefone`);
+  console.log(`[Mailing] Segmentacao "${nomeRegra}" subida: ${totalSubidos} contatos, ${pausadosDetalhes.length} pausados, ${semTelefone.length} sem telefone (de ${totalEncontrados} encontrados)`);
 
   return {
     listId,
+    totalEncontrados,
     totalSubidos,
+    totalEnviados: totalSubidos,
+    totalPausados: pausadosDetalhes.length,
     totalSemTelefone: semTelefone.length,
+    pausados: pausadosDetalhes,
     campanha: CAMPANHA_MASSA,
   };
 }
