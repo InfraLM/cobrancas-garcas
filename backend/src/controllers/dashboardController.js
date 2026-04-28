@@ -67,13 +67,26 @@ async function calcularKPIs(recorrentesHistorico) {
 
   const r = rows[0];
 
-  // Acordos
+  // Acordos + Ficou Facil concluidos somam para "Recuperado"
   const acordos = await prisma.$queryRawUnsafe(`
+    WITH a AS (
+      SELECT
+        COUNT(*)::int AS total,
+        COUNT(*) FILTER (WHERE etapa = 'CONCLUIDO')::int AS concluidos,
+        COALESCE(SUM(CASE WHEN etapa = 'CONCLUIDO' THEN "valorAcordo" ELSE 0 END), 0)::numeric AS valor
+      FROM cobranca.acordo_financeiro
+    ),
+    f AS (
+      SELECT
+        COUNT(*) FILTER (WHERE etapa = 'CONCLUIDO')::int AS concluidos,
+        COALESCE(SUM(CASE WHEN etapa = 'CONCLUIDO' THEN "valorInadimplenteMJ" ELSE 0 END), 0)::numeric AS valor
+      FROM cobranca.ficou_facil
+    )
     SELECT
-      COUNT(*)::int AS total,
-      COUNT(*) FILTER (WHERE etapa = 'CONCLUIDO')::int AS concluidos,
-      COALESCE(SUM(CASE WHEN etapa = 'CONCLUIDO' THEN "valorAcordo" ELSE 0 END), 0) AS valor_recuperado
-    FROM cobranca.acordo_financeiro
+      a.total,
+      (a.concluidos + f.concluidos)::int AS concluidos,
+      (a.valor + f.valor)::numeric AS valor_recuperado
+    FROM a, f
   `);
 
   // KPI de recorrencia usa a ULTIMA SEMANA do calcularRecorrentesHistorico —
@@ -632,16 +645,32 @@ export async function obterFunil(req, res, next) {
         LEFT JOIN cobranca.aluno_resumo ar ON ar.codigo = c.pessoa
       `, desde),
       prisma.$queryRawUnsafe(`
-        SELECT COUNT(DISTINCT "pessoaCodigo")::int AS qtd,
-          COALESCE(SUM("valorAcordo"), 0)::numeric AS valor
-        FROM cobranca.acordo_financeiro
-        WHERE etapa != 'CANCELADO' AND "criadoEm" >= $1
+        WITH neg AS (
+          SELECT "pessoaCodigo" AS pessoa, "valorAcordo"::numeric AS valor
+          FROM cobranca.acordo_financeiro
+          WHERE etapa != 'CANCELADO' AND "criadoEm" >= $1
+          UNION ALL
+          SELECT "pessoaCodigo" AS pessoa, "valorInadimplenteMJ"::numeric AS valor
+          FROM cobranca.ficou_facil
+          WHERE etapa != 'CANCELADO' AND "criadoEm" >= $1
+        )
+        SELECT COUNT(DISTINCT pessoa)::int AS qtd,
+          COALESCE(SUM(valor), 0)::numeric AS valor
+        FROM neg
       `, desde),
       prisma.$queryRawUnsafe(`
-        SELECT COUNT(DISTINCT "pessoaCodigo")::int AS qtd,
-          COALESCE(SUM("valorAcordo"), 0)::numeric AS valor
-        FROM cobranca.acordo_financeiro
-        WHERE etapa = 'CONCLUIDO' AND "criadoEm" >= $1
+        WITH rec AS (
+          SELECT "pessoaCodigo" AS pessoa, "valorAcordo"::numeric AS valor
+          FROM cobranca.acordo_financeiro
+          WHERE etapa = 'CONCLUIDO' AND "criadoEm" >= $1
+          UNION ALL
+          SELECT "pessoaCodigo" AS pessoa, "valorInadimplenteMJ"::numeric AS valor
+          FROM cobranca.ficou_facil
+          WHERE etapa = 'CONCLUIDO' AND "criadoEm" >= $1
+        )
+        SELECT COUNT(DISTINCT pessoa)::int AS qtd,
+          COALESCE(SUM(valor), 0)::numeric AS valor
+        FROM rec
       `, desde),
     ]);
 

@@ -70,6 +70,16 @@ export async function atualizarCredito(id: string, creditoAprovado: boolean, cre
   return api.put<FicouFacil>(`/ficou-facil/${id}/credito`, { creditoAprovado, creditoObservacao });
 }
 
+export async function atualizarValoresFF(id: string, payload: Partial<{
+  valorPos: number;
+  valorRecebido: number;
+  valorInadimplente: number;
+  valorInadimplenteMJ: number;
+  contaSantander: boolean;
+}>): Promise<FicouFacil> {
+  return api.put<FicouFacil>(`/ficou-facil/${id}/valores`, payload);
+}
+
 export async function cancelarFicouFacil(id: string): Promise<FicouFacil> {
   return api.delete<FicouFacil>(`/ficou-facil/${id}`);
 }

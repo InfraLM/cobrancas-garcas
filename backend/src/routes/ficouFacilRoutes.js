@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { requireAuth } from '../middleware/auth.js';
 import {
   listar, obter, criar, atualizarEtapa, atualizarCheckboxes, atualizarCredito,
-  uploadDocumento, uploadMiddleware, listarDocumentos, baixarDocumento,
+  atualizarValores, uploadDocumento, uploadMiddleware, listarDocumentos, baixarDocumento,
   cancelar, calcularValores, listarPorAluno,
 } from '../controllers/ficouFacilController.js';
 
@@ -17,6 +17,7 @@ router.post('/', requireAuth, criar);
 router.put('/:id/etapa', requireAuth, atualizarEtapa);
 router.put('/:id/checkboxes', requireAuth, atualizarCheckboxes);
 router.put('/:id/credito', requireAuth, atualizarCredito);
+router.put('/:id/valores', requireAuth, atualizarValores);
 router.post('/:id/documentos', requireAuth, uploadMiddleware, uploadDocumento);
 router.get('/:id/documentos', requireAuth, listarDocumentos);
 router.delete('/:id', requireAuth, cancelar);

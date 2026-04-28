@@ -214,6 +214,37 @@ export async function atualizarEtapa(req, res, next) {
 }
 
 // -----------------------------------------------
+// PUT /api/ficou-facil/:id/valores
+// Permite editar os valores financeiros em qualquer etapa (inclusive
+// CONCLUIDO e CANCELADO). Util quando o agente precisa corrigir valor
+// pos-financiamento depois que o aluno fechou o contrato com a Caixa.
+// -----------------------------------------------
+export async function atualizarValores(req, res, next) {
+  try {
+    const { valorPos, valorRecebido, valorInadimplente, valorInadimplenteMJ, contaSantander } = req.body;
+    const data = {};
+    if (valorPos !== undefined && valorPos !== null) data.valorPos = Number(valorPos);
+    if (valorRecebido !== undefined && valorRecebido !== null) data.valorRecebido = Number(valorRecebido);
+    if (valorInadimplente !== undefined && valorInadimplente !== null) data.valorInadimplente = Number(valorInadimplente);
+    if (valorInadimplenteMJ !== undefined && valorInadimplenteMJ !== null) data.valorInadimplenteMJ = Number(valorInadimplenteMJ);
+    if (contaSantander !== undefined && contaSantander !== null) data.contaSantander = Boolean(contaSantander);
+
+    if (Object.keys(data).length === 0) {
+      return res.status(400).json({ error: 'Nenhum valor enviado para atualizacao' });
+    }
+
+    const registro = await prisma.ficouFacil.update({
+      where: { id: req.params.id },
+      data,
+      include: { documentos: { select: { id: true, tipo: true, nomeArquivo: true, criadoEm: true } } },
+    });
+    res.json(registro);
+  } catch (error) {
+    next(error);
+  }
+}
+
+// -----------------------------------------------
 // PUT /api/ficou-facil/:id/checkboxes
 // -----------------------------------------------
 export async function atualizarCheckboxes(req, res, next) {

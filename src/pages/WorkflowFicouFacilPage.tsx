@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import type { FicouFacil } from '../services/ficouFacil';
-import { listarFicouFacil, criarFicouFacil, atualizarEtapaFF, atualizarCheckboxes, atualizarCredito, uploadDocumentoFF, baixarDocumentoFF, cancelarFicouFacil, calcularValores } from '../services/ficouFacil';
+import { listarFicouFacil, criarFicouFacil, atualizarEtapaFF, atualizarCheckboxes, atualizarCredito, atualizarValoresFF, uploadDocumentoFF, baixarDocumentoFF, cancelarFicouFacil, calcularValores } from '../services/ficouFacil';
 import { listarAlunos, obterAluno } from '../services/alunos';
 import SearchInput from '../components/ui/SearchInput';
 import StatusBadge from '../components/ui/StatusBadge';
@@ -130,6 +130,41 @@ function FicouFacilDrawer({ registro, onFechar, onAtualizado }: { registro: Fico
   const fileInputAluno = useRef<HTMLInputElement>(null);
   const fileInputAvalista = useRef<HTMLInputElement>(null);
 
+  // Edicao inline dos valores financeiros (em qualquer etapa, incluindo CONCLUIDO).
+  const [editandoValores, setEditandoValores] = useState(false);
+  const [salvandoValores, setSalvandoValores] = useState(false);
+  const [valorPos, setValorPos] = useState(String(registro.valorPos));
+  const [valorRecebido, setValorRecebido] = useState(String(registro.valorRecebido));
+  const [valorInadimplente, setValorInadimplente] = useState(String(registro.valorInadimplente));
+  const [valorInadimplenteMJ, setValorInadimplenteMJ] = useState(String(registro.valorInadimplenteMJ));
+  const [contaSantander, setContaSantander] = useState(registro.contaSantander);
+
+  function cancelarEdicaoValores() {
+    setValorPos(String(registro.valorPos));
+    setValorRecebido(String(registro.valorRecebido));
+    setValorInadimplente(String(registro.valorInadimplente));
+    setValorInadimplenteMJ(String(registro.valorInadimplenteMJ));
+    setContaSantander(registro.contaSantander);
+    setEditandoValores(false);
+  }
+
+  async function salvarValores() {
+    setSalvandoValores(true);
+    try {
+      await atualizarValoresFF(registro.id, {
+        valorPos: Number(valorPos) || 0,
+        valorRecebido: Number(valorRecebido) || 0,
+        valorInadimplente: Number(valorInadimplente) || 0,
+        valorInadimplenteMJ: Number(valorInadimplenteMJ) || 0,
+        contaSantander,
+      });
+      setEditandoValores(false);
+      onAtualizado();
+    } finally {
+      setSalvandoValores(false);
+    }
+  }
+
   const etapaIdx = ETAPAS.findIndex(e => e.id === registro.etapa);
   const checksDaEtapa = ETAPA_CHECKBOXES[registro.etapa] || [];
   const todosChecked = checksDaEtapa.length > 0 ? checksDaEtapa.every(c => checkboxes[c.key]) : true;
@@ -181,19 +216,70 @@ function FicouFacilDrawer({ registro, onFechar, onAtualizado }: { registro: Fico
         <h2 className="text-xl font-bold text-on-surface">{registro.pessoaNome}</h2>
         <p className="text-[0.8125rem] text-on-surface-variant mt-0.5">CPF: {registro.pessoaCpf} · {registro.turma}</p>
 
-        <div className="mt-4 grid grid-cols-3 gap-2">
-          <div className="bg-white/60 rounded-xl px-3 py-2.5 text-center">
-            <p className="text-[0.5rem] font-bold uppercase tracking-wider text-on-surface-variant/40">Valor Pós</p>
-            <p className="text-[0.8125rem] font-bold">{formatarMoeda(Number(registro.valorPos))}</p>
-          </div>
-          <div className="bg-white/60 rounded-xl px-3 py-2.5 text-center">
-            <p className="text-[0.5rem] font-bold uppercase tracking-wider text-on-surface-variant/40">Recebido</p>
-            <p className="text-[0.8125rem] font-bold text-emerald-600">{formatarMoeda(Number(registro.valorRecebido))}</p>
-          </div>
-          <div className="bg-primary/5 rounded-xl px-3 py-2.5 text-center">
-            <p className="text-[0.5rem] font-bold uppercase tracking-wider text-primary/50">Financiado</p>
-            <p className="text-[0.8125rem] font-bold text-primary">{formatarMoeda(valorFinanciado)}</p>
-          </div>
+        <div className="mt-4">
+          {!editandoValores ? (
+            <>
+              <div className="grid grid-cols-3 gap-2">
+                <div className="bg-white/60 rounded-xl px-3 py-2.5 text-center">
+                  <p className="text-[0.5rem] font-bold uppercase tracking-wider text-on-surface-variant/40">Valor Pós</p>
+                  <p className="text-[0.8125rem] font-bold">{formatarMoeda(Number(registro.valorPos))}</p>
+                </div>
+                <div className="bg-white/60 rounded-xl px-3 py-2.5 text-center">
+                  <p className="text-[0.5rem] font-bold uppercase tracking-wider text-on-surface-variant/40">Recebido</p>
+                  <p className="text-[0.8125rem] font-bold text-emerald-600">{formatarMoeda(Number(registro.valorRecebido))}</p>
+                </div>
+                <div className="bg-primary/5 rounded-xl px-3 py-2.5 text-center">
+                  <p className="text-[0.5rem] font-bold uppercase tracking-wider text-primary/50">Financiado</p>
+                  <p className="text-[0.8125rem] font-bold text-primary">{formatarMoeda(valorFinanciado)}</p>
+                </div>
+              </div>
+              <button onClick={() => setEditandoValores(true)}
+                className="mt-2 w-full text-[0.6875rem] text-primary/80 hover:text-primary font-medium py-1.5 rounded-lg hover:bg-primary/5 transition-colors">
+                Editar valores
+              </button>
+            </>
+          ) : (
+            <div className="bg-white/80 rounded-xl p-3 space-y-2">
+              <div className="grid grid-cols-2 gap-2">
+                <label className="block">
+                  <span className="text-[0.625rem] font-bold uppercase tracking-wider text-on-surface-variant/60">Valor Pós</span>
+                  <input type="number" step="0.01" value={valorPos} onChange={(e) => setValorPos(e.target.value)}
+                    className="w-full mt-0.5 h-8 px-2 rounded-md border border-gray-200 text-[0.8125rem] outline-none focus:ring-2 focus:ring-primary/20" />
+                </label>
+                <label className="block">
+                  <span className="text-[0.625rem] font-bold uppercase tracking-wider text-on-surface-variant/60">Recebido</span>
+                  <input type="number" step="0.01" value={valorRecebido} onChange={(e) => setValorRecebido(e.target.value)}
+                    className="w-full mt-0.5 h-8 px-2 rounded-md border border-gray-200 text-[0.8125rem] outline-none focus:ring-2 focus:ring-primary/20" />
+                </label>
+                <label className="block">
+                  <span className="text-[0.625rem] font-bold uppercase tracking-wider text-on-surface-variant/60">Inadimplente</span>
+                  <input type="number" step="0.01" value={valorInadimplente} onChange={(e) => setValorInadimplente(e.target.value)}
+                    className="w-full mt-0.5 h-8 px-2 rounded-md border border-gray-200 text-[0.8125rem] outline-none focus:ring-2 focus:ring-primary/20" />
+                </label>
+                <label className="block">
+                  <span className="text-[0.625rem] font-bold uppercase tracking-wider text-on-surface-variant/60">Inadimplente M+J</span>
+                  <input type="number" step="0.01" value={valorInadimplenteMJ} onChange={(e) => setValorInadimplenteMJ(e.target.value)}
+                    className="w-full mt-0.5 h-8 px-2 rounded-md border border-gray-200 text-[0.8125rem] outline-none focus:ring-2 focus:ring-primary/20" />
+                </label>
+              </div>
+              <label className="flex items-center gap-2 cursor-pointer pt-1">
+                <input type="checkbox" checked={contaSantander} onChange={(e) => setContaSantander(e.target.checked)}
+                  className="rounded border-gray-300 text-primary focus:ring-primary/20" />
+                <span className="text-[0.75rem] text-on-surface">Conta Santander</span>
+              </label>
+              <div className="flex gap-2 pt-1">
+                <button onClick={cancelarEdicaoValores} disabled={salvandoValores}
+                  className="flex-1 h-8 rounded-lg bg-surface-container-low text-on-surface-variant text-[0.75rem] font-medium hover:bg-surface-container-high transition-colors disabled:opacity-40">
+                  Cancelar
+                </button>
+                <button onClick={salvarValores} disabled={salvandoValores}
+                  className="flex-1 h-8 rounded-lg bg-primary text-white text-[0.75rem] font-semibold hover:bg-primary-container transition-colors disabled:opacity-40 flex items-center justify-center gap-1.5">
+                  {salvandoValores ? <Loader2 size={12} className="animate-spin" /> : null}
+                  Salvar
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
@@ -287,7 +373,7 @@ function FicouFacilDrawer({ registro, onFechar, onAtualizado }: { registro: Fico
           <div className="flex justify-between"><span className="text-on-surface-variant">Criado em</span><span>{formatarData(registro.criadoEm)}</span></div>
           <div className="flex justify-between"><span className="text-on-surface-variant">Inadimplente (nominal)</span><span>{formatarMoeda(Number(registro.valorInadimplente))}</span></div>
           <div className="flex justify-between"><span className="text-on-surface-variant">Inadimplente (M+J)</span><span className="text-red-500">{formatarMoeda(Number(registro.valorInadimplenteMJ))}</span></div>
-          {registro.contaSantander && <div className="flex justify-between"><span className="text-on-surface-variant">Santander</span><span className="text-red-600 font-medium">Sim</span></div>}
+          <div className="flex justify-between"><span className="text-on-surface-variant">Santander</span><span className={registro.contaSantander ? 'text-red-600 font-medium' : 'text-on-surface'}>{registro.contaSantander ? 'Sim' : 'Não'}</span></div>
         </div>
 
         {/* Botoes avancar/recuar */}
