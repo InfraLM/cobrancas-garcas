@@ -101,6 +101,11 @@ export function LigacoesProvider({ children }: { children: ReactNode }) {
   const [ligacaoEncerrada, setLigacaoEncerrada] = useState<LigacaoAtiva | null>(null);
   const ligacaoAtivaRef = useRef<LigacaoAtiva | null>(null);
   const ligacaoEncerradaRef = useRef<LigacaoAtiva | null>(null);
+  // Quando o nosso codigo dispara logoutCampanha() intencionalmente (ex.
+  // selecionarTipo('massa') faz logout da individual antes de logar na massa),
+  // a 3C Plus emite agent-was-logged-out como consequencia esperada.
+  // Esta ref evita que o handler trate isso como erro fatal e quebre a transicao.
+  const logoutIntencionalRef = useRef<boolean>(false);
   // Timer do auto-qualify em modo massa: se o agente nao classificar em 30s,
   // o sistema qualifica com a primeira qualificacao "neutra" para tirar o
   // agente do ACW e o discador mandar a proxima chamada.
@@ -183,6 +188,19 @@ export function LigacoesProvider({ children }: { children: ReactNode }) {
   // === EVENT HANDLING ===
   const adicionarEvento = useCallback((evento: EventoLigacao) => {
     setEventos(prev => [...prev, evento]);
+  }, []);
+
+  // Helper: chama logoutCampanha marcando a flag intencional, pra que o
+  // handler de agent-was-logged-out NAO trate como expulsao.
+  const logoutIntencional = useCallback(async () => {
+    logoutIntencionalRef.current = true;
+    try {
+      await real3c.logoutCampanha();
+    } finally {
+      // 3C Plus emite agent-was-logged-out async (~1-3s). Liberamos a flag
+      // depois do tempo suficiente pro evento ser processado.
+      setTimeout(() => { logoutIntencionalRef.current = false; }, 3000);
+    }
   }, []);
 
   // Converte AlunoLigacao (parcial, vindo do endpoint /aluno-por-telefone)
@@ -284,9 +302,15 @@ export function LigacoesProvider({ children }: { children: ReactNode }) {
         break;
 
       case 'agent-was-logged-out':
-        // A 3C Plus deslogou o agente da campanha (timeout ACW, kick remoto, etc).
-        // Limpa a UI e marca offline da campanha — o agente precisa clicar em
-        // "Online" / re-selecionar tipo para voltar a operar.
+        // Quando NOSSO codigo dispara logoutCampanha() (trocar individual->massa,
+        // irOffline, desativarRamal), a 3C Plus emite este evento como
+        // consequencia esperada. Nao queremos quebrar a transicao em curso.
+        if (logoutIntencionalRef.current) {
+          log('socket', 'agent-was-logged-out (esperado — logout intencional)');
+          break;
+        }
+        // Caso contrario: 3C Plus expulsou por motivo externo (timeout ACW,
+        // kick remoto, conflito de sessao). Limpa UI e avisa o agente.
         log('erro', 'Agente foi DESLOGADO da campanha pela 3C Plus', evento.metadados);
         if (autoQualifyTimerRef.current) {
           clearTimeout(autoQualifyTimerRef.current);
@@ -528,7 +552,7 @@ export function LigacoesProvider({ children }: { children: ReactNode }) {
       }
     }
 
-    await real3c.logoutCampanha();
+    await logoutIntencional();
     setLigacaoAtiva(null);
     setLigacaoEncerrada(null);
     setEstadoPagina('IDLE');
@@ -553,7 +577,7 @@ export function LigacoesProvider({ children }: { children: ReactNode }) {
       clearTimeout(autoQualifyTimerRef.current);
       autoQualifyTimerRef.current = null;
     }
-    real3c.logoutCampanha();
+    logoutIntencional();
     log('sistema', 'Ramal desativado — OFFLINE');
     setSessao('OFFLINE');
     setStatusConexao({ agenteOnline: false, socketConectado: false, webrtcAtivo: false, sipRegistrado: false });
@@ -595,7 +619,7 @@ export function LigacoesProvider({ children }: { children: ReactNode }) {
     } else if (tipo === 'massa') {
       // Logout da individual antes de ir para config da massa
       log('http', 'Logout da campanha individual para preparar massa...');
-      await real3c.logoutCampanha();
+      await logoutIntencional();
       setStatusConexao(prev => ({ ...prev, agenteOnline: false }));
       setEstadoPagina('CONFIG_CAMPANHA');
     }

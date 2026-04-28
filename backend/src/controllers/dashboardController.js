@@ -272,13 +272,15 @@ function parsearOptsBucket(req) {
   return { granularidade, inicio, fim };
 }
 
-function formatarLabelBucket(granularidade, inicioISO) {
-  const d = new Date(inicioISO);
+function formatarLabelBucket(granularidade, inicioISO, fimISO) {
   if (granularidade === 'mes') {
+    const d = new Date(inicioISO);
     const meses = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
     return `${meses[d.getUTCMonth()]}/${String(d.getUTCFullYear()).slice(-2)}`;
   }
-  return d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', timeZone: 'UTC' });
+  // Para semana: rotula com o ULTIMO dia (sabado), igual ao padrao da query do
+  // usuario (a barra "14/02" representa a semana 08-14/02).
+  return new Date(fimISO).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', timeZone: 'UTC' });
 }
 
 // -----------------------------------------------
@@ -424,7 +426,7 @@ async function calcularRecorrentesHistorico(opts = {}) {
     semana: Number(r.semana),
     inicio: r.inicio,
     fim: r.fim,
-    label: formatarLabelBucket(granularidade, r.inicio),
+    label: formatarLabelBucket(granularidade, r.inicio, r.fim),
     totalAtivos: r.total_ativos,
     recorrentes: r.recorrentes,
     semRecorrencia: r.sem_recorrencia,
@@ -590,7 +592,7 @@ async function calcularAcumuladoAlunos(opts = {}) {
       semana: Number(r.semana),
       inicio: r.inicio,
       fim: r.fim,
-      label: formatarLabelBucket(granularidade, r.inicio),
+      label: formatarLabelBucket(granularidade, r.inicio, r.fim),
       novos: Number(r.novos_semana),
       acumulado,
       recorrentesSemana: Number(r.rec_semana),
