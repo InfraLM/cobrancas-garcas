@@ -232,6 +232,21 @@ export async function getAgentStatus(): Promise<any> {
   }
 }
 
+// --- Buscar qualificacoes reais da campanha (IDs do dialer 3C Plus, nao mock) ---
+export async function obterQualificacoesCampanha(campaignId: number): Promise<Array<{
+  id: number; nome: string; cor: string; conversion: boolean; is_positive: boolean;
+}>> {
+  try {
+    const res = await fetch(`${API_URL}/ligacoes/qualificacoes-campanha/${campaignId}`, {
+      headers: authHeaders(),
+    });
+    if (!res.ok) return [];
+    return await res.json();
+  } catch {
+    return [];
+  }
+}
+
 // --- Qualificar chamada ---
 export async function qualificarChamada(callId: string, qualificationId: number): Promise<boolean> {
   if (!CONFIG.agentToken) return false;

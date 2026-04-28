@@ -100,11 +100,18 @@ export function LigacoesProvider({ children }: { children: ReactNode }) {
   const [ligacaoAtiva, setLigacaoAtiva] = useState<LigacaoAtiva | null>(null);
   const [ligacaoEncerrada, setLigacaoEncerrada] = useState<LigacaoAtiva | null>(null);
   const ligacaoAtivaRef = useRef<LigacaoAtiva | null>(null);
+  const ligacaoEncerradaRef = useRef<LigacaoAtiva | null>(null);
+  // Timer do auto-qualify em modo massa: se o agente nao classificar em 30s,
+  // o sistema qualifica com a primeira qualificacao "neutra" para tirar o
+  // agente do ACW e o discador mandar a proxima chamada.
+  const autoQualifyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Cache de alunos pre-fetched por telephonyId. Permite ter os dados prontos no
   // momento exato que o discador conecta a chamada ao agente (call-was-connected).
   const alunoCacheRef = useRef<Map<string, Aluno>>(new Map());
   const [eventos, setEventos] = useState<EventoLigacao[]>([]);
-  const [qualificacoes] = useState<QualificacaoLigacao[]>(qualificacoesMock);
+  // Qualificacoes da campanha — comeca com mock e e substituido pelos IDs reais
+  // do dialer 3C Plus quando o agente entra em modo massa.
+  const [qualificacoes, setQualificacoes] = useState<QualificacaoLigacao[]>(qualificacoesMock);
   const [callbackAberto, setCallbackAberto] = useState(false);
   const [negociacaoAberta, setNegociacaoAberta] = useState(false);
   const [ilhaAtiva, setIlhaAtiva] = useState(false);
@@ -167,6 +174,7 @@ export function LigacoesProvider({ children }: { children: ReactNode }) {
 
   // Keep ref in sync with ligacaoAtiva for use in event handlers
   useEffect(() => { ligacaoAtivaRef.current = ligacaoAtiva; }, [ligacaoAtiva]);
+  useEffect(() => { ligacaoEncerradaRef.current = ligacaoEncerrada; }, [ligacaoEncerrada]);
 
   useEffect(() => {
     return () => { cleanupRef.current?.(); clearAllTimers(); };
@@ -358,7 +366,26 @@ export function LigacoesProvider({ children }: { children: ReactNode }) {
           // Massa: salva chamada encerrada para qualificacao inline, limpa ativa,
           // permanece em EM_LIGACAO aguardando proxima chamada do discador
           const prev = ligacaoAtivaRef.current;
-          if (prev) setLigacaoEncerrada({ ...prev, status: 'encerrada' });
+          if (prev) {
+            setLigacaoEncerrada({ ...prev, status: 'encerrada' });
+            // Auto-qualify timer: se o agente nao classificar em 30s, o sistema
+            // qualifica automaticamente para tirar o agente do ACW e o discador
+            // mandar a proxima chamada. Usa qualificacao "neutra" (primeira
+            // is_positive=false), com fallback para a primeira da lista.
+            if (autoQualifyTimerRef.current) clearTimeout(autoQualifyTimerRef.current);
+            autoQualifyTimerRef.current = setTimeout(async () => {
+              const enc = ligacaoEncerradaRef.current;
+              if (!enc?.callId) return;
+              const lista = qualificacoes.length > 0 ? qualificacoes : qualificacoesMock;
+              const padrao = lista.find(q => q.is_positive === false) || lista[0];
+              if (!padrao) return;
+              log('sistema', `Auto-qualify (30s): ${padrao.nome}`);
+              const ok = await real3c.qualificarChamada(enc.callId, padrao.id);
+              log('http', ok ? 'Auto-qualify OK — discador liberado' : 'Auto-qualify falhou');
+              setLigacaoEncerrada(null);
+              autoQualifyTimerRef.current = null;
+            }, 30000);
+          }
           setLigacaoAtiva(null);
           setIlhaAtiva(false);
         } else {
@@ -394,7 +421,7 @@ export function LigacoesProvider({ children }: { children: ReactNode }) {
 
       default: break;
     }
-  }, [adicionarEvento, tipoLigacao, log, preFetchAluno, carregarAlunoNaLigacao]);
+  }, [adicionarEvento, tipoLigacao, log, preFetchAluno, carregarAlunoNaLigacao, qualificacoes]);
 
   // Atualiza ref do handler para o ultimo valor, sem resubscrever o realtime.
   useEffect(() => {
@@ -455,9 +482,27 @@ export function LigacoesProvider({ children }: { children: ReactNode }) {
     setEstadoPagina('IDLE');
   }
 
-  // Parar ligacoes: logout da campanha atual e re-logar na individual
+  // Parar ligacoes: logout da campanha atual e re-logar na individual.
+  // Se houver chamada pendente sem qualificar, qualifica primeiro (com a
+  // padrao) para tirar o agente do ACW antes do logout — evita estado preso.
   async function irOffline() {
     log('http', 'Parando ligacoes...');
+
+    if (autoQualifyTimerRef.current) {
+      clearTimeout(autoQualifyTimerRef.current);
+      autoQualifyTimerRef.current = null;
+    }
+
+    const enc = ligacaoEncerradaRef.current;
+    if (enc?.callId) {
+      const lista = qualificacoes.length > 0 ? qualificacoes : qualificacoesMock;
+      const padrao = lista.find(q => q.is_positive === false) || lista[0];
+      if (padrao) {
+        log('http', `Qualificando pendente antes de sair: ${padrao.nome}`);
+        await real3c.qualificarChamada(enc.callId, padrao.id);
+      }
+    }
+
     await real3c.logoutCampanha();
     setLigacaoAtiva(null);
     setLigacaoEncerrada(null);
@@ -479,6 +524,10 @@ export function LigacoesProvider({ children }: { children: ReactNode }) {
     cleanupRef.current?.();
     cleanupRef.current = null;
     clearAllTimers();
+    if (autoQualifyTimerRef.current) {
+      clearTimeout(autoQualifyTimerRef.current);
+      autoQualifyTimerRef.current = null;
+    }
     real3c.logoutCampanha();
     log('sistema', 'Ramal desativado — OFFLINE');
     setSessao('OFFLINE');
@@ -533,6 +582,21 @@ export function LigacoesProvider({ children }: { children: ReactNode }) {
     // Mostrar tela de ligacao IMEDIATAMENTE (botao parar disponivel)
     setEstadoPagina('EM_LIGACAO');
     log('sistema', 'Preparando campanha de massa...');
+
+    // Carrega as qualificacoes REAIS da campanha (IDs do dialer 3C Plus).
+    // Sem isso, qualify falha com ID invalido e o agente fica preso em ACW.
+    const cfg = real3c.getConfig();
+    const campId = cfg.campaignIdMassa;
+    if (campId) {
+      real3c.obterQualificacoesCampanha(campId).then(reais => {
+        if (reais.length > 0) {
+          log('http', `${reais.length} qualificacoes da campanha carregadas`);
+          setQualificacoes(reais);
+        } else {
+          log('erro', 'Sem qualificacoes da campanha — usando mock (qualify pode falhar)');
+        }
+      });
+    }
 
     const tokenAuth = localStorage.getItem('auth_token');
     const authHeaders: Record<string, string> = { 'Content-Type': 'application/json' };
@@ -599,13 +663,32 @@ export function LigacoesProvider({ children }: { children: ReactNode }) {
     setTelefoneIndividual('');
   }
 
-  // Qualificacao inline no modo massa — nao muda de pagina
-  function qualificarLigacaoInline(qualificacao: QualificacaoLigacao) {
-    if (!ligacaoEncerrada) return;
+  // Qualificacao inline no modo massa — nao muda de pagina.
+  //
+  // CRITICO: ApOs call-was-finished o agente entra em ACW (status 3) na 3C Plus.
+  // O discador SO manda nova chamada para agentes IDLE (status 1). O POST
+  // /agent/call/{id}/qualify e o que tira o agente do ACW. Sem isso, o discador
+  // fica parado e o agente preso "aguardando".
+  async function qualificarLigacaoInline(qualificacao: QualificacaoLigacao) {
+    const enc = ligacaoEncerradaRef.current || ligacaoEncerrada;
+    if (!enc) return;
+
+    // Limpa timer de auto-qualify (se estiver em curso)
+    if (autoQualifyTimerRef.current) {
+      clearTimeout(autoQualifyTimerRef.current);
+      autoQualifyTimerRef.current = null;
+    }
+
     adicionarEvento({
       id: `evt-qual-${Date.now()}`, tipo: 'call-history-was-created', timestamp: new Date().toISOString(),
-      qualificacao: qualificacao.nome, telefone: ligacaoEncerrada.telefone, pessoaNome: ligacaoEncerrada.aluno?.nome,
+      qualificacao: qualificacao.nome, telefone: enc.telefone, pessoaNome: enc.aluno?.nome,
     });
+
+    if (enc.callId) {
+      log('http', `Qualificando: ${qualificacao.nome}`);
+      const ok = await real3c.qualificarChamada(enc.callId, qualificacao.id);
+      log('http', ok ? 'Qualify OK — discador liberado' : 'Qualify falhou');
+    }
     setLigacaoEncerrada(null);
   }
 

@@ -8,6 +8,7 @@
  */
 
 import { prisma } from '../config/database.js';
+import { obterQualificacoesCampanha } from '../services/threecplusAgentService.js';
 
 const CLICK2CALL_URL = 'https://3c.fluxoti.com/api/v1/click2call';
 const SUBDOMAIN = process.env.THREECPLUS_SUBDOMAIN || 'liberdademedica';
@@ -149,6 +150,23 @@ export async function hangup(req, res, next) {
     } catch {
       res.json({ ok: true, raw: text });
     }
+  } catch (error) {
+    next(error);
+  }
+}
+
+/**
+ * GET /api/ligacoes/qualificacoes-campanha/:campaignId
+ * Retorna a lista de qualificacoes do dialer da campanha 3C Plus.
+ * Usado pelo modo massa para qualificar a chamada apos call-was-finished
+ * (POST qualify tira o agente do ACW e libera o discador para mandar a proxima).
+ */
+export async function qualificacoesCampanha(req, res, next) {
+  try {
+    const campaignId = Number(req.params.campaignId);
+    if (!campaignId) return res.status(400).json({ error: 'campaignId obrigatorio' });
+    const lista = await obterQualificacoesCampanha(campaignId);
+    res.json(lista);
   } catch (error) {
     next(error);
   }

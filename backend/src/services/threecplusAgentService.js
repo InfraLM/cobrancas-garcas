@@ -459,6 +459,34 @@ export async function listarAgentesDaCampanha(campaignId) {
 }
 
 /**
+ * Retorna as qualificacoes configuradas no dialer da campanha.
+ * Usado pelo modo massa: o agente precisa qualificar a chamada apos
+ * call-was-finished para sair do ACW e o discador mandar a proxima.
+ *
+ * Estrutura na 3C Plus: campaign.dialer.qualification_list.qualifications[]
+ * { id, name, color, conversion?, is_positive? }
+ */
+export async function obterQualificacoesCampanha(campaignId) {
+  try {
+    const data = await fetchJson(discadorUrl(`/campaigns/${campaignId}`));
+    const camp = data.data || data;
+    const lista = camp?.dialer?.qualification_list?.qualifications
+      || camp?.qualification_list?.qualifications
+      || [];
+    return lista.map(q => ({
+      id: q.id,
+      nome: q.name,
+      cor: q.color || '#6b7280',
+      conversion: Boolean(q.conversion),
+      is_positive: Boolean(q.is_positive),
+    }));
+  } catch (err) {
+    console.warn(`[3CPlus] Erro ao obter qualificacoes da campanha ${campaignId}: ${err.message}`);
+    return [];
+  }
+}
+
+/**
  * Retorna campanhas com flag de vinculacao para um agente.
  */
 export async function listarCampanhasComVinculo(agentId) {
