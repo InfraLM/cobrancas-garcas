@@ -24,20 +24,23 @@ export async function obterDashboard(req, res, next) {
     console.log('[Dashboard] Calculando metricas...');
     const startTime = Date.now();
 
-    // recorrentesHistorico precisa rodar antes do KPI porque a taxaRecorrencia
-    // do card usa a ultima semana dele (mesmo universo do grafico "Composicao").
-    const [aging, agingHistorico, recorrentesHistorico, acumuladoAlunos, ficouFacil, pagoPorAging, pagoPorForma] = await Promise.all([
+    // recorrentesHistorico aqui usa SEMPRE granularidade=semana e janela
+    // expandindo desde 2026-02-08, pra calcular a taxaRecorrencia do KPI
+    // (mesmo universo do grafico "Composicao"). O grafico em si vem do
+    // endpoint /dashboard/recorrentes-historico (parametrizado).
+    const [aging, agingHistorico, recorrentesHistorico, ficouFacil, pagoPorAging, pagoPorForma] = await Promise.all([
       calcularAging(),
       calcularAgingHistorico(),
       calcularRecorrentesHistorico(),
-      calcularAcumuladoAlunos(),
       calcularFicouFacil(),
       calcularPagoPorAging(),
       calcularPagoPorForma(),
     ]);
     const kpis = await calcularKPIs(recorrentesHistorico);
 
-    const data = { kpis, aging, agingHistorico, recorrentesHistorico, acumuladoAlunos, ficouFacil, pagoPorAging, pagoPorForma, atualizadoEm: new Date().toISOString() };
+    // recorrentesHistorico e acumuladoAlunos NAO vao no payload — endpoints
+    // proprios os servem com filtros dinamicos (granularidade + periodo).
+    const data = { kpis, aging, agingHistorico, ficouFacil, pagoPorAging, pagoPorForma, atualizadoEm: new Date().toISOString() };
 
     // Salvar cache
     cache = { data, timestamp: agora };
@@ -217,6 +220,68 @@ async function calcularAgingHistorico() {
 }
 
 // -----------------------------------------------
+// Helper: gera o CTE `semanas` parametrizado.
+//   granularidade='semana' -> buckets dom→sáb (alinhados ao domingo de inicio)
+//   granularidade='mes'    -> buckets 1→último dia do mês
+// `inicio` e `fim` são datas YYYY-MM-DD (já validadas pelo handler).
+// O alias da coluna é mantido como `semana` pra compatibilidade com o resto
+// das CTEs já existentes — frontend só vê o `idx`.
+// -----------------------------------------------
+function gerarCteBuckets(granularidade, inicio, fim) {
+  if (granularidade === 'mes') {
+    return `
+    semanas AS (
+      SELECT
+        ROW_NUMBER() OVER (ORDER BY gs)::int AS semana,
+        gs::date AS inicio,
+        LEAST(
+          (gs + INTERVAL '1 month' - INTERVAL '1 day')::date,
+          DATE '${fim}'
+        ) AS fim
+      FROM generate_series(
+        date_trunc('month', DATE '${inicio}')::date,
+        date_trunc('month', DATE '${fim}')::date,
+        INTERVAL '1 month'
+      ) AS gs
+    )`;
+  }
+  // semana (default): alinhado em domingo
+  return `
+    semanas AS (
+      SELECT
+        ROW_NUMBER() OVER (ORDER BY gs)::int AS semana,
+        gs::date AS inicio,
+        LEAST((gs + INTERVAL '6 days')::date, DATE '${fim}') AS fim
+      FROM generate_series(
+        (DATE '${inicio}' - EXTRACT(DOW FROM DATE '${inicio}')::int * INTERVAL '1 day')::date,
+        DATE '${fim}',
+        INTERVAL '7 days'
+      ) AS gs
+    )`;
+}
+
+function parsearOptsBucket(req) {
+  const granularidade = req.query.granularidade === 'mes' ? 'mes' : 'semana';
+  const re = /^\d{4}-\d{2}-\d{2}$/;
+  const inicioParam = String(req.query.inicio || '');
+  const fimParam = String(req.query.fim || '');
+  const inicio = re.test(inicioParam) ? inicioParam : '2026-02-08';
+  // Default fim: hoje (CURRENT_DATE) — formatado como YYYY-MM-DD em BRT
+  const hojeBrt = new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const fim = re.test(fimParam) ? fimParam : hojeBrt;
+  return { granularidade, inicio, fim };
+}
+
+function formatarLabelBucket(granularidade, inicioISO) {
+  const d = new Date(inicioISO);
+  if (granularidade === 'mes') {
+    const meses = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
+    return `${meses[d.getUTCMonth()]}/${String(d.getUTCFullYear()).slice(-2)}`;
+  }
+  return d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', timeZone: 'UTC' });
+}
+
+// -----------------------------------------------
 // Recorrentes vs nao-recorrentes por semana — portado literal do
 // dashboard/query-recorrentes-vs-outros.txt
 //
@@ -231,7 +296,11 @@ async function calcularAgingHistorico() {
 // Adaptacao: janela expandindo desde 08/02/2026 ate ultimo sabado completo
 // (igual ao calcularAcumuladoAlunos).
 // -----------------------------------------------
-async function calcularRecorrentesHistorico() {
+async function calcularRecorrentesHistorico(opts = {}) {
+  const granularidade = opts.granularidade === 'mes' ? 'mes' : 'semana';
+  const inicio = opts.inicio || '2026-02-08';
+  const fim = opts.fim || new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const cteBuckets = gerarCteBuckets(granularidade, inicio, fim);
   const rows = await prisma.$queryRawUnsafe(`
     WITH
     base_matriculas AS (
@@ -322,16 +391,7 @@ async function calcularRecorrentesHistorico() {
         cc.datainativacao::date AS datainativacao
       FROM cobranca.cartaocreditodebitorecorrenciapessoa cc
     ),
-    semanas AS (
-      SELECT ROW_NUMBER() OVER (ORDER BY gs)::int AS semana,
-        gs::date AS inicio,
-        (gs + INTERVAL '6 days')::date AS fim
-      FROM generate_series(
-        DATE '2026-02-08',
-        (CURRENT_DATE - ((EXTRACT(DOW FROM CURRENT_DATE)::int + 1) % 7) * INTERVAL '1 day')::date,
-        INTERVAL '7 days'
-      ) AS gs
-    ),
+    ${cteBuckets},
     ativos_por_semana AS (
       SELECT s.semana, s.inicio, s.fim, COUNT(*) AS alunos_ativos
       FROM base_matricula bm CROSS JOIN semanas s
@@ -362,7 +422,9 @@ async function calcularRecorrentesHistorico() {
 
   return rows.map(r => ({
     semana: Number(r.semana),
-    label: `${new Date(r.inicio).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}`,
+    inicio: r.inicio,
+    fim: r.fim,
+    label: formatarLabelBucket(granularidade, r.inicio),
     totalAtivos: r.total_ativos,
     recorrentes: r.recorrentes,
     semRecorrencia: r.sem_recorrencia,
@@ -387,7 +449,11 @@ async function calcularRecorrentesHistorico() {
 //   - Janela rolling: ultimas 9 semanas completas, inicio no sabado
 //     (mesma "largura de semana" do original: sab -> sex)
 // -----------------------------------------------
-async function calcularAcumuladoAlunos() {
+async function calcularAcumuladoAlunos(opts = {}) {
+  const granularidade = opts.granularidade === 'mes' ? 'mes' : 'semana';
+  const inicio = opts.inicio || '2026-02-08';
+  const fim = opts.fim || new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const cteBuckets = gerarCteBuckets(granularidade, inicio, fim);
   const rows = await prisma.$queryRawUnsafe(`
     WITH
     base_matriculas AS (
@@ -484,21 +550,7 @@ async function calcularAcumuladoAlunos() {
       LEFT JOIN trancamento_gap tg ON tg.matricula = c.matricula
       LEFT JOIN recorrencia_ultimo ru ON ru.pessoa_id = c.pessoa_id
     ),
-    -- Janela "expandindo" desde 08/02/2026 ate o ultimo sabado completo.
-    -- Formato da semana: domingo -> sabado (ex: 2026-02-08 a 2026-02-14).
-    -- Conforme o tempo passa, novas semanas sao adicionadas automaticamente.
-    -- EXTRACT(DOW): domingo=0, sabado=6.
-    semanas AS (
-      SELECT
-        ROW_NUMBER() OVER (ORDER BY gs)::int AS semana,
-        gs::date AS inicio,
-        (gs + INTERVAL '6 days')::date AS fim
-      FROM generate_series(
-        DATE '2026-02-08',
-        (CURRENT_DATE - ((EXTRACT(DOW FROM CURRENT_DATE)::int + 1) % 7) * INTERVAL '1 day')::date,
-        INTERVAL '7 days'
-      ) AS gs
-    ),
+    ${cteBuckets},
     janela AS (SELECT MIN(inicio) AS inicio_janela, MAX(fim) AS fim_janela FROM semanas),
     novos_alunos_semana AS (
       SELECT s.semana, s.inicio, s.fim, COUNT(*) AS novos_alunos_semana
@@ -536,7 +588,9 @@ async function calcularAcumuladoAlunos() {
     const acumuladoRec = Number(r.rec_acumulado);
     return {
       semana: Number(r.semana),
-      label: `${new Date(r.inicio).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}`,
+      inicio: r.inicio,
+      fim: r.fim,
+      label: formatarLabelBucket(granularidade, r.inicio),
       novos: Number(r.novos_semana),
       acumulado,
       recorrentesSemana: Number(r.rec_semana),
@@ -684,6 +738,29 @@ export async function obterFunil(req, res, next) {
         { etapa: 'Recuperado', qtd: recuperado[0].qtd, valor: Number(recuperado[0].valor) },
       ],
     });
+  } catch (error) {
+    next(error);
+  }
+}
+
+// -----------------------------------------------
+// Handlers HTTP dos graficos parametrizados
+// -----------------------------------------------
+export async function obterRecorrentesHistorico(req, res, next) {
+  try {
+    const opts = parsearOptsBucket(req);
+    const data = await calcularRecorrentesHistorico(opts);
+    res.json({ ...opts, data });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function obterAcumuladoAlunos(req, res, next) {
+  try {
+    const opts = parsearOptsBucket(req);
+    const data = await calcularAcumuladoAlunos(opts);
+    res.json({ ...opts, data });
   } catch (error) {
     next(error);
   }

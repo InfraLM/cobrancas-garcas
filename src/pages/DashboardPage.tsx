@@ -1,6 +1,11 @@
 import { useState, useEffect, useCallback } from 'react';
 import { api } from '../services/api';
-import { obterFunilDashboard, type PeriodoFunil, type FunilEtapa } from '../services/dashboard';
+import {
+  obterFunilDashboard,
+  obterRecorrentesHistorico, obterAcumuladoAlunos,
+  type PeriodoFunil, type FunilEtapa,
+  type Granularidade, type BucketRecorrentes, type BucketAcumulado,
+} from '../services/dashboard';
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer,
   ComposedChart, Line, Cell,
@@ -12,11 +17,17 @@ import {
 
 interface FormaPagamento { forma: string; qtd: number; valor: number }
 interface DashboardData {
-  kpis: any; aging: any[]; agingHistorico: any[]; recorrentesHistorico: any[];
-  acumuladoAlunos: any[]; ficouFacil: any; pagoPorAging: any[];
+  kpis: any; aging: any[]; agingHistorico: any[];
+  ficouFacil: any; pagoPorAging: any[];
   pagoPorForma: { competencia: FormaPagamento[]; caixa: FormaPagamento[] };
   atualizadoEm: string;
 }
+
+// Default range: cohort atual (08/02/2026) ate hoje em BRT
+function hojeBrtISO(): string {
+  return new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString().slice(0, 10);
+}
+const DEFAULT_INICIO = '2026-02-08';
 
 function fmt(v: number) { return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }); }
 function fmtK(v: number) {
@@ -70,6 +81,19 @@ export default function DashboardPage() {
   // ou caixa (so o que entrou). Toggle local.
   const [visaoForma, setVisaoForma] = useState<'competencia' | 'caixa'>('competencia');
 
+  // Graficos de recorrencia: granularidade + periodo independentes pra cada
+  const [granRec, setGranRec] = useState<Granularidade>('semana');
+  const [inicioRec, setInicioRec] = useState(DEFAULT_INICIO);
+  const [fimRec, setFimRec] = useState(hojeBrtISO());
+  const [recorrentesHistorico, setRecorrentesHistorico] = useState<BucketRecorrentes[]>([]);
+  const [loadingRec, setLoadingRec] = useState(false);
+
+  const [granAcum, setGranAcum] = useState<Granularidade>('semana');
+  const [inicioAcum, setInicioAcum] = useState(DEFAULT_INICIO);
+  const [fimAcum, setFimAcum] = useState(hojeBrtISO());
+  const [acumuladoAlunos, setAcumuladoAlunos] = useState<BucketAcumulado[]>([]);
+  const [loadingAcum, setLoadingAcum] = useState(false);
+
   const carregar = useCallback(async (forcar = false) => {
     try {
       if (forcar) setRefreshing(true); else setLoading(true);
@@ -90,9 +114,26 @@ export default function DashboardPage() {
   useEffect(() => { carregar(); }, [carregar]);
   useEffect(() => { carregarFunil(periodoFunil); }, [periodoFunil, carregarFunil]);
 
+  // Fetchs dos graficos de recorrencia
+  useEffect(() => {
+    setLoadingRec(true);
+    obterRecorrentesHistorico({ granularidade: granRec, inicio: inicioRec, fim: fimRec })
+      .then(r => setRecorrentesHistorico(r.data))
+      .catch(e => console.error('Erro recorrentes-historico:', e))
+      .finally(() => setLoadingRec(false));
+  }, [granRec, inicioRec, fimRec]);
+
+  useEffect(() => {
+    setLoadingAcum(true);
+    obterAcumuladoAlunos({ granularidade: granAcum, inicio: inicioAcum, fim: fimAcum })
+      .then(r => setAcumuladoAlunos(r.data))
+      .catch(e => console.error('Erro acumulado-alunos:', e))
+      .finally(() => setLoadingAcum(false));
+  }, [granAcum, inicioAcum, fimAcum]);
+
   if (loading || !data) return <div className="flex items-center justify-center h-[60vh]"><Loader2 size={32} className="animate-spin text-primary" /></div>;
 
-  const { kpis, aging, agingHistorico, recorrentesHistorico, acumuladoAlunos, ficouFacil, pagoPorAging, pagoPorForma } = data;
+  const { kpis, aging, agingHistorico, ficouFacil, pagoPorAging, pagoPorForma } = data;
 
   return (
     <div className="space-y-5 pb-8">
@@ -311,13 +352,21 @@ export default function DashboardPage() {
       {/* Recorrentes vs Outros + Acumulado */}
       <div className="grid grid-cols-2 gap-4">
         <div className="bg-white rounded-2xl p-5 shadow-sm">
-          <h3 className="text-[0.8125rem] font-bold mb-1">Composição: Recorrentes vs Outros</h3>
+          <div className="flex items-start justify-between gap-3 mb-1">
+            <h3 className="text-[0.8125rem] font-bold">Composição: Recorrentes vs Outros</h3>
+            <ControlesGrafico
+              loading={loadingRec}
+              granularidade={granRec} setGranularidade={setGranRec}
+              inicio={inicioRec} setInicio={setInicioRec}
+              fim={fimRec} setFim={setFimRec}
+            />
+          </div>
           <p className="text-[0.6875rem] text-on-surface-variant mb-3">Alunos por método de pagamento + % recorrentes</p>
           <ResponsiveContainer width="100%" height={250}>
             <ComposedChart data={recorrentesHistorico} margin={{ top: 5, right: 10, left: 5, bottom: 5 }}>
               <XAxis dataKey="label" tick={{ fontSize: 10, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
               <YAxis yAxisId="left" tick={{ fontSize: 10, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
-              <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 10, fill: '#94a3b8' }} tickFormatter={(v: number) => `${v}%`} domain={[10, 40]} axisLine={false} tickLine={false} />
+              <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 10, fill: '#94a3b8' }} tickFormatter={(v: number) => `${v}%`} domain={['auto', 'auto']} axisLine={false} tickLine={false} />
               <Tooltip content={<CustomTooltip />} />
               <Legend wrapperStyle={{ fontSize: 10, paddingTop: 8 }} iconType="square" iconSize={8} />
               <Bar yAxisId="left" dataKey="semRecorrencia" name="Sem recorrência" stackId="a" fill="#1e5a8a" />
@@ -328,13 +377,21 @@ export default function DashboardPage() {
         </div>
 
         <div className="bg-white rounded-2xl p-5 shadow-sm">
-          <h3 className="text-[0.8125rem] font-bold mb-1">Novos Alunos Acumulados + % com Recorrência</h3>
+          <div className="flex items-start justify-between gap-3 mb-1">
+            <h3 className="text-[0.8125rem] font-bold">Novos Alunos Acumulados + % com Recorrência</h3>
+            <ControlesGrafico
+              loading={loadingAcum}
+              granularidade={granAcum} setGranularidade={setGranAcum}
+              inicio={inicioAcum} setInicio={setInicioAcum}
+              fim={fimAcum} setFim={setFimAcum}
+            />
+          </div>
           <p className="text-[0.6875rem] text-on-surface-variant mb-3">Novas matrículas acumuladas na janela × % que cadastrou cartão recorrente</p>
           <ResponsiveContainer width="100%" height={250}>
             <ComposedChart data={acumuladoAlunos} margin={{ top: 5, right: 10, left: 5, bottom: 5 }}>
               <XAxis dataKey="label" tick={{ fontSize: 10, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
               <YAxis yAxisId="left" tick={{ fontSize: 10, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
-              <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 10, fill: '#94a3b8' }} tickFormatter={(v: number) => `${v}%`} domain={[10, 40]} axisLine={false} tickLine={false} />
+              <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 10, fill: '#94a3b8' }} tickFormatter={(v: number) => `${v}%`} domain={['auto', 'auto']} axisLine={false} tickLine={false} />
               <Tooltip content={<CustomTooltip />} />
               <Legend wrapperStyle={{ fontSize: 10, paddingTop: 8 }} iconType="square" iconSize={8} />
               <Bar yAxisId="left" dataKey="acumulado" name="Novos alunos (acumulado)" fill="#1e5a8a" radius={[3, 3, 0, 0]} />
@@ -389,6 +446,55 @@ function KpiCard({ icon: Icon, label, valor, sub, cor, bg }: { icon: any; label:
       </div>
       <p className={`text-xl font-bold ${cor}`}>{valor}</p>
       <p className="text-[0.6875rem] text-on-surface-variant mt-0.5">{sub}</p>
+    </div>
+  );
+}
+
+// ----------------------------------------------------------------------
+// Controles compactos para os graficos parametrizados (semana/mes + range)
+// ----------------------------------------------------------------------
+function ControlesGrafico({
+  loading,
+  granularidade, setGranularidade,
+  inicio, setInicio,
+  fim, setFim,
+}: {
+  loading: boolean;
+  granularidade: Granularidade;
+  setGranularidade: (g: Granularidade) => void;
+  inicio: string;
+  setInicio: (s: string) => void;
+  fim: string;
+  setFim: (s: string) => void;
+}) {
+  return (
+    <div className="flex items-center gap-2 shrink-0">
+      {loading && <Loader2 size={12} className="animate-spin text-gray-400" />}
+      <input
+        type="date"
+        value={inicio}
+        onChange={(e) => setInicio(e.target.value)}
+        className="h-7 px-2 rounded-md border border-gray-200 text-[0.6875rem] bg-white outline-none focus:ring-1 focus:ring-primary/30"
+        title="Início"
+      />
+      <span className="text-[0.625rem] text-gray-400">→</span>
+      <input
+        type="date"
+        value={fim}
+        onChange={(e) => setFim(e.target.value)}
+        className="h-7 px-2 rounded-md border border-gray-200 text-[0.6875rem] bg-white outline-none focus:ring-1 focus:ring-primary/30"
+        title="Fim"
+      />
+      <div className="inline-flex rounded-md bg-gray-100 p-0.5 text-[0.625rem]">
+        <button
+          onClick={() => setGranularidade('semana')}
+          className={`px-2 py-0.5 rounded transition-colors ${granularidade === 'semana' ? 'bg-white shadow-sm font-semibold text-on-surface' : 'text-on-surface-variant hover:text-on-surface'}`}
+        >Semana</button>
+        <button
+          onClick={() => setGranularidade('mes')}
+          className={`px-2 py-0.5 rounded transition-colors ${granularidade === 'mes' ? 'bg-white shadow-sm font-semibold text-on-surface' : 'text-on-surface-variant hover:text-on-surface'}`}
+        >Mês</button>
+      </div>
     </div>
   );
 }
