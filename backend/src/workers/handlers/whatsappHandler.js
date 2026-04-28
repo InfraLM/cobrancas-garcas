@@ -92,7 +92,12 @@ export async function onNovaMensagemWhatsapp(payload) {
       console.log(`[ACK] msg ${mensagemExternaId.slice(0, 8)} — NOVA | ack: ${JSON.stringify(ackNovo)} | fromMe=${fromMe}`);
     }
 
-    // 1. Persistir mensagem (dedup + atualizar ack)
+    // 1. Upsert ConversaCobranca PRIMEIRO — resolve pessoaCodigo via vincularPessoa
+    //    pelo numero. Antes a mensagem era persistida com pessoaCodigo=null
+    //    hardcoded e isso quebrava o card "Contato Realizado" do funil.
+    const conversa = await upsertConversa({ chatData, messageData: msgData });
+
+    // 2. Persistir mensagem (dedup + atualizar ack) — usa pessoaCodigo da conversa
     const mensagem = await prisma.mensagemWhatsapp.upsert({
       where: { mensagemExternaId },
       create: {
@@ -103,7 +108,7 @@ export async function onNovaMensagemWhatsapp(payload) {
         contatoImagem: chatData.contact?.image || null,
         instanciaId: chatData.instance?.id || msgData.instance_id || '',
         instanciaNome: chatData.instance?.name || null,
-        pessoaCodigo: null,
+        pessoaCodigo: conversa.pessoaCodigo || null,
         tipo: msgData.type || 'chat',
         corpo: msgData.body || null,
         mediaUrl: msgData.media || null,
@@ -119,12 +124,14 @@ export async function onNovaMensagemWhatsapp(payload) {
         ack: ackNovo,
         timestamp: new Date((msgData.time || msgData.time_whatsapp || Date.now() / 1000) * 1000),
       },
-      // Update: so atualiza ack (progride: null → device → read)
-      update: ackNovo ? { ack: ackNovo } : {},
+      // Update: ack (progride null → device → read) e pessoaCodigo se ainda
+      // estava null (caso a vinculacao tenha sido feita depois da mensagem
+      // ja existir — nao deve acontecer com a nova ordem, mas defensivo).
+      update: {
+        ...(ackNovo ? { ack: ackNovo } : {}),
+        ...(conversa.pessoaCodigo ? { pessoaCodigo: conversa.pessoaCodigo } : {}),
+      },
     });
-
-    // 2. Upsert ConversaCobranca
-    const conversa = await upsertConversa({ chatData, messageData: msgData });
 
     // 3. Broadcast para browsers via Socket.io interno
     const io = getRealtimeIo();
