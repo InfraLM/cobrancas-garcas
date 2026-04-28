@@ -284,10 +284,11 @@ export async function asaasWebhook(req, res, next) {
         const todosConfirmados = todosOsPagamentos.every(p => p.situacao === 'CONFIRMADO');
 
         if (todosConfirmados) {
-          // Mover acordo para CONCLUIDO
+          // Mover acordo para CONCLUIDO. concluidoEm registra o instante real
+          // da conclusao — usado no funil historico do dashboard.
           const acordoConcluido = await prisma.acordoFinanceiro.update({
             where: { id: acordoId },
-            data: { etapa: 'CONCLUIDO' },
+            data: { etapa: 'CONCLUIDO', concluidoEm: new Date() },
           });
           console.log(`[Webhook Asaas] Todos os pagamentos confirmados — acordo ${acordoId} CONCLUIDO`);
 

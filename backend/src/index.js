@@ -5,6 +5,7 @@ import { startSocketWorker } from './workers/socket3cplusWorker.js';
 import { runDeltaSync } from './sync/deltaSync.js';
 import { startReguaScheduler } from './services/reguaSchedulerService.js';
 import { startReguaWorker } from './services/reguaWorkerService.js';
+import { startSnapshotScheduler } from './services/snapshotService.js';
 
 const PORT = process.env.PORT || 3001;
 const DELTA_SYNC_INTERVAL = 10 * 60 * 1000; // 10 minutos
@@ -31,4 +32,7 @@ httpServer.listen(PORT, () => {
   // Scheduler de reguas (1x/dia no horario configurado) + worker de disparo continuo
   startReguaScheduler();
   startReguaWorker();
+
+  // Snapshot diario da inadimplencia (foto historica da base do funil)
+  startSnapshotScheduler().catch(err => console.error('[Snapshot] Erro no start:', err.message));
 });

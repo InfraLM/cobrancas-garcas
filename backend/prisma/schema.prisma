@@ -2088,6 +2088,7 @@ model AcordoFinanceiro {
   termoEnviadoEm              DateTime?
   termoAssinadoEm             DateTime?
   acordoGeradoEm              DateTime?
+  concluidoEm                 DateTime?
   seiVinculadoEm              DateTime?
   canceladoEm                 DateTime?
 
@@ -2339,4 +2340,17 @@ model Atividade {
   @@index([status, dataHora])
   @@index([pessoaCodigo])
   @@map("atividade")
+}
+
+// Snapshot diario da inadimplencia. Capturado por job 00:05 (snapshotService.js)
+// para permitir reconstruir a "foto" do funil de cobranca em qualquer dia passado.
+model SnapshotInadimplenciaDiario {
+  data          DateTime  @db.Date
+  pessoaCodigo  Int
+  valorDevedor  Decimal   @db.Decimal(12, 2)
+  capturadoEm   DateTime  @default(now())
+
+  @@id([data, pessoaCodigo])
+  @@index([data])
+  @@map("snapshot_inadimplencia_diario")
 }

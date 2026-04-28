@@ -1,7 +1,5 @@
 import { api } from './api';
 
-export type PeriodoFunil = '7d' | '30d' | '90d';
-
 export interface FunilEtapa {
   etapa: string;
   qtd: number;
@@ -9,12 +7,16 @@ export interface FunilEtapa {
 }
 
 export interface FunilResponse {
-  periodo: string;
+  inicio: string;
+  fim: string;
+  snapshotData: string | null;
+  aviso: string | null;
   funil: FunilEtapa[];
 }
 
-export async function obterFunilDashboard(periodo: PeriodoFunil): Promise<FunilResponse> {
-  return api.get<FunilResponse>(`/dashboard/funil?periodo=${periodo}`);
+export async function obterFunilDashboard(inicio: string, fim: string): Promise<FunilResponse> {
+  const qs = new URLSearchParams({ inicio, fim });
+  return api.get<FunilResponse>(`/dashboard/funil?${qs}`);
 }
 
 // ----------------------------------------------------------------------

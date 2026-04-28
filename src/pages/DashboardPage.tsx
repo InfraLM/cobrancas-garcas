@@ -3,7 +3,7 @@ import { api } from '../services/api';
 import {
   obterFunilDashboard,
   obterRecorrentesHistorico, obterAcumuladoAlunos,
-  type PeriodoFunil, type FunilEtapa,
+  type FunilEtapa,
   type Granularidade, type BucketRecorrentes, type BucketAcumulado,
 } from '../services/dashboard';
 import {
@@ -12,7 +12,7 @@ import {
 } from 'recharts';
 import {
   LayoutDashboard, RefreshCw, Loader2, Users, TrendingDown, DollarSign,
-  CreditCard, Landmark
+  CreditCard, Landmark, Info
 } from 'lucide-react';
 
 interface FormaPagamento { forma: string; qtd: number; valor: number }
@@ -72,9 +72,16 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
-  // Funil tem seu proprio state e endpoint (GET /dashboard/funil?periodo=XXd)
+  // Funil historico: filtra [inicio, fim]. Defaults = ultimos 30d.
+  // Backend usa snapshot diario para reconstruir a Base inadimplente do dia
+  // de inicio (ver snapshotService.js + dashboardController.obterFunil).
   const [funil, setFunil] = useState<FunilEtapa[]>([]);
-  const [periodoFunil, setPeriodoFunil] = useState<PeriodoFunil>('30d');
+  const hoje30atras = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000 - 3 * 60 * 60 * 1000)
+    .toISOString().slice(0, 10);
+  const [inicioFunil, setInicioFunil] = useState(hoje30atras);
+  const [fimFunil, setFimFunil] = useState(hojeBrtISO());
+  const [snapshotData, setSnapshotData] = useState<string | null>(null);
+  const [avisoFunil, setAvisoFunil] = useState<string | null>(null);
   const [loadingFunil, setLoadingFunil] = useState(false);
 
   // "Recuperado por Forma de Pagamento": competencia (todo valor confirmado)
@@ -102,17 +109,19 @@ export default function DashboardPage() {
     finally { setLoading(false); setRefreshing(false); }
   }, []);
 
-  const carregarFunil = useCallback(async (periodo: PeriodoFunil) => {
+  const carregarFunil = useCallback(async (inicio: string, fim: string) => {
     setLoadingFunil(true);
     try {
-      const r = await obterFunilDashboard(periodo);
+      const r = await obterFunilDashboard(inicio, fim);
       setFunil(r.funil);
+      setSnapshotData(r.snapshotData);
+      setAvisoFunil(r.aviso);
     } catch (err) { console.error('Erro funil:', err); }
     finally { setLoadingFunil(false); }
   }, []);
 
   useEffect(() => { carregar(); }, [carregar]);
-  useEffect(() => { carregarFunil(periodoFunil); }, [periodoFunil, carregarFunil]);
+  useEffect(() => { carregarFunil(inicioFunil, fimFunil); }, [inicioFunil, fimFunil, carregarFunil]);
 
   // Fetchs dos graficos de recorrencia
   useEffect(() => {
@@ -161,23 +170,38 @@ export default function DashboardPage() {
         <KpiCard icon={Landmark} label="Ficou Fácil" valor={ficouFacil.totalAtivos + ficouFacil.totalConcluidos} sub={`${ficouFacil.totalConcluidos} concluídos`} cor="text-violet-600" bg="bg-violet-50/50" />
       </div>
 
-      {/* Funil de cobranca */}
+      {/* Funil de cobranca historico — filtro [inicio, fim], base via snapshot */}
       <div className="bg-white rounded-2xl p-5 shadow-sm">
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-[0.8125rem] font-bold">Funil de Cobrança</h3>
+          <div>
+            <h3 className="text-[0.8125rem] font-bold">Funil de Cobrança</h3>
+            <p className="text-[0.6875rem] text-gray-400 mt-0.5">
+              Foto de quem estava inadimplente em {new Date(inicioFunil + 'T00:00:00').toLocaleDateString('pt-BR')} e a evolução até {new Date(fimFunil + 'T00:00:00').toLocaleDateString('pt-BR')}
+            </p>
+          </div>
           <div className="flex items-center gap-2">
             {loadingFunil && <Loader2 size={12} className="animate-spin text-gray-400" />}
-            <select
-              value={periodoFunil}
-              onChange={(e) => setPeriodoFunil(e.target.value as PeriodoFunil)}
+            <input
+              type="date"
+              value={inicioFunil}
+              onChange={(e) => setInicioFunil(e.target.value)}
               className="h-8 px-2 rounded-lg border border-gray-200 text-[0.75rem] bg-white"
-            >
-              <option value="7d">Últimos 7 dias</option>
-              <option value="30d">Últimos 30 dias</option>
-              <option value="90d">Últimos 90 dias</option>
-            </select>
+            />
+            <span className="text-[0.75rem] text-gray-400">até</span>
+            <input
+              type="date"
+              value={fimFunil}
+              onChange={(e) => setFimFunil(e.target.value)}
+              className="h-8 px-2 rounded-lg border border-gray-200 text-[0.75rem] bg-white"
+            />
           </div>
         </div>
+        {avisoFunil && (
+          <div className="mb-3 flex items-start gap-2 px-3 py-2 rounded-lg bg-amber-50 border border-amber-200 text-[0.6875rem] text-amber-800">
+            <Info size={12} className="mt-0.5 shrink-0" />
+            <span>{avisoFunil}{snapshotData && ` (snapshot de ${new Date(snapshotData + 'T00:00:00').toLocaleDateString('pt-BR')})`}</span>
+          </div>
+        )}
         {funil.length === 0 ? (
           <div className="py-8 text-center text-[0.75rem] text-gray-400">Carregando funil…</div>
         ) : (

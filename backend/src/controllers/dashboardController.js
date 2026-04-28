@@ -643,95 +643,183 @@ async function calcularFicouFacil() {
 }
 
 // -----------------------------------------------
-// Funil de cobranca com filtro de periodo
+// Funil de cobranca historico — foto do periodo [inicio, fim].
 //
-// 5 etapas:
-//   - Base Inadimplente (snapshot atual, ignora periodo)
-//   - Tentativa de Contato: ligacao OU whatsapp enviado por agente no periodo.
-//     Disparos automaticos da regua NAO entram: eles usam Blip Router direto
-//     e nao populam mensagem_whatsapp (so disparo_mensagem).
-//   - Contato Realizado: subset da tentativa onde ligacao teve fala
-//     >= 4s (filtra "alo, errou, desliga") OU aluno respondeu whatsapp (fromMe=false).
-//   - Negociado: acordos criados no periodo (exceto cancelados).
-//   - Recuperado: acordos concluidos no periodo.
+// 5 etapas, restritas ao subset de alunos que estavam na BASE INADIMPLENTE
+// na data `inicio` (snapshot diario gravado por snapshotService.js):
+//   - Base Inadimplente: COUNT/SUM da snapshot do dia `inicio`.
+//   - Tentativa de Contato: ligacao OU whatsapp enviado por agente em [inicio,fim],
+//     APENAS para alunos da base de `inicio`.
+//   - Contato Realizado: subset da tentativa onde ligacao teve fala >= 4s
+//     ou aluno respondeu whatsapp.
+//   - Negociado: acordos criados em [inicio,fim] (exceto cancelados),
+//     restrito a alunos da base.
+//   - Recuperado: acordos concluidos em [inicio,fim] (concluidoEm), restrito a base.
 //
-// Valor de cada etapa = SUM(aluno_resumo.valorDevedor) dos alunos unicos
-// (exceto Negociado/Recuperado, que somam valorAcordo).
+// Snapshot indisponivel: se `inicio` < primeira_data ou > ultima_data,
+// usa a data mais proxima e retorna `aviso` na resposta.
+//
+// Compatibilidade: aceita `?periodo=30d` (legado) que e convertido para
+// inicio=hoje-30d, fim=hoje.
 // -----------------------------------------------
 export async function obterFunil(req, res, next) {
   try {
-    const dias = Number(String(req.query.periodo || '30d').replace(/\D/g, '')) || 30;
-    const desde = new Date(Date.now() - dias * 24 * 60 * 60 * 1000);
+    let { inicio, fim } = req.query;
+
+    // Compatibilidade com chamada legada `?periodo=30d`
+    if (!inicio || !fim) {
+      const dias = Number(String(req.query.periodo || '30d').replace(/\D/g, '')) || 30;
+      const fimD = new Date();
+      const iniD = new Date(Date.now() - dias * 24 * 60 * 60 * 1000);
+      inicio = iniD.toISOString().slice(0, 10);
+      fim = fimD.toISOString().slice(0, 10);
+    }
+
+    // Validacao basica
+    if (inicio > fim) {
+      return res.status(400).json({ error: 'inicio nao pode ser depois de fim' });
+    }
+
+    // Range de snapshots disponiveis
+    const range = await prisma.$queryRawUnsafe(`
+      SELECT MIN(data)::text AS min_data, MAX(data)::text AS max_data
+      FROM cobranca.snapshot_inadimplencia_diario
+    `);
+    const minSnap = range[0]?.min_data;
+    const maxSnap = range[0]?.max_data;
+
+    if (!minSnap) {
+      return res.json({
+        inicio, fim,
+        snapshotData: null,
+        aviso: 'Nenhum snapshot disponivel ainda. Aguarde o primeiro ciclo diario.',
+        funil: [
+          { etapa: 'Base Inadimplente', qtd: 0, valor: 0 },
+          { etapa: 'Tentativa de Contato', qtd: 0, valor: 0 },
+          { etapa: 'Contato Realizado', qtd: 0, valor: 0 },
+          { etapa: 'Negociado', qtd: 0, valor: 0 },
+          { etapa: 'Recuperado', qtd: 0, valor: 0 },
+        ],
+      });
+    }
+
+    // Resolver data efetiva da snapshot
+    let snapshotData = inicio;
+    let aviso = null;
+    // Formata YYYY-MM-DD -> DD/MM/YYYY sem passar por Date (evita problema de fuso)
+    const fmtBr = (iso) => iso.split('-').reverse().join('/');
+    if (inicio < minSnap) {
+      snapshotData = minSnap;
+      aviso = `Snapshot disponivel apenas a partir de ${fmtBr(minSnap)} — exibindo a foto mais antiga.`;
+    } else if (inicio > maxSnap) {
+      snapshotData = maxSnap;
+      aviso = `Snapshot mais recente e de ${fmtBr(maxSnap)} — exibindo essa foto.`;
+    }
+
+    // Bordas de timestamp para queries com TIMESTAMP (mensagens, ligacoes, acordos)
+    const inicioTs = `${inicio} 00:00:00`;
+    const fimTs = `${fim} 23:59:59`;
 
     const [base, tentativa, realizado, negociado, recuperado] = await Promise.all([
+      // Base = snapshot do dia
       prisma.$queryRawUnsafe(`
         SELECT COUNT(*)::int AS qtd, COALESCE(SUM("valorDevedor"), 0)::numeric AS valor
-        FROM cobranca.aluno_resumo WHERE "situacaoFinanceira" = 'INADIMPLENTE'
-      `),
+        FROM cobranca.snapshot_inadimplencia_diario WHERE data = $1::date
+      `, snapshotData),
+      // Tentativa: contactados em [inicio,fim] que estavam na base de inicio
       prisma.$queryRawUnsafe(`
-        WITH contactados AS (
-          SELECT DISTINCT "pessoaCodigo" AS pessoa
-          FROM cobranca.registro_ligacao
-          WHERE "pessoaCodigo" IS NOT NULL AND "dataHoraChamada" >= $1
-          UNION
-          SELECT DISTINCT "pessoaCodigo" AS pessoa
-          FROM cobranca.mensagem_whatsapp
-          WHERE "pessoaCodigo" IS NOT NULL AND "fromMe" = true AND "timestamp" >= $1
-        )
-        SELECT COUNT(DISTINCT c.pessoa)::int AS qtd,
-          COALESCE(SUM(ar."valorDevedor"), 0)::numeric AS valor
-        FROM contactados c
-        LEFT JOIN cobranca.aluno_resumo ar ON ar.codigo = c.pessoa
-      `, desde),
-      prisma.$queryRawUnsafe(`
-        WITH contactados_efetivos AS (
+        WITH base AS (
+          SELECT "pessoaCodigo", "valorDevedor"
+          FROM cobranca.snapshot_inadimplencia_diario WHERE data = $1::date
+        ),
+        contactados AS (
           SELECT DISTINCT "pessoaCodigo" AS pessoa
           FROM cobranca.registro_ligacao
           WHERE "pessoaCodigo" IS NOT NULL
-            AND "dataHoraChamada" >= $1
+            AND "dataHoraChamada" BETWEEN $2::timestamp AND $3::timestamp
+          UNION
+          SELECT DISTINCT "pessoaCodigo" AS pessoa
+          FROM cobranca.mensagem_whatsapp
+          WHERE "pessoaCodigo" IS NOT NULL AND "fromMe" = true
+            AND "timestamp" BETWEEN $2::timestamp AND $3::timestamp
+        )
+        SELECT COUNT(*)::int AS qtd,
+          COALESCE(SUM(b."valorDevedor"), 0)::numeric AS valor
+        FROM base b
+        WHERE b."pessoaCodigo" IN (SELECT pessoa FROM contactados)
+      `, snapshotData, inicioTs, fimTs),
+      // Contato Realizado: ligacao com fala >= 4s OU whatsapp recebido, restrito a base
+      prisma.$queryRawUnsafe(`
+        WITH base AS (
+          SELECT "pessoaCodigo", "valorDevedor"
+          FROM cobranca.snapshot_inadimplencia_diario WHERE data = $1::date
+        ),
+        efetivos AS (
+          SELECT DISTINCT "pessoaCodigo" AS pessoa
+          FROM cobranca.registro_ligacao
+          WHERE "pessoaCodigo" IS NOT NULL
+            AND "dataHoraChamada" BETWEEN $2::timestamp AND $3::timestamp
             AND COALESCE("tempoFalando", 0) >= 4
           UNION
           SELECT DISTINCT "pessoaCodigo" AS pessoa
           FROM cobranca.mensagem_whatsapp
-          WHERE "pessoaCodigo" IS NOT NULL AND "fromMe" = false AND "timestamp" >= $1
+          WHERE "pessoaCodigo" IS NOT NULL AND "fromMe" = false
+            AND "timestamp" BETWEEN $2::timestamp AND $3::timestamp
         )
-        SELECT COUNT(DISTINCT c.pessoa)::int AS qtd,
-          COALESCE(SUM(ar."valorDevedor"), 0)::numeric AS valor
-        FROM contactados_efetivos c
-        LEFT JOIN cobranca.aluno_resumo ar ON ar.codigo = c.pessoa
-      `, desde),
+        SELECT COUNT(*)::int AS qtd,
+          COALESCE(SUM(b."valorDevedor"), 0)::numeric AS valor
+        FROM base b
+        WHERE b."pessoaCodigo" IN (SELECT pessoa FROM efetivos)
+      `, snapshotData, inicioTs, fimTs),
+      // Negociado: acordo criado em [inicio,fim], restrito a base de inicio
       prisma.$queryRawUnsafe(`
-        WITH neg AS (
+        WITH base AS (
+          SELECT DISTINCT "pessoaCodigo"
+          FROM cobranca.snapshot_inadimplencia_diario WHERE data = $1::date
+        ),
+        neg AS (
           SELECT "pessoaCodigo" AS pessoa, "valorAcordo"::numeric AS valor
           FROM cobranca.acordo_financeiro
-          WHERE etapa != 'CANCELADO' AND "criadoEm" >= $1
+          WHERE etapa != 'CANCELADO' AND "criadoEm" BETWEEN $2::timestamp AND $3::timestamp
+            AND "pessoaCodigo" IN (SELECT "pessoaCodigo" FROM base)
           UNION ALL
           SELECT "pessoaCodigo" AS pessoa, "valorInadimplenteMJ"::numeric AS valor
           FROM cobranca.ficou_facil
-          WHERE etapa != 'CANCELADO' AND "criadoEm" >= $1
+          WHERE etapa != 'CANCELADO' AND "criadoEm" BETWEEN $2::timestamp AND $3::timestamp
+            AND "pessoaCodigo" IN (SELECT "pessoaCodigo" FROM base)
         )
         SELECT COUNT(DISTINCT pessoa)::int AS qtd,
           COALESCE(SUM(valor), 0)::numeric AS valor
         FROM neg
-      `, desde),
+      `, snapshotData, inicioTs, fimTs),
+      // Recuperado: acordo concluido em [inicio,fim], restrito a base
       prisma.$queryRawUnsafe(`
-        WITH rec AS (
+        WITH base AS (
+          SELECT DISTINCT "pessoaCodigo"
+          FROM cobranca.snapshot_inadimplencia_diario WHERE data = $1::date
+        ),
+        rec AS (
           SELECT "pessoaCodigo" AS pessoa, "valorAcordo"::numeric AS valor
           FROM cobranca.acordo_financeiro
-          WHERE etapa = 'CONCLUIDO' AND "criadoEm" >= $1
+          WHERE etapa = 'CONCLUIDO' AND "concluidoEm" BETWEEN $2::timestamp AND $3::timestamp
+            AND "pessoaCodigo" IN (SELECT "pessoaCodigo" FROM base)
           UNION ALL
           SELECT "pessoaCodigo" AS pessoa, "valorInadimplenteMJ"::numeric AS valor
           FROM cobranca.ficou_facil
-          WHERE etapa = 'CONCLUIDO' AND "criadoEm" >= $1
+          WHERE etapa = 'CONCLUIDO' AND "concluidoEm" BETWEEN $2::timestamp AND $3::timestamp
+            AND "pessoaCodigo" IN (SELECT "pessoaCodigo" FROM base)
         )
         SELECT COUNT(DISTINCT pessoa)::int AS qtd,
           COALESCE(SUM(valor), 0)::numeric AS valor
         FROM rec
-      `, desde),
+      `, snapshotData, inicioTs, fimTs),
     ]);
 
     res.json({
-      periodo: `${dias}d`,
+      inicio,
+      fim,
+      snapshotData,
+      aviso,
       funil: [
         { etapa: 'Base Inadimplente', qtd: base[0].qtd, valor: Number(base[0].valor) },
         { etapa: 'Tentativa de Contato', qtd: tentativa[0].qtd, valor: Number(tentativa[0].valor) },
