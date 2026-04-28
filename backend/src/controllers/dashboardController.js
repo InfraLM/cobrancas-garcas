@@ -720,94 +720,98 @@ export async function obterFunil(req, res, next) {
     const inicioTs = `${inicio} 00:00:00`;
     const fimTs = `${fim} 23:59:59`;
 
+    // Quando o snapshot e fallback (foto desatualizada — `aviso != null`),
+    // NAO restringimos as etapas pela base do snapshot: alunos que ja pagaram
+    // e sairam da base atual continuariam invisiveis em "Recuperado", etc.
+    // Nesse caso, contamos todas as atividades reais no periodo, e o valor
+    // de cada etapa eh o "valorDevedor" atual em aluno_resumo (best-effort).
+    const restringirBase = aviso === null;
+
+    // Sub-query do filtro de base (vazia quando nao restringimos)
+    const filtroBaseSql = restringirBase
+      ? `AND "pessoaCodigo" IN (SELECT "pessoaCodigo" FROM cobranca.snapshot_inadimplencia_diario WHERE data = $1::date)`
+      : '';
+
     const [base, tentativa, realizado, negociado, recuperado] = await Promise.all([
-      // Base = snapshot do dia
+      // Base = snapshot do dia (sempre)
       prisma.$queryRawUnsafe(`
         SELECT COUNT(*)::int AS qtd, COALESCE(SUM("valorDevedor"), 0)::numeric AS valor
         FROM cobranca.snapshot_inadimplencia_diario WHERE data = $1::date
       `, snapshotData),
-      // Tentativa: contactados em [inicio,fim] que estavam na base de inicio
+      // Tentativa: contactados em [inicio,fim]; se restringe, soma valorDevedor da base; senao, soma de aluno_resumo
       prisma.$queryRawUnsafe(`
-        WITH base AS (
-          SELECT "pessoaCodigo", "valorDevedor"
-          FROM cobranca.snapshot_inadimplencia_diario WHERE data = $1::date
-        ),
-        contactados AS (
+        WITH contactados AS (
           SELECT DISTINCT "pessoaCodigo" AS pessoa
           FROM cobranca.registro_ligacao
           WHERE "pessoaCodigo" IS NOT NULL
             AND "dataHoraChamada" BETWEEN $2::timestamp AND $3::timestamp
+            ${filtroBaseSql}
           UNION
           SELECT DISTINCT "pessoaCodigo" AS pessoa
           FROM cobranca.mensagem_whatsapp
           WHERE "pessoaCodigo" IS NOT NULL AND "fromMe" = true
             AND "timestamp" BETWEEN $2::timestamp AND $3::timestamp
+            ${filtroBaseSql}
         )
-        SELECT COUNT(*)::int AS qtd,
-          COALESCE(SUM(b."valorDevedor"), 0)::numeric AS valor
-        FROM base b
-        WHERE b."pessoaCodigo" IN (SELECT pessoa FROM contactados)
+        SELECT COUNT(DISTINCT c.pessoa)::int AS qtd,
+          COALESCE(SUM(COALESCE(snap."valorDevedor", ar."valorDevedor")), 0)::numeric AS valor
+        FROM contactados c
+        LEFT JOIN cobranca.snapshot_inadimplencia_diario snap
+          ON snap.data = $1::date AND snap."pessoaCodigo" = c.pessoa
+        LEFT JOIN cobranca.aluno_resumo ar ON ar.codigo = c.pessoa
       `, snapshotData, inicioTs, fimTs),
-      // Contato Realizado: ligacao com fala >= 4s OU whatsapp recebido, restrito a base
+      // Contato Realizado
       prisma.$queryRawUnsafe(`
-        WITH base AS (
-          SELECT "pessoaCodigo", "valorDevedor"
-          FROM cobranca.snapshot_inadimplencia_diario WHERE data = $1::date
-        ),
-        efetivos AS (
+        WITH efetivos AS (
           SELECT DISTINCT "pessoaCodigo" AS pessoa
           FROM cobranca.registro_ligacao
           WHERE "pessoaCodigo" IS NOT NULL
             AND "dataHoraChamada" BETWEEN $2::timestamp AND $3::timestamp
             AND COALESCE("tempoFalando", 0) >= 4
+            ${filtroBaseSql}
           UNION
           SELECT DISTINCT "pessoaCodigo" AS pessoa
           FROM cobranca.mensagem_whatsapp
           WHERE "pessoaCodigo" IS NOT NULL AND "fromMe" = false
             AND "timestamp" BETWEEN $2::timestamp AND $3::timestamp
+            ${filtroBaseSql}
         )
-        SELECT COUNT(*)::int AS qtd,
-          COALESCE(SUM(b."valorDevedor"), 0)::numeric AS valor
-        FROM base b
-        WHERE b."pessoaCodigo" IN (SELECT pessoa FROM efetivos)
+        SELECT COUNT(DISTINCT e.pessoa)::int AS qtd,
+          COALESCE(SUM(COALESCE(snap."valorDevedor", ar."valorDevedor")), 0)::numeric AS valor
+        FROM efetivos e
+        LEFT JOIN cobranca.snapshot_inadimplencia_diario snap
+          ON snap.data = $1::date AND snap."pessoaCodigo" = e.pessoa
+        LEFT JOIN cobranca.aluno_resumo ar ON ar.codigo = e.pessoa
       `, snapshotData, inicioTs, fimTs),
-      // Negociado: acordo criado em [inicio,fim], restrito a base de inicio
+      // Negociado
       prisma.$queryRawUnsafe(`
-        WITH base AS (
-          SELECT DISTINCT "pessoaCodigo"
-          FROM cobranca.snapshot_inadimplencia_diario WHERE data = $1::date
-        ),
-        neg AS (
+        WITH neg AS (
           SELECT "pessoaCodigo" AS pessoa, "valorAcordo"::numeric AS valor
           FROM cobranca.acordo_financeiro
           WHERE etapa != 'CANCELADO' AND "criadoEm" BETWEEN $2::timestamp AND $3::timestamp
-            AND "pessoaCodigo" IN (SELECT "pessoaCodigo" FROM base)
+            ${filtroBaseSql}
           UNION ALL
           SELECT "pessoaCodigo" AS pessoa, "valorInadimplenteMJ"::numeric AS valor
           FROM cobranca.ficou_facil
           WHERE etapa != 'CANCELADO' AND "criadoEm" BETWEEN $2::timestamp AND $3::timestamp
-            AND "pessoaCodigo" IN (SELECT "pessoaCodigo" FROM base)
+            ${filtroBaseSql}
         )
         SELECT COUNT(DISTINCT pessoa)::int AS qtd,
           COALESCE(SUM(valor), 0)::numeric AS valor
         FROM neg
       `, snapshotData, inicioTs, fimTs),
-      // Recuperado: acordo concluido em [inicio,fim], restrito a base
+      // Recuperado
       prisma.$queryRawUnsafe(`
-        WITH base AS (
-          SELECT DISTINCT "pessoaCodigo"
-          FROM cobranca.snapshot_inadimplencia_diario WHERE data = $1::date
-        ),
-        rec AS (
+        WITH rec AS (
           SELECT "pessoaCodigo" AS pessoa, "valorAcordo"::numeric AS valor
           FROM cobranca.acordo_financeiro
           WHERE etapa = 'CONCLUIDO' AND "concluidoEm" BETWEEN $2::timestamp AND $3::timestamp
-            AND "pessoaCodigo" IN (SELECT "pessoaCodigo" FROM base)
+            ${filtroBaseSql}
           UNION ALL
           SELECT "pessoaCodigo" AS pessoa, "valorInadimplenteMJ"::numeric AS valor
           FROM cobranca.ficou_facil
           WHERE etapa = 'CONCLUIDO' AND "concluidoEm" BETWEEN $2::timestamp AND $3::timestamp
-            AND "pessoaCodigo" IN (SELECT "pessoaCodigo" FROM base)
+            ${filtroBaseSql}
         )
         SELECT COUNT(DISTINCT pessoa)::int AS qtd,
           COALESCE(SUM(valor), 0)::numeric AS valor

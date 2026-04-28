@@ -2100,6 +2100,7 @@ model AcordoFinanceiro {
   @@index([etapa])
   @@index([pessoaCodigo])
   @@index([criadoPor])
+  @@index([etapa, concluidoEm])
   @@map("acordo_financeiro")
 }
 
