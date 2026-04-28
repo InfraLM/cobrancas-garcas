@@ -36,7 +36,28 @@ export async function listar(req, res, next) {
       ],
       take: 200,
     });
-    res.json({ data: conversas });
+
+    // Enriquecer com pessoaNome do SEI (conversa_cobranca so tem contatoNome,
+    // que pode ser o numero quando o aluno nao tem nome no contato WhatsApp).
+    const codigos = [...new Set(conversas.map(c => c.pessoaCodigo).filter(Boolean))];
+    const pessoas = codigos.length > 0
+      ? await prisma.pessoa.findMany({
+          where: { codigo: { in: codigos } },
+          select: { codigo: true, nome: true, cpf: true },
+        })
+      : [];
+    const mapa = new Map(pessoas.map(p => [p.codigo, p]));
+
+    const enriquecidas = conversas.map(c => {
+      const p = c.pessoaCodigo ? mapa.get(c.pessoaCodigo) : null;
+      return {
+        ...c,
+        pessoaNome: p?.nome || null,
+        pessoaCpf: p?.cpf || null,
+      };
+    });
+
+    res.json({ data: enriquecidas });
   } catch (error) {
     next(error);
   }

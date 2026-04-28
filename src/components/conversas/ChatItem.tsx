@@ -39,8 +39,15 @@ function previewTipoMidia(tipo: string): string | null {
 }
 
 export default function ChatItem({ conversa, ativo, onClick }: ChatItemProps) {
-  const nome = conversa.contatoNome || formatarNumero(conversa.contatoNumero);
-  const iniciais = (conversa.contatoNome || '?').split(' ').map(n => n[0]).slice(0, 2).join('').toUpperCase();
+  // Prioridade: pessoa vinculada (SEI) > contato WhatsApp > telefone formatado.
+  // contatoNome frequentemente vem como o proprio numero quando o aluno nao tem
+  // nome registrado no contato do agente.
+  const nomeContato = conversa.contatoNome && conversa.contatoNome !== conversa.contatoNumero
+    ? conversa.contatoNome
+    : null;
+  const nome = conversa.pessoaNome || nomeContato || formatarNumero(conversa.contatoNumero);
+  const iniciais = (conversa.pessoaNome || nomeContato || '?')
+    .split(' ').map(n => n[0]).slice(0, 2).join('').toUpperCase();
   const ultimaMsgTs = conversa.ultimaMensagemCliente
     ? Math.floor(new Date(conversa.ultimaMensagemCliente).getTime() / 1000)
     : Math.floor(new Date(conversa.criadoEm).getTime() / 1000);

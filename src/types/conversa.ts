@@ -18,6 +18,8 @@ export interface ConversaCobranca {
   contatoNome: string | null;
   contatoImagem: string | null;
   pessoaCodigo: number | null;
+  pessoaNome?: string | null;  // nome do aluno no SEI (preenchido pelo backend ao listar)
+  pessoaCpf?: string | null;
   matricula: string | null;
   status: StatusConversa;
   motivoEncerramento: MotivoEncerramento | null;
