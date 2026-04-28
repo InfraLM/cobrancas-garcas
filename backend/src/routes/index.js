@@ -20,6 +20,7 @@ import pausasLigacaoRoutes from './pausasLigacaoRoutes.js';
 import templatesBlipRoutes from './templatesBlipRoutes.js';
 import disparosRoutes from './disparosRoutes.js';
 import reguasCobrancaRoutes from './reguasCobrancaRoutes.js';
+import atividadesRoutes from './atividadesRoutes.js';
 
 const router = Router();
 
@@ -47,5 +48,6 @@ router.use('/pausas-ligacao', pausasLigacaoRoutes);
 router.use('/templates-blip', templatesBlipRoutes);
 router.use('/disparos', disparosRoutes);
 router.use('/reguas-cobranca', reguasCobrancaRoutes);
+router.use('/atividades', atividadesRoutes);
 
 export default router;

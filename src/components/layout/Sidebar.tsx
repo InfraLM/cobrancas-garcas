@@ -19,6 +19,7 @@ import {
   GitBranch,
   RefreshCw,
   Landmark,
+  CalendarCheck,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -44,6 +45,7 @@ const menuPrincipal: MenuItem[] = [
       { label: 'Conversas', path: '/atendimento/conversas', icone: MessageSquare },
       { label: 'Ligações Ativas', path: '/atendimento/ligacoes', icone: PhoneCall },
       { label: 'Disparos', path: '/atendimento/disparos', icone: Megaphone },
+      { label: 'Atividades', path: '/atendimento/atividades', icone: CalendarCheck },
     ],
   },
   {

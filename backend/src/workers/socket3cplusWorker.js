@@ -21,6 +21,7 @@ import {
   onAgentIsIdle,
   onAgentInAcw,
   onAgentLoginFailed,
+  onAgentWasLoggedOut,
 } from './handlers/ligacaoHandler.js';
 import {
   getWhitelists,
@@ -106,6 +107,7 @@ export async function startSocketWorker() {
   socket.on('agent-is-idle', onAgentIsIdle);
   socket.on('agent-in-acw', onAgentInAcw);
   socket.on('agent-login-failed', onAgentLoginFailed);
+  socket.on('agent-was-logged-out', onAgentWasLoggedOut);
 
   // ─── Wildcard diagnostico ────────────────────────────────
   // Loga TODOS os eventos que chegam, para descobrir se existem

@@ -631,3 +631,27 @@ Necessidades que afetam multiplas telas e devem ser resolvidas cedo.
 - [ARQUITETURA] Regua por aluno (trigger-based): "aluno entrou na segmentacao pela primeira vez ha X dias". Util para boas-vindas, reconquista — P3
 - [INTEGRACAO] A/B test de templates numa mesma etapa (duas versoes enviadas em 50/50, metrica de conversao por variante) — P3
 - [ROTA] Dashboard de metricas avancado (graficos temporais, cohort, aging) — hoje so tem chip por etapa — P3
+
+---
+
+### Atividades / Agenda do Agente
+
+**Status MVP**: ✅ implementado em 2026-04-28 (commit pendente)
+- Schema `Atividade` — id, tipo (LEMBRETE_LIGACAO | LEMBRETE_MENSAGEM), titulo, descricao, dataHora, status, agenteId, pessoaCodigo/Nome, telefone, origem, origemRefId
+- Backend: `GET/POST/PATCH/DELETE /api/atividades` + `/concluir` + `/resumo`
+- Frontend: `/atendimento/atividades` (lista agrupada por dia, filtros por status, +1h/+1d, concluir, cancelar)
+- Atalhos no painel de ligação: 2 botões 1-clique ("Lembrete: ligar amanhã" / "Lembrete: WhatsApp amanhã") que criam atividade vinculada ao aluno automaticamente — default amanhã 09h BRT
+
+**🔜 Roadmap completo (V2 — quando time crescer ou houver demanda)**:
+
+- [MODEL] Tipos adicionais: `FOCO_SEGMENTACAO` (vincula RegraSegmentacao + bloco de tempo), `BLOCO_FOCO` (livre, sem entidade), `REUNIAO`, `TAREFA`, `CALLBACK_AGENDADO` (callback automatico baseado em hangup_cause da 3C Plus) — P2
+- [MODEL] Recorrência: `recorrencia: Json` com freq (DAILY/WEEKLY), dias da semana, fim da recorrência. Worker que materializa instâncias 30 dias à frente — P2
+- [UI] Visões adicionais: timeline semanal (7 colunas, slots de hora) + grid mensal (mini-calendar com pontos coloridos) — P2
+- [UI] Drag-and-drop entre slots de hora pra reagendar visualmente — P3
+- [UI] Atalhos equivalentes no painel de conversa WhatsApp ("Lembrete: ligar pra esse contato") — P2
+- [INTEGRACAO] Google Calendar bidirectional sync — exige extender `User` model com `googleAccessToken`, `googleRefreshToken`, `googleTokenExpiresAt`, `googleCalendarId`, `googleCalendarEnabled`. Botão "Conectar Google Calendar" em /configuracoes/perfil. Worker push/pull a cada 5min. Webhook do Google pra atualização incremental. Estimativa: 6-8h. Requer config no Google Cloud Console (OAuth client com escopo `calendar.events`) — P2
+- [NOTIFICACAO] Sistema de notificações in-app (sino com badge no header). Polling de `/atividades/resumo` a cada 60s. Drawer ao clicar com lista de vencidas + vencendo nas próximas 30min — P1 (alto valor pra adoção)
+- [NOTIFICACAO] Toast component reusável (atualmente sem lib) — necessário para feedback do botão "Lembrete" no painel de ligação. Hoje o botão muda de cor inline; com toast global, fica mais visível — P2
+- [WORKER] Cron diário 7h BRT: notificar via WhatsApp/email atividades do dia + resumo de vencidas — P2
+- [ANALYTICS] Métricas: % atividades concluidas no prazo, tempo médio entre criação e conclusão, taxa de conversão de atividade → acordo — P3
+- [SEGURANCA] Compartilhamento entre agentes (gestor pode ver ou atribuir atividades a agentes) — hoje cada agente vê só as próprias — P3

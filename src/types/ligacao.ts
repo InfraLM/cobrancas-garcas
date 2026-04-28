@@ -32,6 +32,7 @@ export type TipoEventoLigacao =
   | 'agent-is-idle'
   | 'agent-in-acw'
   | 'agent-login-failed'
+  | 'agent-was-logged-out'
   | 'call-was-created'
   | 'call-was-answered'
   | 'call-was-connected'
@@ -45,6 +46,7 @@ export const eventoLabel: Record<TipoEventoLigacao, string> = {
   'agent-is-idle': 'Agente disponível',
   'agent-in-acw': 'Pós-atendimento',
   'agent-login-failed': 'Falha no login',
+  'agent-was-logged-out': 'Agente deslogado',
   'call-was-created': 'Chamada criada',
   'call-was-answered': 'Cliente atendeu',
   'call-was-connected': 'Conectado ao agente',
@@ -61,6 +63,7 @@ export const categoriaEvento: Record<TipoEventoLigacao, CategoriaEvento> = {
   'agent-is-idle': 'info',
   'agent-in-acw': 'neutro',
   'agent-login-failed': 'erro',
+  'agent-was-logged-out': 'erro',
   'call-was-created': 'neutro',
   'call-was-answered': 'info',
   'call-was-connected': 'sucesso',

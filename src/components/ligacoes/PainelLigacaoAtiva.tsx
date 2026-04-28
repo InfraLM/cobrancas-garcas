@@ -1,9 +1,10 @@
 import { useState } from 'react';
 import type { LigacaoAtiva, EventoLigacao, QualificacaoLigacao } from '../../types/ligacao';
 import { formatarTelefone } from '../../mocks/ligacoes';
+import { criarAtividade } from '../../services/atividades';
 import LogEventos from './LogEventos';
 import TimerLigacao from './TimerLigacao';
-import { PhoneCall, PhoneOff, Banknote, PhoneForwarded, ExternalLink, BookOpen, CheckCircle, Activity, X } from 'lucide-react';
+import { PhoneCall, PhoneOff, Banknote, PhoneForwarded, ExternalLink, BookOpen, CheckCircle, Activity, X, MessageCircle, Calendar, Loader2 } from 'lucide-react';
 
 interface PainelLigacaoAtivaProps {
   ligacao: LigacaoAtiva | null;
@@ -16,6 +17,30 @@ interface PainelLigacaoAtivaProps {
   onDesativarWebRTC: () => void;
   onVerMaisAluno: () => void;
   onQualificarInline: (q: QualificacaoLigacao) => void;
+}
+
+// Cria atividade rapida (1-clique) para amanha 09:00 BRT
+async function criarLembreteRapido(
+  tipo: 'LEMBRETE_LIGACAO' | 'LEMBRETE_MENSAGEM',
+  ligacao: LigacaoAtiva,
+) {
+  const amanha = new Date();
+  amanha.setDate(amanha.getDate() + 1);
+  amanha.setHours(9, 0, 0, 0);
+  const nomeAluno = ligacao.aluno?.nome || formatarTelefone(ligacao.telefone);
+  const titulo = tipo === 'LEMBRETE_LIGACAO'
+    ? `Ligar para ${nomeAluno}`
+    : `Mandar WhatsApp para ${nomeAluno}`;
+  await criarAtividade({
+    tipo,
+    titulo,
+    dataHora: amanha.toISOString(),
+    pessoaCodigo: ligacao.aluno?.codigo,
+    pessoaNome: ligacao.aluno?.nome || undefined,
+    telefone: ligacao.telefone,
+    origem: 'DURANTE_LIGACAO',
+    origemRefId: ligacao.callId || undefined,
+  });
 }
 
 function formatarMoeda(v: number) {
@@ -182,12 +207,25 @@ export default function PainelLigacaoAtiva({
               <Banknote size={13} />
               Criar negociação
             </button>
+            <BotaoAtividadeRapida
+              tipo="LEMBRETE_LIGACAO"
+              label="Lembrete: ligar amanhã"
+              ligacao={ligacao!}
+              icone={<PhoneForwarded size={13} />}
+            />
+            <BotaoAtividadeRapida
+              tipo="LEMBRETE_MENSAGEM"
+              label="Lembrete: WhatsApp amanhã"
+              ligacao={ligacao!}
+              icone={<MessageCircle size={13} />}
+            />
+            {/* Botao "Agendar retorno" antigo era stub. Mantido oculto; agendamento agora vai para Atividades. */}
             <button
               onClick={onAgendarCallback}
-              className="flex items-center gap-2 h-9 px-4 rounded-lg bg-gray-800 text-gray-300 text-[0.8125rem] font-medium hover:bg-gray-700 transition-colors border border-gray-700"
+              className="hidden"
+              aria-hidden
             >
-              <PhoneForwarded size={13} />
-              Agendar retorno
+              {/* legado */}
             </button>
           </div>
         )}
@@ -269,5 +307,52 @@ export default function PainelLigacaoAtiva({
         </div>
       </aside>
     </div>
+  );
+}
+
+// ----------------------------------------------------------------------
+// Botao 1-clique pra criar lembrete (ligacao ou whatsapp) durante a chamada.
+// Default: amanha 09:00 BRT, com aluno ja vinculado. Mostra feedback inline.
+// ----------------------------------------------------------------------
+function BotaoAtividadeRapida({
+  tipo, label, ligacao, icone,
+}: {
+  tipo: 'LEMBRETE_LIGACAO' | 'LEMBRETE_MENSAGEM';
+  label: string;
+  ligacao: LigacaoAtiva;
+  icone: React.ReactNode;
+}) {
+  const [estado, setEstado] = useState<'idle' | 'salvando' | 'ok' | 'erro'>('idle');
+
+  async function handle() {
+    if (estado === 'salvando' || estado === 'ok') return;
+    setEstado('salvando');
+    try {
+      await criarLembreteRapido(tipo, ligacao);
+      setEstado('ok');
+      setTimeout(() => setEstado('idle'), 2500);
+    } catch {
+      setEstado('erro');
+      setTimeout(() => setEstado('idle'), 2500);
+    }
+  }
+
+  return (
+    <button
+      onClick={handle}
+      disabled={estado === 'salvando'}
+      className={`flex items-center gap-2 h-9 px-4 rounded-lg text-[0.8125rem] font-medium transition-colors border ${
+        estado === 'ok' ? 'bg-emerald-900/40 text-emerald-300 border-emerald-800' :
+        estado === 'erro' ? 'bg-red-900/40 text-red-300 border-red-800' :
+        'bg-gray-800 text-gray-300 border-gray-700 hover:bg-gray-700'
+      }`}
+    >
+      {estado === 'salvando' ? <Loader2 size={13} className="animate-spin" /> :
+       estado === 'ok' ? <CheckCircle size={13} /> :
+       icone}
+      {estado === 'ok' ? 'Agendado p/ amanhã 9h' :
+       estado === 'erro' ? 'Erro ao agendar' :
+       label}
+    </button>
   );
 }

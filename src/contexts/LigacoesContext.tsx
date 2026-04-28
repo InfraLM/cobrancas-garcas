@@ -283,6 +283,23 @@ export function LigacoesProvider({ children }: { children: ReactNode }) {
         log('erro', 'Login na campanha FALHOU via Socket', evento.metadados);
         break;
 
+      case 'agent-was-logged-out':
+        // A 3C Plus deslogou o agente da campanha (timeout ACW, kick remoto, etc).
+        // Limpa a UI e marca offline da campanha — o agente precisa clicar em
+        // "Online" / re-selecionar tipo para voltar a operar.
+        log('erro', 'Agente foi DESLOGADO da campanha pela 3C Plus', evento.metadados);
+        if (autoQualifyTimerRef.current) {
+          clearTimeout(autoQualifyTimerRef.current);
+          autoQualifyTimerRef.current = null;
+        }
+        setStatusConexao(prev => ({ ...prev, agenteOnline: false }));
+        setLigacaoAtiva(null);
+        setLigacaoEncerrada(null);
+        setEstadoPagina('IDLE');
+        setTipoLigacao(null);
+        setConfiguracaoCampanha(null);
+        break;
+
       case 'call-was-created': {
         const callId = call.telephony_id || call.id || undefined;
         const telefone = evento.telefone || call.phone || '';
@@ -368,23 +385,31 @@ export function LigacoesProvider({ children }: { children: ReactNode }) {
           const prev = ligacaoAtivaRef.current;
           if (prev) {
             setLigacaoEncerrada({ ...prev, status: 'encerrada' });
-            // Auto-qualify timer: se o agente nao classificar em 30s, o sistema
-            // qualifica automaticamente para tirar o agente do ACW e o discador
-            // mandar a proxima chamada. Usa qualificacao "neutra" (primeira
-            // is_positive=false), com fallback para a primeira da lista.
+            // Auto-qualify timer: a 3C Plus desloga o agente da campanha apos
+            // ~60s em ACW sem qualificar. Usamos 12s para dar margem de seguranca.
+            // Tenta a primeira qualificacao "neutra" (is_positive=false) e cai
+            // para a primeira disponivel se nao houver.
             if (autoQualifyTimerRef.current) clearTimeout(autoQualifyTimerRef.current);
             autoQualifyTimerRef.current = setTimeout(async () => {
               const enc = ligacaoEncerradaRef.current;
-              if (!enc?.callId) return;
+              if (!enc?.callId) {
+                log('sistema', 'Auto-qualify pulado: sem callId');
+                autoQualifyTimerRef.current = null;
+                return;
+              }
               const lista = qualificacoes.length > 0 ? qualificacoes : qualificacoesMock;
               const padrao = lista.find(q => q.is_positive === false) || lista[0];
-              if (!padrao) return;
-              log('sistema', `Auto-qualify (30s): ${padrao.nome}`);
+              if (!padrao) {
+                log('erro', 'Auto-qualify pulado: nenhuma qualificacao disponivel');
+                autoQualifyTimerRef.current = null;
+                return;
+              }
+              log('sistema', `Auto-qualify (12s): ${padrao.nome} (id=${padrao.id})`);
               const ok = await real3c.qualificarChamada(enc.callId, padrao.id);
-              log('http', ok ? 'Auto-qualify OK — discador liberado' : 'Auto-qualify falhou');
+              log('http', ok ? `Auto-qualify OK — discador liberado` : `Auto-qualify FALHOU — agente pode ser deslogado da campanha`);
               setLigacaoEncerrada(null);
               autoQualifyTimerRef.current = null;
-            }, 30000);
+            }, 12000);
           }
           setLigacaoAtiva(null);
           setIlhaAtiva(false);

@@ -2302,3 +2302,37 @@ model DocumentoFicouFacil {
   @@index([ficouFacilId])
   @@map("documento_ficou_facil")
 }
+
+model Atividade {
+  id              String    @id @default(uuid())
+  tipo            String    // LEMBRETE_MENSAGEM | LEMBRETE_LIGACAO
+  titulo          String
+  descricao       String?
+  status          String    @default("PENDENTE")  // PENDENTE | CONCLUIDA | CANCELADA
+
+  dataHora        DateTime  // quando o agente quer ser lembrado
+
+  // Dono da atividade
+  agenteId        Int
+  agenteNome      String
+
+  // Aluno alvo (opcional — atalhos rápidos do discador sempre vinculam)
+  pessoaCodigo    Int?
+  pessoaNome      String?
+  telefone        String?   // copiado do registro_ligacao para nao depender de FK
+
+  // Origem (rastreabilidade)
+  origem          String    @default("MANUAL")
+                            // MANUAL | DURANTE_LIGACAO | DURANTE_CONVERSA
+  origemRefId     String?   // callId / conversaId
+
+  metadados       Json?
+  criadoEm        DateTime  @default(now())
+  atualizadoEm    DateTime  @updatedAt
+  concluidoEm     DateTime?
+
+  @@index([agenteId, dataHora])
+  @@index([status, dataHora])
+  @@index([pessoaCodigo])
+  @@map("atividade")
+}

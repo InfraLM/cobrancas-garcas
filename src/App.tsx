@@ -20,6 +20,7 @@ import RepositorioPage from './pages/RepositorioPage';
 import ConfiguracoesPage from './pages/ConfiguracoesPage';
 import UsuariosPage from './pages/UsuariosPage';
 import TemplatesWhatsappPage from './pages/TemplatesWhatsappPage';
+import AtividadesPage from './pages/AtividadesPage';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, loading } = useAuth();
@@ -55,6 +56,7 @@ function App() {
             <Route path="/atendimento/conversas" element={<ConversasPage />} />
             <Route path="/atendimento/ligacoes" element={<LigacoesPage />} />
             <Route path="/atendimento/disparos" element={<DisparosPage />} />
+            <Route path="/atendimento/atividades" element={<AtividadesPage />} />
             <Route path="/workflow/negociacoes" element={<WorkflowNegociacoesPage />} />
             <Route path="/workflow/recorrencia" element={<WorkflowRecorrenciaPage />} />
             <Route path="/workflow/ficou-facil" element={<WorkflowFicouFacilPage />} />

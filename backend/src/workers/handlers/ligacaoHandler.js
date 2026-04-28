@@ -120,12 +120,16 @@ export async function onCallCreated(payload) {
   await persistirEventoRaw('call-was-created', payload);
   const telefone = call.phone || '';
 
-  // Vincular pessoa pelo telefone
+  // Vincular pessoa pelo telefone — pega codigo E nome (importante: a ocorrencia
+  // criada em onCallHistoryCreated le pessoaNome do registro, e se nao gravarmos
+  // aqui, a ocorrencia sai sem nome do aluno).
   let pessoaCodigo = null;
+  let pessoaNome = null;
   if (telefone) {
     try {
       const pessoa = await vincularPessoa(telefone);
       pessoaCodigo = pessoa?.codigo || null;
+      pessoaNome = pessoa?.nome || null;
     } catch { /* ignora */ }
   }
 
@@ -138,6 +142,7 @@ export async function onCallCreated(payload) {
     dataHoraChamada: new Date(),
     status: Number(call.status) || 0,
     pessoaCodigo,
+    pessoaNome,
   });
   emitirEvento('call-was-created', payload);
 }
@@ -301,7 +306,9 @@ export async function onCallHistoryCreated(payload) {
     qualificacaoPositiva: hist.qualification?.is_positive ?? null,
     status: Number(hist.status) || undefined,
     hangupCause: Number(hist.hangup_cause) || undefined,
-    amdStatus: hist.amd_status || null,
+    // amdStatus eh String no schema; a 3C Plus eventualmente manda como
+    // numero (1=human, 2=machine, ...). Coage para string para nao quebrar o upsert.
+    amdStatus: hist.amd_status != null ? String(hist.amd_status) : null,
   });
   emitirEvento('call-history-was-created', payload);
 
@@ -362,4 +369,18 @@ export async function onAgentLoginFailed(payload) {
   registrarProcessado();
   await persistirEventoRaw('agent-login-failed', payload);
   emitirEvento('agent-login-failed', payload);
+}
+
+// agent-was-logged-out: a 3C Plus deslogou o agente (geralmente por timeout
+// de ACW). Frontend usa pra alertar o agente e oferecer re-login automatico.
+export async function onAgentWasLoggedOut(payload) {
+  registrarRecebido();
+  const agentId = Number(payload?.agent?.id) || Number(payload?.id) || null;
+  if (!agentId || !isAgenteNosso(agentId)) {
+    registrarFiltrado();
+    return;
+  }
+  registrarProcessado();
+  await persistirEventoRaw('agent-was-logged-out', payload);
+  emitirEvento('agent-was-logged-out', payload);
 }
