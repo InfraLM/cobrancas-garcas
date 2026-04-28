@@ -85,6 +85,15 @@ const CAMPO_MAP = {
   titulo_dias_ate_vencimento:  { sql: '(cr.datavencimento::date - CURRENT_DATE)', join: null, escopos: ['TITULO'] },
   titulo_dias_apos_vencimento: { sql: '(CURRENT_DATE - cr.datavencimento::date)', join: null, escopos: ['TITULO'] },
   titulo_data_vencimento:      { sql: 'cr.datavencimento::date', join: null, tipo: 'data', escopos: ['TITULO'] },
+  // Ultima data de recebimento do titulo (subquery em contareceberrecebimento).
+  // Para titulos pagos integralmente eh a data da quitacao; para parciais, a do
+  // ultimo recebimento. NULL para titulos AR sem nenhum recebimento.
+  titulo_data_recebimento:     {
+    sql: '(SELECT MAX(crr.datarecebimento)::date FROM cobranca.contareceberrecebimento crr WHERE crr.contareceber = cr.codigo)',
+    join: null,
+    tipo: 'data',
+    escopos: ['TITULO'],
+  },
 };
 
 // CTEs disponiveis (adicionadas sob demanda)

@@ -102,6 +102,7 @@ export const CAMPOS_SEGMENTACAO: CampoSegmentacao[] = [
   { id: 'titulo_dias_ate_vencimento', label: 'Dias até o vencimento', categoria: 'Título', tipo: 'numero', operadores: ['igual', 'maior', 'menor', 'entre'], escopos: SO_TITULO },
   { id: 'titulo_dias_apos_vencimento', label: 'Dias após vencimento', categoria: 'Título', tipo: 'numero', operadores: ['igual', 'maior', 'menor', 'entre'], escopos: SO_TITULO },
   { id: 'titulo_data_vencimento', label: 'Data de vencimento', categoria: 'Título', tipo: 'data', operadores: ['igual', 'maior', 'menor', 'entre'], escopos: SO_TITULO },
+  { id: 'titulo_data_recebimento', label: 'Data de recebimento', categoria: 'Título', tipo: 'data', operadores: ['igual', 'maior', 'menor', 'entre'], escopos: SO_TITULO },
 ];
 
 export const OPERADOR_LABELS: Record<Operador, string> = {
