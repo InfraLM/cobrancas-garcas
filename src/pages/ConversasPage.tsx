@@ -121,6 +121,13 @@ export default function ConversasPage() {
       // Se a mensagem é da conversa ativa, adiciona ou atualiza (para ack)
       const ativa = conversaAtivaRef.current;
       if (ativa && ativa.chatId === conversa.chatId) {
+        // Mensagem nova chegou em chat ja aberto pelo agente — marca como lida
+        // imediatamente. Mantem o badge visualmente em zero (idempotente).
+        const msgFromMe = payload.mensagem?.fromMe ?? false;
+        if (!msgFromMe && conversa.naoLidos > 0) {
+          setConversas(prev => prev.map(x => x.id === conversa.id ? { ...x, naoLidos: 0 } : x));
+          conversasCobrancaService.marcarLido(conversa.id).catch(() => {});
+        }
         const msg = payload.mensagem;
         const idReal = msg.mensagemExternaId || msg.id;
         const normalizada: Mensagem3CPlus = {
@@ -193,6 +200,14 @@ export default function ConversasPage() {
   const handleSelecionar = useCallback(async (c: ConversaCobranca) => {
     setConversaAtiva(c);
     setMensagens([]);
+
+    // Zera contador de nao lidas no servidor + update otimista local
+    if (c.naoLidos > 0) {
+      setConversas(prev => prev.map(x => x.id === c.id ? { ...x, naoLidos: 0 } : x));
+      conversasCobrancaService.marcarLido(c.id).catch(err => {
+        console.error('[ConversasPage] Erro ao marcar como lido:', err);
+      });
+    }
 
     try {
       const { mensagens: msgs } = await conversasCobrancaService.obterConversa(c.id);

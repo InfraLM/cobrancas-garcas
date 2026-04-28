@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { requireAuth } from '../middleware/auth.js';
 import {
-  listar, obter, assumir, encerrar, transferir, snooze, reativar,
+  listar, obter, assumir, encerrar, transferir, snooze, reativar, marcarLido,
 } from '../controllers/conversaCobrancaController.js';
 
 const router = Router();
@@ -13,5 +13,6 @@ router.post('/:id/encerrar', requireAuth, encerrar);
 router.post('/:id/transferir', requireAuth, transferir);
 router.post('/:id/snooze', requireAuth, snooze);
 router.post('/:id/reativar', requireAuth, reativar);
+router.post('/:id/marcar-lido', requireAuth, marcarLido);
 
 export default router;

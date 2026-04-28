@@ -93,7 +93,9 @@ export default function ChatItem({ conversa, ativo, onClick }: ChatItemProps) {
               <Clock size={11} className="text-amber-500 shrink-0" aria-label="Adiado" />
             )}
           </span>
-          <span className="text-[0.625rem] text-gray-400 shrink-0 ml-2">
+          <span className={`text-[0.625rem] shrink-0 ml-2 ${
+            conversa.naoLidos > 0 ? 'text-blue-600 font-semibold' : 'text-gray-400'
+          }`}>
             {formatarTimestampChat(ultimaMsgTs)}
           </span>
         </div>
@@ -128,6 +130,14 @@ export default function ChatItem({ conversa, ativo, onClick }: ChatItemProps) {
           )}
           {conversa.temAcordoAtivo && (
             <Handshake size={10} className="text-emerald-500 shrink-0" aria-label="Acordo ativo" />
+          )}
+          {conversa.naoLidos > 0 && (
+            <span
+              className="ml-auto inline-flex items-center justify-center bg-blue-500 text-white text-[0.625rem] font-semibold rounded-full min-w-[18px] h-[18px] px-1 shrink-0"
+              aria-label={`${conversa.naoLidos} mensagens nao lidas`}
+            >
+              {conversa.naoLidos > 99 ? '99+' : conversa.naoLidos}
+            </span>
           )}
         </div>
       </div>

@@ -9,6 +9,7 @@
  * - POST   /:id/transferir    { agenteId }
  * - POST   /:id/snooze        { reativarEm } → SNOOZE
  * - POST   /:id/reativar      → AGUARDANDO
+ * - POST   /:id/marcar-lido   zera contador de mensagens nao lidas
  */
 
 import { prisma } from '../config/database.js';
@@ -32,7 +33,7 @@ export async function listar(req, res, next) {
       where,
       orderBy: [
         { status: 'asc' },
-        { ultimaMensagemCliente: 'desc' },
+        { ultimaAtividadeEm: 'desc' },
       ],
       take: 200,
     });
@@ -193,6 +194,22 @@ export async function reativar(req, res, next) {
         status: 'AGUARDANDO',
         reativarEm: null,
       },
+    });
+    broadcastAtualizacao(conversa);
+    res.json(conversa);
+  } catch (error) {
+    next(error);
+  }
+}
+
+// ─── Marcar como lido (zera contador) ─────────────────────
+export async function marcarLido(req, res, next) {
+  try {
+    const { id } = req.params;
+
+    const conversa = await prisma.conversaCobranca.update({
+      where: { id },
+      data: { naoLidos: 0 },
     });
     broadcastAtualizacao(conversa);
     res.json(conversa);

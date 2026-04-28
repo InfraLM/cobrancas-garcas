@@ -89,3 +89,12 @@ export async function reativarConversa(id: string): Promise<ConversaCobranca> {
   if (!res.ok) throw new Error(`Erro ao reativar: ${res.status}`);
   return res.json();
 }
+
+export async function marcarLido(id: string): Promise<ConversaCobranca> {
+  const res = await fetch(`${API_BASE}/${id}/marcar-lido`, {
+    method: 'POST',
+    headers: getHeaders(),
+  });
+  if (!res.ok) throw new Error(`Erro ao marcar como lido: ${res.status}`);
+  return res.json();
+}

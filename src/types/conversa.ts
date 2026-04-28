@@ -36,11 +36,13 @@ export interface ConversaCobranca {
   prioridadeFaixa: 'ALTA' | 'MEDIA' | 'BAIXA';
   ultimaMensagemCliente: string | null;
   ultimaMensagemAgente: string | null;
+  ultimaAtividadeEm: string | null;
   aguardandoRespostaDesde: string | null;
   reativarEm: string | null;
   ultimaMensagemTexto: string | null;
   ultimaMensagemTipo: string | null;
   ultimaMensagemFromMe: boolean | null;
+  naoLidos: number;
   criadoEm: string;
   atualizadoEm: string;
   encerradoEm: string | null;

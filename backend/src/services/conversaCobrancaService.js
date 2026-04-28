@@ -168,10 +168,12 @@ export async function upsertConversa({ chatData, messageData }) {
         acordoId: metricas.acordoId,
         ultimaMensagemCliente: fromMe ? null : quandoMensagem,
         ultimaMensagemAgente: fromMe ? quandoMensagem : null,
+        ultimaAtividadeEm: quandoMensagem,
         aguardandoRespostaDesde: fromMe ? null : quandoMensagem,
         ultimaMensagemTexto: textoMsg,
         ultimaMensagemTipo: tipoMsg,
         ultimaMensagemFromMe: fromMe,
+        naoLidos: fromMe ? 0 : 1,
       },
     });
   }
@@ -193,6 +195,8 @@ export async function upsertConversa({ chatData, messageData }) {
     ultimaMensagemTexto: textoMsg,
     ultimaMensagemTipo: tipoMsg,
     ultimaMensagemFromMe: fromMe,
+    // Bumpa atividade tanto no envio quanto no recebimento (ordering)
+    ultimaAtividadeEm: quandoMensagem,
   };
 
   if (fromMe) {
@@ -200,6 +204,7 @@ export async function upsertConversa({ chatData, messageData }) {
   } else {
     patch.ultimaMensagemCliente = quandoMensagem;
     patch.aguardandoRespostaDesde = quandoMensagem;
+    patch.naoLidos = { increment: 1 };
 
     // Se estava encerrada e cliente voltou, reabre como AGUARDANDO
     if (existente.status === 'ENCERRADA') {

@@ -1847,6 +1847,7 @@ model ConversaCobranca {
   // SLA / metricas
   ultimaMensagemCliente   DateTime?
   ultimaMensagemAgente    DateTime?
+  ultimaAtividadeEm       DateTime?
   aguardandoRespostaDesde DateTime?
   reativarEm              DateTime?
 
@@ -1855,11 +1856,14 @@ model ConversaCobranca {
   ultimaMensagemTipo      String?
   ultimaMensagemFromMe    Boolean?
 
+  // Contador de mensagens recebidas nao lidas pelo agente
+  naoLidos                Int       @default(0)
+
   criadoEm                DateTime  @default(now())
   atualizadoEm            DateTime  @updatedAt
   encerradoEm             DateTime?
 
-  @@index([status, ultimaMensagemCliente(sort: Desc)])
+  @@index([status, ultimaAtividadeEm(sort: Desc)])
   @@index([agenteId, status])
   @@index([pessoaCodigo])
   @@index([instanciaId, status])
