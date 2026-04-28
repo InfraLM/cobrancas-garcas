@@ -316,13 +316,18 @@ export async function onCallHistoryCreated(payload) {
   try {
     const registro = await prisma.registroLigacao.findFirst({ where: { telephonyId: telId } });
     if (registro?.pessoaCodigo) {
-      const atendida = Number(hist.speaking_time) > 0;
+      // Limite minimo de 4s de fala para contar como contato efetivo
+      // (filtra "alo, errou, desliga" que ficam tipicamente em 1-3s).
+      const speaking = Number(hist.speaking_time) || 0;
+      const atendida = speaking >= 4;
       await prisma.ocorrencia.create({
         data: {
           tipo: atendida ? 'LIGACAO_EFETUADA' : 'LIGACAO_NAO_ATENDIDA',
           descricao: atendida
-            ? `Ligação ${hist.call_mode || ''} — ${hist.speaking_time || 0}s${hist.qualification?.name ? ` — ${hist.qualification.name}` : ''}`
-            : `Ligação ${hist.call_mode || ''} — não atendida`,
+            ? `Ligação ${hist.call_mode || ''} — ${speaking}s${hist.qualification?.name ? ` — ${hist.qualification.name}` : ''}`
+            : speaking > 0
+              ? `Ligação ${hist.call_mode || ''} — fala curta (${speaking}s)`
+              : `Ligação ${hist.call_mode || ''} — não atendida`,
           origem: 'SOCKET_3CPLUS',
           pessoaCodigo: registro.pessoaCodigo,
           pessoaNome: registro.pessoaNome,

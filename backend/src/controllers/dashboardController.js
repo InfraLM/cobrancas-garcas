@@ -650,8 +650,8 @@ async function calcularFicouFacil() {
 //   - Tentativa de Contato: ligacao OU whatsapp enviado por agente no periodo.
 //     Disparos automaticos da regua NAO entram: eles usam Blip Router direto
 //     e nao populam mensagem_whatsapp (so disparo_mensagem).
-//   - Contato Realizado: subset da tentativa onde ligacao foi falada
-//     (tempoFalando > 0) OU aluno respondeu whatsapp (fromMe=false).
+//   - Contato Realizado: subset da tentativa onde ligacao teve fala
+//     >= 4s (filtra "alo, errou, desliga") OU aluno respondeu whatsapp (fromMe=false).
 //   - Negociado: acordos criados no periodo (exceto cancelados).
 //   - Recuperado: acordos concluidos no periodo.
 //
@@ -689,7 +689,7 @@ export async function obterFunil(req, res, next) {
           FROM cobranca.registro_ligacao
           WHERE "pessoaCodigo" IS NOT NULL
             AND "dataHoraChamada" >= $1
-            AND COALESCE("tempoFalando", 0) > 0
+            AND COALESCE("tempoFalando", 0) >= 4
           UNION
           SELECT DISTINCT "pessoaCodigo" AS pessoa
           FROM cobranca.mensagem_whatsapp
