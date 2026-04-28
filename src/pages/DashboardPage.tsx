@@ -10,9 +10,11 @@ import {
   CreditCard, Landmark
 } from 'lucide-react';
 
+interface FormaPagamento { forma: string; qtd: number; valor: number }
 interface DashboardData {
   kpis: any; aging: any[]; agingHistorico: any[]; recorrentesHistorico: any[];
-  acumuladoAlunos: any[]; ficouFacil: any; pagoPorAging: any[]; pagoPorForma: any[];
+  acumuladoAlunos: any[]; ficouFacil: any; pagoPorAging: any[];
+  pagoPorForma: { competencia: FormaPagamento[]; caixa: FormaPagamento[] };
   atualizadoEm: string;
 }
 
@@ -25,6 +27,19 @@ function fmtK(v: number) {
 
 const AGING_COLORS = { '0-5': '#818cf8', '6-30': '#a78bfa', '31-90': '#f59e0b', '90+': '#fbbf24' };
 
+// Series cujo valor representa DINHEIRO. As demais sao contagem de alunos (numero plano)
+// ou percentual (detectado por p.unit === '%').
+const SERIES_MONETARIAS = new Set([
+  '0-5 dias', '6-30 dias', '31-90 dias', '90+ dias',
+]);
+
+function formatarValorTooltip(p: any): string {
+  if (typeof p.value !== 'number') return String(p.value);
+  if (p.unit === '%') return `${p.value}%`;
+  if (SERIES_MONETARIAS.has(p.name)) return fmtK(p.value);
+  return p.value.toLocaleString('pt-BR');
+}
+
 const CustomTooltip = ({ active, payload, label }: any) => {
   if (!active || !payload) return null;
   return (
@@ -34,7 +49,7 @@ const CustomTooltip = ({ active, payload, label }: any) => {
         <div key={i} className="flex items-center gap-2">
           <div className="w-2 h-2 rounded-full" style={{ backgroundColor: p.color }} />
           <span className="text-on-surface-variant">{p.name}:</span>
-          <span className="font-semibold">{typeof p.value === 'number' && p.value > 100 ? fmtK(p.value) : p.value}{p.unit || ''}</span>
+          <span className="font-semibold">{formatarValorTooltip(p)}</span>
         </div>
       ))}
     </div>
@@ -50,6 +65,10 @@ export default function DashboardPage() {
   const [funil, setFunil] = useState<FunilEtapa[]>([]);
   const [periodoFunil, setPeriodoFunil] = useState<PeriodoFunil>('30d');
   const [loadingFunil, setLoadingFunil] = useState(false);
+
+  // "Recuperado por Forma de Pagamento": competencia (todo valor confirmado)
+  // ou caixa (so o que entrou). Toggle local.
+  const [visaoForma, setVisaoForma] = useState<'competencia' | 'caixa'>('competencia');
 
   const carregar = useCallback(async (forcar = false) => {
     try {
@@ -236,32 +255,56 @@ export default function DashboardPage() {
         </div>
 
         <div className="bg-white rounded-2xl p-5 shadow-sm">
-          <h3 className="text-[0.8125rem] font-bold mb-1">Recuperado por Forma de Pagamento</h3>
-          <p className="text-[0.6875rem] text-on-surface-variant mb-3">Quantidade e valor por método</p>
-          {pagoPorForma.length > 0 ? (
-            <div className="space-y-1.5">
-              {pagoPorForma.map((r: any) => {
-                const maxVal = Math.max(...pagoPorForma.map((x: any) => x.valor || 1));
-                const pct = r.valor / maxVal * 100;
-                return (
-                  <div key={r.forma} className="flex items-center gap-3 text-[0.8125rem]">
-                    <span className="w-28 text-on-surface-variant shrink-0 truncate">{r.forma}</span>
-                    <span className="w-6 text-center font-bold text-on-surface text-[0.75rem]">{r.qtd}</span>
-                    <div className="flex-1 h-4 bg-gray-50 rounded-sm overflow-hidden">
-                      <div className="h-full bg-gradient-to-r from-red-400 to-red-300 rounded-sm transition-all" style={{ width: `${Math.max(5, pct)}%` }} />
-                    </div>
-                    <span className="w-24 text-right font-semibold text-on-surface text-[0.75rem] shrink-0">{fmtK(r.valor)}</span>
-                  </div>
-                );
-              })}
-              <div className="border-t border-gray-100 pt-2 mt-2 flex justify-between text-[0.8125rem] font-bold">
-                <span className="text-on-surface-variant">Total</span>
-                <span className="text-on-surface">{fmt(pagoPorForma.reduce((s: number, r: any) => s + r.valor, 0))}</span>
-              </div>
+          <div className="flex items-center justify-between mb-1">
+            <h3 className="text-[0.8125rem] font-bold">Recuperado por Forma de Pagamento</h3>
+            <div className="inline-flex rounded-lg bg-gray-100 p-0.5 text-[0.6875rem]">
+              <button
+                onClick={() => setVisaoForma('competencia')}
+                className={`px-2.5 py-1 rounded-md transition-colors ${visaoForma === 'competencia' ? 'bg-white shadow-sm font-semibold text-on-surface' : 'text-on-surface-variant hover:text-on-surface'}`}
+              >
+                Competência
+              </button>
+              <button
+                onClick={() => setVisaoForma('caixa')}
+                className={`px-2.5 py-1 rounded-md transition-colors ${visaoForma === 'caixa' ? 'bg-white shadow-sm font-semibold text-on-surface' : 'text-on-surface-variant hover:text-on-surface'}`}
+              >
+                Caixa
+              </button>
             </div>
-          ) : (
-            <p className="text-[0.8125rem] text-on-surface-variant py-8 text-center">Nenhum pagamento registrado</p>
-          )}
+          </div>
+          <p className="text-[0.6875rem] text-on-surface-variant mb-3">
+            {visaoForma === 'competencia'
+              ? 'Todo valor confirmado, mesmo que parcelado'
+              : 'Apenas o valor que efetivamente entrou'}
+          </p>
+          {(() => {
+            const formas = pagoPorForma[visaoForma] || [];
+            if (formas.length === 0) {
+              return <p className="text-[0.8125rem] text-on-surface-variant py-8 text-center">Nenhum pagamento registrado</p>;
+            }
+            const maxVal = Math.max(...formas.map(x => x.valor || 1));
+            return (
+              <div className="space-y-1.5">
+                {formas.map(r => {
+                  const pct = r.valor / maxVal * 100;
+                  return (
+                    <div key={r.forma} className="flex items-center gap-3 text-[0.8125rem]">
+                      <span className="w-28 text-on-surface-variant shrink-0 truncate">{r.forma}</span>
+                      <span className="w-6 text-center font-bold text-on-surface text-[0.75rem]">{r.qtd}</span>
+                      <div className="flex-1 h-4 bg-gray-50 rounded-sm overflow-hidden">
+                        <div className="h-full bg-gradient-to-r from-red-400 to-red-300 rounded-sm transition-all" style={{ width: `${Math.max(5, pct)}%` }} />
+                      </div>
+                      <span className="w-24 text-right font-semibold text-on-surface text-[0.75rem] shrink-0">{fmtK(r.valor)}</span>
+                    </div>
+                  );
+                })}
+                <div className="border-t border-gray-100 pt-2 mt-2 flex justify-between text-[0.8125rem] font-bold">
+                  <span className="text-on-surface-variant">Total</span>
+                  <span className="text-on-surface">{fmt(formas.reduce((s, r) => s + r.valor, 0))}</span>
+                </div>
+              </div>
+            );
+          })()}
         </div>
       </div>
 
@@ -291,7 +334,7 @@ export default function DashboardPage() {
             <ComposedChart data={acumuladoAlunos} margin={{ top: 5, right: 10, left: 5, bottom: 5 }}>
               <XAxis dataKey="label" tick={{ fontSize: 10, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
               <YAxis yAxisId="left" tick={{ fontSize: 10, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
-              <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 10, fill: '#94a3b8' }} tickFormatter={(v: number) => `${v}%`} domain={[0, 'auto']} axisLine={false} tickLine={false} />
+              <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 10, fill: '#94a3b8' }} tickFormatter={(v: number) => `${v}%`} domain={[10, 40]} axisLine={false} tickLine={false} />
               <Tooltip content={<CustomTooltip />} />
               <Legend wrapperStyle={{ fontSize: 10, paddingTop: 8 }} iconType="square" iconSize={8} />
               <Bar yAxisId="left" dataKey="acumulado" name="Novos alunos (acumulado)" fill="#1e5a8a" radius={[3, 3, 0, 0]} />

@@ -24,10 +24,9 @@ export async function obterDashboard(req, res, next) {
     console.log('[Dashboard] Calculando metricas...');
     const startTime = Date.now();
 
-    // Rodar todas as queries em paralelo (funil fica em endpoint proprio:
-    // GET /api/dashboard/funil — tem filtro de periodo dinamico).
-    const [kpis, aging, agingHistorico, recorrentesHistorico, acumuladoAlunos, ficouFacil, pagoPorAging, pagoPorForma] = await Promise.all([
-      calcularKPIs(),
+    // recorrentesHistorico precisa rodar antes do KPI porque a taxaRecorrencia
+    // do card usa a ultima semana dele (mesmo universo do grafico "Composicao").
+    const [aging, agingHistorico, recorrentesHistorico, acumuladoAlunos, ficouFacil, pagoPorAging, pagoPorForma] = await Promise.all([
       calcularAging(),
       calcularAgingHistorico(),
       calcularRecorrentesHistorico(),
@@ -36,6 +35,7 @@ export async function obterDashboard(req, res, next) {
       calcularPagoPorAging(),
       calcularPagoPorForma(),
     ]);
+    const kpis = await calcularKPIs(recorrentesHistorico);
 
     const data = { kpis, aging, agingHistorico, recorrentesHistorico, acumuladoAlunos, ficouFacil, pagoPorAging, pagoPorForma, atualizadoEm: new Date().toISOString() };
 
@@ -54,7 +54,7 @@ export async function obterDashboard(req, res, next) {
 // -----------------------------------------------
 // KPIs principais
 // -----------------------------------------------
-async function calcularKPIs() {
+async function calcularKPIs(recorrentesHistorico) {
   const rows = await prisma.$queryRawUnsafe(`
     SELECT
       COUNT(*)::int AS total_alunos,
@@ -76,20 +76,15 @@ async function calcularKPIs() {
     FROM cobranca.acordo_financeiro
   `);
 
-  // Recorrencia ativa restrita ao mesmo universo de alunos do KPI totalAlunos
-  // (alunos matriculados em curso=1, nao-funcionarios) — pra taxaRecorrencia bater.
-  const recorrencia = await prisma.$queryRawUnsafe(`
-    WITH ultima_rec AS (
-      SELECT DISTINCT ON (pessoa) pessoa, datacadastro, datainativacao
-      FROM cobranca.cartaocreditodebitorecorrenciapessoa
-      WHERE pessoa IS NOT NULL
-      ORDER BY pessoa, datacadastro DESC NULLS LAST
-    )
-    SELECT COUNT(*)::int AS total_com_recorrencia
-    FROM ultima_rec ur
-    JOIN cobranca.aluno_resumo ar ON ar.codigo = ur.pessoa
-    WHERE ur.datainativacao IS NULL OR ur.datainativacao > CURRENT_TIMESTAMP
-  `);
+  // KPI de recorrencia usa a ULTIMA SEMANA do calcularRecorrentesHistorico —
+  // mesmo universo (turmas whitelist + cancelamento/trancamento) — para que o
+  // numero do card "Recorrencia" bate com o grafico "Composicao".
+  const ultimaSemana = recorrentesHistorico[recorrentesHistorico.length - 1];
+  const alunosComRecorrencia = ultimaSemana?.recorrentes || 0;
+  const totalAtivosRecorrencia = ultimaSemana?.totalAtivos || 0;
+  const taxaRecorrencia = totalAtivosRecorrencia > 0
+    ? (alunosComRecorrencia / totalAtivosRecorrencia * 100).toFixed(1)
+    : '0.0';
 
   return {
     totalAlunos: r.total_alunos,
@@ -100,8 +95,8 @@ async function calcularKPIs() {
     acordosTotal: acordos[0].total,
     acordosConcluidos: acordos[0].concluidos,
     valorRecuperado: Number(acordos[0].valor_recuperado),
-    alunosComRecorrencia: recorrencia[0].total_com_recorrencia,
-    taxaRecorrencia: r.total_alunos > 0 ? (recorrencia[0].total_com_recorrencia / r.total_alunos * 100).toFixed(1) : 0,
+    alunosComRecorrencia,
+    taxaRecorrencia,
   };
 }
 
@@ -209,51 +204,147 @@ async function calcularAgingHistorico() {
 }
 
 // -----------------------------------------------
-// Recorrentes vs nao-recorrentes por semana
+// Recorrentes vs nao-recorrentes por semana — portado literal do
+// dashboard/query-recorrentes-vs-outros.txt
+//
+// Logica preservada:
+//   - Whitelist turma IN (2,4,8,11,21,28)
+//   - Exclui tipoorigem OUT (e MAT em CTEs de data-base/gap)
+//   - Funcionario = false
+//   - Trata cancelamento (com override 2025-02-04)
+//   - Trata trancamento via NEGOCIACAO (ILIKE TRANCAMENTO) e gap de 5 meses
+//   - Retorno de trancamento via NCR ou via gap
+//
+// Adaptacao: janela expandindo desde 08/02/2026 ate ultimo sabado completo
+// (igual ao calcularAcumuladoAlunos).
 // -----------------------------------------------
 async function calcularRecorrentesHistorico() {
   const rows = await prisma.$queryRawUnsafe(`
-    WITH semanas AS (
-      SELECT
-        generate_series(0, 11) AS idx,
-        (date_trunc('week', CURRENT_DATE) - (generate_series(0, 11) * INTERVAL '1 week'))::date AS inicio,
-        (date_trunc('week', CURRENT_DATE) - (generate_series(0, 11) * INTERVAL '1 week') + INTERVAL '6 days')::date AS fim
+    WITH
+    base_matriculas AS (
+      SELECT DISTINCT cr.matriculaaluno AS matricula, cr.turma AS turma_codigo
+      FROM cobranca.contareceber cr
+      WHERE cr.turma IN (2,4,8,11,21,28) AND COALESCE(cr.tipoorigem, '') <> 'OUT'
     ),
-    alunos_ativos AS (
-      SELECT DISTINCT ON (m.aluno, s.idx)
-        m.aluno AS pessoa,
-        s.idx, s.inicio, s.fim
-      FROM cobranca.matricula m
-      JOIN cobranca.pessoa p ON p.codigo = m.aluno
-      CROSS JOIN semanas s
-      WHERE m.curso = 1
-        AND m.data::date <= s.fim
-        AND p.aluno = true AND COALESCE(p.funcionario, false) = false
+    cadastro AS (
+      SELECT bm.matricula, mt."data"::date AS data_matricula, p.codigo AS pessoa_id
+      FROM base_matriculas bm
+      JOIN cobranca.matricula mt ON mt.matricula = bm.matricula
+      JOIN cobranca.pessoa p ON p.codigo = mt.aluno
+      WHERE COALESCE(p.funcionario, false) = false
     ),
-    recorrentes AS (
-      SELECT DISTINCT
-        cc.pessoa, s.idx
+    mp_ultimo AS (
+      SELECT DISTINCT ON (mp.matricula) mp.matricula,
+        mp.databasegeracaoparcelas::date AS data_base_parcelas,
+        mp.situacaomatriculaperiodo AS situacao_aluno
+      FROM cobranca.matriculaperiodo mp
+      ORDER BY mp.matricula, mp.databasegeracaoparcelas DESC NULLS LAST
+    ),
+    primeiro_venc_nao_mat AS (
+      SELECT cr.matriculaaluno AS matricula, MIN(cr.datavencimento::date) AS data_base_fallback
+      FROM cobranca.contareceber cr
+      WHERE cr.turma IN (2,4,8,11,21,28) AND COALESCE(cr.tipoorigem, '') NOT IN ('MAT','OUT')
+      GROUP BY cr.matriculaaluno
+    ),
+    data_base AS (
+      SELECT c.matricula,
+        COALESCE(mu.data_base_parcelas, pv.data_base_fallback, (c.data_matricula + INTERVAL '31 days')::date) AS data_base_parcelas,
+        mu.situacao_aluno
+      FROM cadastro c
+      LEFT JOIN mp_ultimo mu ON mu.matricula = c.matricula
+      LEFT JOIN primeiro_venc_nao_mat pv ON pv.matricula = c.matricula
+    ),
+    cancelamento AS (
+      SELECT cr.matriculaaluno AS matricula, MIN(cr.datacancelamento::date) AS data_cancelamento
+      FROM cobranca.contareceber cr
+      WHERE cr.turma IN (2,4,8,11,21,28) AND cr.datacancelamento IS NOT NULL AND COALESCE(cr.tipoorigem, '') <> 'OUT'
+      GROUP BY cr.matriculaaluno
+    ),
+    trancamento AS (
+      SELECT DISTINCT ON (nc.matriculaaluno) nc.matriculaaluno AS matricula,
+        nc.codigo AS codigo_trancamento, nc."data"::date AS data_trancamento
+      FROM cobranca.negociacaocontareceber nc
+      WHERE nc.justificativa ILIKE '%TRANCAMENTO%'
+      ORDER BY nc.matriculaaluno, nc."data" DESC NULLS LAST, nc.codigo DESC
+    ),
+    retorno_trancamento AS (
+      SELECT t.matricula, MIN(cr.datavencimento::date) AS data_retorno_trancamento
+      FROM trancamento t
+      JOIN cobranca.contareceber cr ON cr.matriculaaluno = t.matricula
+        AND cr.tipoorigem = 'NCR' AND TRIM(cr.codorigem) = t.codigo_trancamento::text
+      WHERE cr.turma IN (2,4,8,11,21,28) AND COALESCE(cr.tipoorigem, '') <> 'OUT'
+      GROUP BY t.matricula
+    ),
+    trancamento_gap_base AS (
+      SELECT cr.matriculaaluno AS matricula,
+        LAG(cr.datavencimento::date) OVER (PARTITION BY cr.matriculaaluno ORDER BY cr.datavencimento::date, cr.codigo) AS data_trancamento,
+        cr.datavencimento::date AS data_retorno_trancamento
+      FROM cobranca.contareceber cr
+      WHERE cr.turma IN (2,4,8,11,21,28) AND cr.situacao IN ('AR','RE','CF')
+        AND COALESCE(cr.tipoorigem, '') NOT IN ('MAT','OUT')
+    ),
+    trancamento_gap AS (
+      SELECT DISTINCT ON (tgb.matricula) tgb.matricula, tgb.data_trancamento, tgb.data_retorno_trancamento
+      FROM trancamento_gap_base tgb
+      WHERE tgb.data_trancamento IS NOT NULL
+        AND tgb.data_retorno_trancamento >= (tgb.data_trancamento + INTERVAL '5 months')
+      ORDER BY tgb.matricula, tgb.data_retorno_trancamento DESC NULLS LAST, tgb.data_trancamento DESC NULLS LAST
+    ),
+    base_matricula AS (
+      SELECT c.matricula, c.pessoa_id, c.data_matricula,
+        CASE WHEN db.situacao_aluno = 'AT' AND ca.data_cancelamento = DATE '2025-02-04' THEN NULL
+          ELSE ca.data_cancelamento END AS data_cancelamento,
+        COALESCE(t.data_trancamento, tg.data_trancamento) AS data_trancamento,
+        COALESCE(rt.data_retorno_trancamento, tg.data_retorno_trancamento) AS data_retorno_trancamento
+      FROM cadastro c
+      LEFT JOIN data_base db ON db.matricula = c.matricula
+      LEFT JOIN cancelamento ca ON ca.matricula = c.matricula
+      LEFT JOIN trancamento t ON t.matricula = c.matricula
+      LEFT JOIN retorno_trancamento rt ON rt.matricula = c.matricula
+      LEFT JOIN trancamento_gap tg ON tg.matricula = c.matricula
+    ),
+    recorrencia AS (
+      SELECT cc.pessoa AS pessoa_id,
+        cc.datacadastro::date AS datacadastro,
+        cc.datainativacao::date AS datainativacao
       FROM cobranca.cartaocreditodebitorecorrenciapessoa cc
-      CROSS JOIN semanas s
-      WHERE cc.datacadastro::date <= s.fim
-        AND (cc.datainativacao IS NULL OR cc.datainativacao::date > s.fim)
+    ),
+    semanas AS (
+      SELECT ROW_NUMBER() OVER (ORDER BY gs)::int AS semana,
+        gs::date AS inicio,
+        (gs + INTERVAL '6 days')::date AS fim
+      FROM generate_series(
+        DATE '2026-02-08',
+        (CURRENT_DATE - ((EXTRACT(DOW FROM CURRENT_DATE)::int + 1) % 7) * INTERVAL '1 day')::date,
+        INTERVAL '7 days'
+      ) AS gs
+    ),
+    ativos_por_semana AS (
+      SELECT s.semana, s.inicio, s.fim, COUNT(*) AS alunos_ativos
+      FROM base_matricula bm CROSS JOIN semanas s
+      WHERE bm.data_matricula <= s.fim
+        AND (bm.data_cancelamento IS NULL OR bm.data_cancelamento > s.fim)
+        AND NOT (bm.data_trancamento IS NOT NULL AND bm.data_trancamento <= s.fim
+          AND (bm.data_retorno_trancamento IS NULL OR bm.data_retorno_trancamento > s.fim))
+      GROUP BY s.semana, s.inicio, s.fim
+    ),
+    recorrentes_por_semana AS (
+      SELECT s.semana, s.inicio, s.fim, COUNT(*) AS alunos_recorrentes
+      FROM recorrencia r CROSS JOIN semanas s
+      WHERE r.datacadastro <= s.fim
+        AND (r.datainativacao IS NULL OR r.datainativacao > s.fim)
+      GROUP BY s.semana, s.inicio, s.fim
     )
-    SELECT
-      12 - s.idx AS semana,
-      s.inicio,
-      s.fim,
-      COUNT(DISTINCT a.pessoa)::int AS total_ativos,
-      COUNT(DISTINCT r.pessoa)::int AS recorrentes,
-      (COUNT(DISTINCT a.pessoa) - COUNT(DISTINCT r.pessoa))::int AS sem_recorrencia,
-      CASE WHEN COUNT(DISTINCT a.pessoa) > 0
-        THEN ROUND(COUNT(DISTINCT r.pessoa)::numeric / COUNT(DISTINCT a.pessoa) * 100, 1)
-        ELSE 0
-      END AS percentual
-    FROM semanas s
-    LEFT JOIN alunos_ativos a ON a.idx = s.idx
-    LEFT JOIN recorrentes r ON r.pessoa = a.pessoa AND r.idx = s.idx
-    GROUP BY s.idx, s.inicio, s.fim
-    ORDER BY s.inicio
+    SELECT a.semana, a.inicio, a.fim,
+      (a.alunos_ativos - COALESCE(r.alunos_recorrentes, 0))::int AS sem_recorrencia,
+      COALESCE(r.alunos_recorrentes, 0)::int AS recorrentes,
+      a.alunos_ativos::int AS total_ativos,
+      CASE WHEN a.alunos_ativos > 0
+        THEN ROUND(COALESCE(r.alunos_recorrentes, 0)::numeric / a.alunos_ativos * 100, 1)
+        ELSE 0 END AS percentual
+    FROM ativos_por_semana a
+    LEFT JOIN recorrentes_por_semana r ON r.semana = a.semana
+    ORDER BY a.semana
   `);
 
   return rows.map(r => ({
@@ -621,43 +712,69 @@ async function calcularPagoPorAging() {
 }
 
 // -----------------------------------------------
-// Recuperado por forma de pagamento
+// Recuperado por forma de pagamento — duas visoes:
+//   - competencia: TODO valor confirmado (mesmo se parcelado em 6x — soma o
+//     valor total reconhecido como receita do acordo)
+//   - caixa: apenas o valor que efetivamente entrou (parcelas confirmadas)
+//
+// Ambas filtram acordos != CANCELADO. Diferenca esta na semantica do "valor".
 // -----------------------------------------------
+function caseFormaPagamento() {
+  return `
+    CASE
+      WHEN pa."formaPagamento" = 'CREDIT_CARD' AND pa.parcelas >= 12 THEN 'Cartão em 12x'
+      WHEN pa."formaPagamento" = 'CREDIT_CARD' AND pa.parcelas = 6 THEN 'Cartão em 6x'
+      WHEN pa."formaPagamento" = 'CREDIT_CARD' AND pa.parcelas = 5 THEN 'Cartão em 5x'
+      WHEN pa."formaPagamento" = 'CREDIT_CARD' AND pa.parcelas = 2 THEN 'Cartão em 2x'
+      WHEN pa."formaPagamento" = 'CREDIT_CARD' AND pa.parcelas <= 1 THEN 'Cartão à vista'
+      WHEN pa."formaPagamento" = 'PIX' THEN 'PIX'
+      WHEN pa."formaPagamento" = 'BOLETO' THEN 'Boleto'
+      ELSE 'Outros'
+    END
+  `;
+}
+
 async function calcularPagoPorForma() {
-  // Pagamentos do Asaas — so contabiliza pagamentos CONFIRMADOS (dinheiro em caixa).
-  // qtd = pagamentos confirmados, valor = valorPago real (fallback em valor nominal).
-  const asaas = await prisma.$queryRawUnsafe(`
-    SELECT
-      CASE
-        WHEN pa."formaPagamento" = 'CREDIT_CARD' AND pa.parcelas >= 12 THEN 'Cartão em 12x'
-        WHEN pa."formaPagamento" = 'CREDIT_CARD' AND pa.parcelas = 6 THEN 'Cartão em 6x'
-        WHEN pa."formaPagamento" = 'CREDIT_CARD' AND pa.parcelas = 5 THEN 'Cartão em 5x'
-        WHEN pa."formaPagamento" = 'CREDIT_CARD' AND pa.parcelas = 2 THEN 'Cartão em 2x'
-        WHEN pa."formaPagamento" = 'CREDIT_CARD' AND pa.parcelas <= 1 THEN 'Cartão à vista'
-        WHEN pa."formaPagamento" = 'PIX' THEN 'PIX'
-        WHEN pa."formaPagamento" = 'BOLETO' THEN 'Boleto'
-        ELSE 'Outros'
-      END AS forma,
+  // Competencia: 1 row por pagamento_acordo CONFIRMADO, somando o valor nominal
+  // do acordo (o cartao em 6x conta o total mesmo que so 1 parcela tenha caido).
+  const competencia = await prisma.$queryRawUnsafe(`
+    SELECT ${caseFormaPagamento()} AS forma,
       COUNT(*)::int AS qtd,
-      COALESCE(SUM(COALESCE(pa."valorPago", pa.valor)), 0)::numeric AS valor
+      COALESCE(SUM(pa.valor), 0)::numeric AS valor
     FROM cobranca.pagamento_acordo pa
     JOIN cobranca.acordo_financeiro af ON af.id = pa."acordoId"
-    WHERE af.etapa != 'CANCELADO'
-      AND pa.situacao = 'CONFIRMADO'
+    WHERE af.etapa != 'CANCELADO' AND pa.situacao = 'CONFIRMADO'
     GROUP BY forma
     ORDER BY valor DESC
   `);
 
-  // Ficou Facil concluidos
+  // Caixa: o que de fato entrou (valorPago, com fallback no nominal apenas
+  // quando valorPago nao foi gravado pelo Asaas).
+  const caixa = await prisma.$queryRawUnsafe(`
+    SELECT ${caseFormaPagamento()} AS forma,
+      COUNT(*)::int AS qtd,
+      COALESCE(SUM(COALESCE(pa."valorPago", pa.valor)), 0)::numeric AS valor
+    FROM cobranca.pagamento_acordo pa
+    JOIN cobranca.acordo_financeiro af ON af.id = pa."acordoId"
+    WHERE af.etapa != 'CANCELADO' AND pa.situacao = 'CONFIRMADO'
+    GROUP BY forma
+    ORDER BY valor DESC
+  `);
+
+  // Ficou Facil concluidos — valor recuperado entra nas duas visoes
   const ff = await prisma.$queryRawUnsafe(`
     SELECT COUNT(*)::int AS qtd, COALESCE(SUM("valorInadimplenteMJ"), 0)::numeric AS valor
     FROM cobranca.ficou_facil WHERE etapa = 'CONCLUIDO'
   `);
 
-  const resultado = asaas.map(r => ({ forma: r.forma, qtd: r.qtd, valor: Number(r.valor) }));
-  if (ff[0]?.qtd > 0) {
-    resultado.push({ forma: 'Ficou Fácil', qtd: ff[0].qtd, valor: Number(ff[0].valor) });
-  }
+  const mapearComFf = (rows) => {
+    const out = rows.map(r => ({ forma: r.forma, qtd: r.qtd, valor: Number(r.valor) }));
+    if (ff[0]?.qtd > 0) out.push({ forma: 'Ficou Fácil', qtd: ff[0].qtd, valor: Number(ff[0].valor) });
+    return out;
+  };
 
-  return resultado;
+  return {
+    competencia: mapearComFf(competencia),
+    caixa: mapearComFf(caixa),
+  };
 }
