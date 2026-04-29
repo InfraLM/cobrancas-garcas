@@ -7,6 +7,10 @@ import { errorHandler } from './middleware/errorHandler.js';
 
 const app = express();
 
+// Confia no proxy do Railway (1 hop). Necessario para que express-rate-limit
+// e req.ip identifiquem o cliente real via X-Forwarded-For em vez do IP do proxy.
+app.set('trust proxy', 1);
+
 // Security headers
 app.use(helmet({ contentSecurityPolicy: false })); // CSP desabilitado pois frontend e separado
 
