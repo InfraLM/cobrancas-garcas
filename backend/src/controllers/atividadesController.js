@@ -54,6 +54,13 @@ export async function criar(req, res, next) {
     if (!titulo) return res.status(400).json({ error: 'titulo obrigatorio' });
     if (!dataHora) return res.status(400).json({ error: 'dataHora obrigatorio' });
 
+    // JWT so tem id/email/role — buscar nome no banco (campo agenteNome eh obrigatorio).
+    const user = await prisma.user.findUnique({
+      where: { id: req.user.id },
+      select: { nome: true, email: true },
+    });
+    const agenteNome = user?.nome || user?.email || req.user.email || 'Agente';
+
     const atividade = await prisma.atividade.create({
       data: {
         tipo,
@@ -61,7 +68,7 @@ export async function criar(req, res, next) {
         descricao: descricao || null,
         dataHora: new Date(dataHora),
         agenteId: req.user.id,
-        agenteNome: req.user.nome,
+        agenteNome,
         pessoaCodigo: pessoaCodigo ? Number(pessoaCodigo) : null,
         pessoaNome: pessoaNome || null,
         telefone: telefone || null,
