@@ -1,4 +1,5 @@
 import { prisma } from '../config/database.js';
+import { getOrSet, chaveDe } from '../utils/memCache.js';
 
 const TURMAS_EXCLUIDAS = '1,10,14,19,22,27,29';
 const CACHE_TTL = 5 * 60 * 1000; // 5 minutos
@@ -680,6 +681,10 @@ export async function obterFunil(req, res, next) {
       return res.status(400).json({ error: 'inicio nao pode ser depois de fim' });
     }
 
+    // Cache 30s — funil eh agregado pesado e a mesma combinacao de datas
+    // costuma ser pedida varias vezes em sequencia (re-renders, navegacao).
+    const cacheKey = chaveDe('dashboard:funil', { inicio, fim });
+    const result = await getOrSet(cacheKey, 30, async () => {
     // Range de snapshots disponiveis
     const range = await prisma.$queryRawUnsafe(`
       SELECT MIN(data)::text AS min_data, MAX(data)::text AS max_data
@@ -689,7 +694,7 @@ export async function obterFunil(req, res, next) {
     const maxSnap = range[0]?.max_data;
 
     if (!minSnap) {
-      return res.json({
+      return {
         inicio, fim,
         snapshotData: null,
         aviso: 'Nenhum snapshot disponivel ainda. Aguarde o primeiro ciclo diario.',
@@ -700,7 +705,7 @@ export async function obterFunil(req, res, next) {
           { etapa: 'Negociado', qtd: 0, valor: 0 },
           { etapa: 'Recuperado', qtd: 0, valor: 0 },
         ],
-      });
+      };
     }
 
     // Resolver data efetiva da snapshot
@@ -819,7 +824,7 @@ export async function obterFunil(req, res, next) {
       `, snapshotData, inicioTs, fimTs),
     ]);
 
-    res.json({
+    return {
       inicio,
       fim,
       snapshotData,
@@ -831,19 +836,22 @@ export async function obterFunil(req, res, next) {
         { etapa: 'Negociado', qtd: negociado[0].qtd, valor: Number(negociado[0].valor) },
         { etapa: 'Recuperado', qtd: recuperado[0].qtd, valor: Number(recuperado[0].valor) },
       ],
+    };
     });
+    res.json(result);
   } catch (error) {
     next(error);
   }
 }
 
 // -----------------------------------------------
-// Handlers HTTP dos graficos parametrizados
+// Handlers HTTP dos graficos parametrizados — cache 60s
 // -----------------------------------------------
 export async function obterRecorrentesHistorico(req, res, next) {
   try {
     const opts = parsearOptsBucket(req);
-    const data = await calcularRecorrentesHistorico(opts);
+    const cacheKey = chaveDe('dashboard:recorrentes', opts);
+    const data = await getOrSet(cacheKey, 60, () => calcularRecorrentesHistorico(opts));
     res.json({ ...opts, data });
   } catch (error) {
     next(error);
@@ -853,7 +861,8 @@ export async function obterRecorrentesHistorico(req, res, next) {
 export async function obterAcumuladoAlunos(req, res, next) {
   try {
     const opts = parsearOptsBucket(req);
-    const data = await calcularAcumuladoAlunos(opts);
+    const cacheKey = chaveDe('dashboard:acumulado', opts);
+    const data = await getOrSet(cacheKey, 60, () => calcularAcumuladoAlunos(opts));
     res.json({ ...opts, data });
   } catch (error) {
     next(error);

@@ -26,6 +26,8 @@ app.use(cors({
     callback(new Error('Bloqueado por CORS'));
   },
   credentials: true,
+  // Browser cacheia o preflight OPTIONS por 24h — corta ~1-2s de cada navegacao
+  maxAge: 86400,
 }));
 
 // Rate limiting
