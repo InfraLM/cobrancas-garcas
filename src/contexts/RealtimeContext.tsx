@@ -37,6 +37,12 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
       reconnection: true,
       reconnectionDelay: 1000,
       reconnectionDelayMax: 5000,
+      // Backend usa esse token para identificar o user e colocar a conexao
+      // nos rooms certos (agent:<id> e admins). Sem token, conexao funciona
+      // mas nao recebe eventos segregados por agente.
+      auth: {
+        token: localStorage.getItem('auth_token') || undefined,
+      },
     });
 
     socketRef.current = socket;

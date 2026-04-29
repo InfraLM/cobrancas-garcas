@@ -92,9 +92,28 @@ async function upsertRegistro(telephonyId, patch, defaultsCreate = {}) {
   }
 }
 
-function emitirEvento(tipo, data) {
+function emitirEvento(tipo, payload) {
   const io = getRealtimeIo();
-  if (io) io.emit('ligacao:evento', { tipo, data });
+  if (!io) return;
+
+  // Quando o evento tem agent.id identificado, envia APENAS pro room do
+  // agente + admins. Isola eventos entre departamentos (ex: cobranca nao
+  // recebe call-was-connected do comercial).
+  //
+  // agent.id top-level eh entregue em call-was-connected, call-was-finished
+  // e nos eventos agent-* (ack/idle/login). call.agent (number direto) eh
+  // entregue em call-was-created (modo individual).
+  //
+  // Quando NAO ha agent.id (call-was-created modo massa antes do dialer
+  // atribuir, call-history sem agent), broadcast — preserva comportamento
+  // atual e admins recebem via broadcast normal.
+  const agentId = Number(payload?.agent?.id || payload?.call?.agent) || null;
+
+  if (agentId > 0) {
+    io.to(`agent:${agentId}`).to('admins').emit('ligacao:evento', { tipo, data: payload });
+  } else {
+    io.emit('ligacao:evento', { tipo, data: payload });
+  }
 }
 
 // Converte unix timestamp (segundos) para Date, lidando com string ou number
