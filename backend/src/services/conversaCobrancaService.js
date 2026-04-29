@@ -137,6 +137,15 @@ export async function upsertConversa({ chatData, messageData }) {
   const contatoNome = chatData?.contact?.name || null;
   const contatoImagem = chatData?.contact?.image || null;
   const instanciaId = chatData?.instance?.id || chatData?.instance_id || messageData?.instance_id || '';
+
+  // Detecta @lid do WhatsApp: ID interno (14+ digitos sem prefixo 55).
+  // Quando isso chega, vincularPessoa nao casa com nenhum celular do SEI e
+  // a conversa fica "fantasma". Quando o telefone real volta, a 3C Plus
+  // entrega outro chatId, criando duplicata. So loga; nao temos como evitar.
+  const ehLid = /^\d{14,}$/.test(contatoNumero) && !contatoNumero.startsWith('55');
+  if (ehLid) {
+    console.warn(`[ConversaCobranca] @lid detectado em chatId=${chatId} numero=${contatoNumero} — pessoa nao sera vinculada`);
+  }
   const fromMe = Boolean(messageData?.fromMe ?? messageData?.from_me ?? false);
   const timestamp = messageData?.time || messageData?.time_whatsapp || Math.floor(Date.now() / 1000);
   const quandoMensagem = new Date(timestamp * 1000);
