@@ -252,7 +252,8 @@ export default function EtapaCobrancaCriada({ acordo, onAtualizado }: Props) {
         </div>
       )}
 
-      {/* Proximo passo */}
+      {/* Proximo passo: avanca direto para CHECANDO_PAGAMENTO. A vinculacao
+          SEI agora acontece exclusivamente na etapa CONCLUIDO (com aviso). */}
       {temCobrancas && (
         <button className="w-full flex items-center justify-center gap-2 px-5 py-3 rounded-xl bg-primary text-white font-semibold text-[0.875rem] hover:bg-primary-container transition-colors shadow-sm"
           onClick={() => {
@@ -260,10 +261,10 @@ export default function EtapaCobrancaCriada({ acordo, onAtualizado }: Props) {
             fetch(`${API_URL}/acordos/${acordo.id}/etapa`, {
               method: 'PUT',
               headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-              body: JSON.stringify({ etapa: 'SEI_VINCULADO' }),
+              body: JSON.stringify({ etapa: 'CHECANDO_PAGAMENTO' }),
             }).then(() => onAtualizado?.());
           }}>
-          Próximo: Vincular SEI
+          Próximo: Acompanhar pagamento
           <ArrowRight size={16} />
         </button>
       )}

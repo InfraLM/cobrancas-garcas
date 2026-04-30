@@ -161,7 +161,6 @@ export const ETAPAS_KANBAN: EtapaAcordo[] = [
   'SELECAO',
   'TERMO_ENVIADO',
   'ACORDO_GERADO',
-  'SEI_VINCULADO',
   'CHECANDO_PAGAMENTO',
   'CONCLUIDO',
 ];

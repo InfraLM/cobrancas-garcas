@@ -1,7 +1,10 @@
-import type { AcordoFinanceiro } from '../../../types/acordo';
+import { useState } from 'react';
+import type { AcordoFinanceiro, PagamentoAcordo } from '../../../types/acordo';
 import { formaPagamentoLabel } from '../../../types/acordo';
 import StatusBadge from '../../ui/StatusBadge';
-import { Clock, CheckCircle2, AlertTriangle, CreditCard, QrCode, Landmark } from 'lucide-react';
+import { Clock, CheckCircle2, AlertTriangle, CreditCard, QrCode, Landmark, MessageCircle, Loader2 } from 'lucide-react';
+
+const API_URL = import.meta.env.VITE_API_URL || '/api';
 
 function formatarMoeda(v: number) {
   return Number(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -17,7 +20,32 @@ interface Props {
   onAtualizado?: () => void;
 }
 
-export default function EtapaChecandoPagamento({ acordo, onAtualizado }: Props) {
+export default function EtapaChecandoPagamento({ acordo }: Props) {
+  const [enviandoWpp, setEnviandoWpp] = useState<string | null>(null);
+
+  // Mesmo handler usado em EtapaCobrancaCriada — reusa o endpoint
+  // POST /acordos/:id/pagamentos/:pagamentoId/enviar-whatsapp e o template
+  // do Blip (cobranca_link_de_pagamento_asaas) sem mudancas no backend.
+  async function handleEnviarWhatsapp(pgto: PagamentoAcordo) {
+    setEnviandoWpp(pgto.id);
+    try {
+      const token = localStorage.getItem('auth_token');
+      const res = await fetch(`${API_URL}/acordos/${acordo.id}/pagamentos/${pgto.id}/enviar-whatsapp`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: 'Erro' }));
+        throw new Error(err.error);
+      }
+      alert('Link enviado por WhatsApp!');
+    } catch (err: any) {
+      alert(`Erro: ${err.message}`);
+    } finally {
+      setEnviandoWpp(null);
+    }
+  }
+
   const pagamentos = acordo.pagamentos || [];
   const confirmados = pagamentos.filter(p => p.situacao === 'CONFIRMADO');
   const vencidos = pagamentos.filter(p => p.situacao === 'VENCIDO');
@@ -120,6 +148,24 @@ export default function EtapaChecandoPagamento({ acordo, onAtualizado }: Props) 
                   </>
                 )}
               </div>
+
+              {/* Botao reenviar link via WhatsApp — so quando a cobranca esta
+                  pendente E ainda tem asaasPaymentId valido. Mesma logica de
+                  EtapaCobrancaCriada — reforco quando aluno demora a pagar. */}
+              {pgto.asaasPaymentId && pgto.situacao === 'PENDENTE' && (
+                <button
+                  onClick={() => handleEnviarWhatsapp(pgto)}
+                  disabled={enviandoWpp === pgto.id}
+                  className="w-full flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-emerald-50 text-emerald-700 font-medium text-[0.75rem] hover:bg-emerald-100 transition-colors disabled:opacity-40"
+                >
+                  {enviandoWpp === pgto.id ? (
+                    <Loader2 size={13} className="animate-spin" />
+                  ) : (
+                    <MessageCircle size={13} />
+                  )}
+                  {enviandoWpp === pgto.id ? 'Enviando...' : 'Reenviar link via WhatsApp'}
+                </button>
+              )}
             </div>
           );
         })}
