@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import type { AcordoFinanceiro } from '../../../types/acordo';
 import { formaPagamentoLabel } from '../../../types/acordo';
-import { cancelarAcordo, atualizarEtapa } from '../../../services/acordos';
+import { atualizarEtapa } from '../../../services/acordos';
 import StatusBadge from '../../ui/StatusBadge';
 import { FileSignature, RefreshCw, XCircle, Download, Clock, Send, Loader2, AlertTriangle, CheckCircle2, ArrowRight } from 'lucide-react';
 
@@ -27,7 +27,6 @@ export default function EtapaTermoEnviado({ acordo, onAtualizado }: Props) {
   const recusado = doc?.situacao === 'RECUSADO';
   const expirado = doc?.situacao === 'EXPIRADO';
   const [enviandoLembrete, setEnviandoLembrete] = useState(false);
-  const [cancelando, setCancelando] = useState(false);
   const [avancando, setAvancando] = useState(false);
 
   async function handleEnviarLembrete() {
@@ -43,19 +42,6 @@ export default function EtapaTermoEnviado({ acordo, onAtualizado }: Props) {
       alert('Erro ao enviar lembrete');
     } finally {
       setEnviandoLembrete(false);
-    }
-  }
-
-  async function handleCancelar() {
-    if (!confirm('Tem certeza que deseja cancelar este documento? O aluno perderá o acesso ao link de assinatura.')) return;
-    setCancelando(true);
-    try {
-      await cancelarAcordo(acordo.id, 'Documento cancelado pelo agente');
-      onAtualizado?.();
-    } catch {
-      alert('Erro ao cancelar');
-    } finally {
-      setCancelando(false);
     }
   }
 
@@ -194,18 +180,11 @@ export default function EtapaTermoEnviado({ acordo, onAtualizado }: Props) {
         </button>
 
         {!assinado && !recusado && !expirado && (
-          <>
-            <button onClick={handleEnviarLembrete} disabled={enviandoLembrete}
-              className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-surface-container-highest text-on-surface font-medium text-[0.8125rem] hover:bg-surface-container-high transition-colors disabled:opacity-40">
-              {enviandoLembrete ? <Loader2 size={13} className="animate-spin" /> : <Send size={13} />}
-              Enviar lembrete
-            </button>
-            <button onClick={handleCancelar} disabled={cancelando}
-              className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-red-600 bg-red-50 font-medium text-[0.8125rem] hover:bg-red-100 transition-colors disabled:opacity-40">
-              {cancelando ? <Loader2 size={13} className="animate-spin" /> : <XCircle size={13} />}
-              Cancelar documento
-            </button>
-          </>
+          <button onClick={handleEnviarLembrete} disabled={enviandoLembrete}
+            className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-surface-container-highest text-on-surface font-medium text-[0.8125rem] hover:bg-surface-container-high transition-colors disabled:opacity-40">
+            {enviandoLembrete ? <Loader2 size={13} className="animate-spin" /> : <Send size={13} />}
+            Enviar lembrete
+          </button>
         )}
 
         {assinado && (

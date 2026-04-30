@@ -82,8 +82,36 @@ export async function vincularSei(id: string, codigoNegociacao: number): Promise
   return api.put<AcordoFinanceiro>(`/acordos/${id}/vincular-sei`, { codigoNegociacao });
 }
 
-export async function cancelarAcordo(id: string, motivo?: string): Promise<AcordoFinanceiro> {
-  return api.delete<AcordoFinanceiro>(`/acordos/${id}?motivo=${encodeURIComponent(motivo || '')}`);
+export async function cancelarAcordo(id: string, motivo: string): Promise<AcordoFinanceiro> {
+  return api.delete<AcordoFinanceiro>(`/acordos/${id}`, { motivo });
+}
+
+export interface PreviewCancelamento {
+  podeCancelar: boolean;
+  motivo: string | null;
+  etapa: string;
+  pagamentosACancelar: Array<{
+    id: string;
+    numero: number;
+    valor: number;
+    situacao: string;
+    vencimento: string;
+    asaasPaymentId: string | null;
+  }>;
+  pagamentosConfirmados: Array<{
+    numero: number;
+    valor: number;
+    pagoEm: string | null;
+  }>;
+  termo: {
+    envelopeId: string | null;
+    assinado: boolean;
+    seraCanceladoNaClicksign: boolean;
+  };
+}
+
+export async function previewCancelamento(id: string): Promise<PreviewCancelamento> {
+  return api.get<PreviewCancelamento>(`/acordos/${id}/preview-cancelamento`);
 }
 
 export async function enviarAssinatura(id: string): Promise<AcordoFinanceiro> {

@@ -155,6 +155,11 @@ export default function RepositorioPage() {
                   <td className="px-3 py-3 text-[0.8125rem] font-semibold text-on-surface text-right">{formatarMoeda(Number(acordo.valorAcordo))}</td>
                   <td className="px-3 py-3">
                     <StatusBadge texto={status.texto} variante={status.variante} comDot />
+                    {acordo.etapa === 'CANCELADO' && acordo.motivoCancelamento && (
+                      <p className="text-[0.625rem] text-on-surface-variant/70 mt-1 italic max-w-xs truncate" title={acordo.motivoCancelamento}>
+                        “{acordo.motivoCancelamento}”
+                      </p>
+                    )}
                   </td>
                   <td className="px-5 py-3">
                     <div className="flex items-center justify-end gap-1">

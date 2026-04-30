@@ -284,6 +284,31 @@ export async function asaasWebhook(req, res, next) {
         const todosConfirmados = todosOsPagamentos.every(p => p.situacao === 'CONFIRMADO');
 
         if (todosConfirmados) {
+          // Defesa: se o acordo foi CANCELADO pelo agente entre o pagamento
+          // e este webhook, NAO ressuscita o acordo. Registra ocorrencia para
+          // o time financeiro decidir manualmente o que fazer com o valor.
+          const estadoAtual = await prisma.acordoFinanceiro.findUnique({
+            where: { id: acordoId },
+            select: { etapa: true, pessoaCodigo: true, pessoaNome: true },
+          });
+          if (estadoAtual?.etapa === 'CANCELADO') {
+            console.warn(`[Webhook Asaas] Pagamento confirmado em acordo ${acordoId} CANCELADO — ignorado, sem ressuscitar`);
+            try {
+              await prisma.ocorrencia.create({
+                data: {
+                  tipo: 'WEBHOOK_PAGAMENTO_RESIDUAL',
+                  descricao: 'Pagamento confirmado em acordo cancelado — verifique manualmente',
+                  origem: 'WEBHOOK_ASAAS',
+                  pessoaCodigo: estadoAtual.pessoaCodigo,
+                  pessoaNome: estadoAtual.pessoaNome,
+                  acordoId,
+                  webhookEventId: eventoId,
+                },
+              });
+            } catch {}
+            return;
+          }
+
           // Mover acordo para CONCLUIDO. concluidoEm registra o instante real
           // da conclusao — usado no funil historico do dashboard.
           const acordoConcluido = await prisma.acordoFinanceiro.update({

@@ -283,23 +283,134 @@ export async function vincularSei(req, res, next) {
 }
 
 // -----------------------------------------------
-// DELETE /api/acordos/:id — Cancelar acordo
+// GET /api/acordos/:id/preview-cancelamento
+// Retorna o que vai acontecer se cancelar o acordo, sem mexer no banco.
+// O frontend usa pra construir os avisos do modal de confirmacao.
+// -----------------------------------------------
+export async function previewCancelamento(req, res, next) {
+  try {
+    const acordo = await prisma.acordoFinanceiro.findUnique({
+      where: { id: req.params.id },
+      include: { pagamentos: true, documento: true },
+    });
+    if (!acordo) return res.status(404).json({ error: 'Acordo nao encontrado' });
+
+    const podeCancelar = acordo.etapa !== 'CONCLUIDO' && acordo.etapa !== 'CANCELADO';
+    const motivo = !podeCancelar
+      ? (acordo.etapa === 'CONCLUIDO'
+        ? 'Acordo ja concluido (todos pagamentos confirmados). Nao pode ser cancelado.'
+        : 'Acordo ja esta cancelado.')
+      : null;
+
+    const pagamentosACancelar = acordo.pagamentos
+      .filter(p => p.situacao !== 'CONFIRMADO' && p.situacao !== 'CANCELADO')
+      .map(p => ({
+        id: p.id,
+        numero: p.numeroPagamento,
+        valor: Number(p.valor),
+        situacao: p.situacao,
+        vencimento: p.dataVencimento,
+        asaasPaymentId: p.asaasPaymentId,
+      }));
+
+    const pagamentosConfirmados = acordo.pagamentos
+      .filter(p => p.situacao === 'CONFIRMADO')
+      .map(p => ({
+        numero: p.numeroPagamento,
+        valor: Number(p.valorPago || p.valor),
+        pagoEm: p.dataPagamento,
+      }));
+
+    const termo = {
+      envelopeId: acordo.clicksignEnvelopeId || null,
+      assinado: !!acordo.termoAssinadoEm,
+      // So tenta cancelar na ClickSign se ha envelope e nao foi assinado.
+      seraCanceladoNaClicksign: !!acordo.clicksignEnvelopeId && !acordo.termoAssinadoEm,
+    };
+
+    res.json({
+      podeCancelar,
+      motivo,
+      etapa: acordo.etapa,
+      pagamentosACancelar,
+      pagamentosConfirmados,
+      termo,
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
+// -----------------------------------------------
+// DELETE /api/acordos/:id — Cancelar acordo (com cascade Asaas/ClickSign)
 // -----------------------------------------------
 export async function cancelar(req, res, next) {
   try {
-    const { motivo } = req.body;
-    const existente = await prisma.acordoFinanceiro.findUnique({
-      where: { id: req.params.id },
-    });
-
-    if (!existente) return res.status(404).json({ error: 'Acordo nao encontrado' });
-
-    // Cancelar envelope ClickSign se existir
-    if (existente.clicksignEnvelopeId) {
-      try { await cancelarEnvelope(existente.clicksignEnvelopeId); } catch {}
+    // Aceita motivo no body (preferido) OU query string (compat com frontend antigo).
+    const motivo = String(req.body?.motivo || req.query?.motivo || '').trim();
+    if (motivo.length < 10) {
+      return res.status(400).json({ error: 'Justificativa obrigatoria (minimo 10 caracteres)' });
     }
 
-    const acordo = await prisma.acordoFinanceiro.update({
+    const acordo = await prisma.acordoFinanceiro.findUnique({
+      where: { id: req.params.id },
+      include: { pagamentos: true },
+    });
+    if (!acordo) return res.status(404).json({ error: 'Acordo nao encontrado' });
+
+    if (acordo.etapa === 'CONCLUIDO') {
+      return res.status(409).json({
+        error: 'Acordo concluido (todos pagamentos confirmados) nao pode ser cancelado. Use estorno no painel do Asaas se necessario.',
+      });
+    }
+    if (acordo.etapa === 'CANCELADO') {
+      return res.status(409).json({ error: 'Acordo ja esta cancelado' });
+    }
+
+    // 1. Cancelar cobrancas Asaas que ainda nao foram pagas — best effort.
+    //    Falhas na API do Asaas NAO bloqueiam o cancelamento do acordo;
+    //    sao agregadas em `erros` e registradas na ocorrencia.
+    const pagamentosCancelados = [];
+    const erros = [];
+    for (const pag of acordo.pagamentos) {
+      if (pag.situacao === 'CONFIRMADO' || pag.situacao === 'CANCELADO') continue;
+
+      if (pag.asaasPaymentId) {
+        try {
+          await cancelarCobranca(pag.asaasPaymentId);
+        } catch (err) {
+          const msg = err?.message || String(err);
+          // Asaas 404 = cobranca ja nao existe la (ja deletada). Ignora.
+          if (!/HTTP 404/.test(msg) && !/does not exist/i.test(msg)) {
+            erros.push({ pagamento: pag.numeroPagamento, asaas: msg.slice(0, 200) });
+            console.warn(`[Cancelar] Falha Asaas pagamento ${pag.asaasPaymentId}: ${msg}`);
+          }
+        }
+      }
+
+      await prisma.pagamentoAcordo.update({
+        where: { id: pag.id },
+        data: { situacao: 'CANCELADO' },
+      });
+      pagamentosCancelados.push(pag.numeroPagamento);
+    }
+
+    // 2. Cancelar envelope ClickSign se ainda nao foi assinado.
+    //    Se ja foi assinado, preserva (documento legal vale como historico).
+    let clicksignCancelado = false;
+    if (acordo.clicksignEnvelopeId && !acordo.termoAssinadoEm) {
+      try {
+        await cancelarEnvelope(acordo.clicksignEnvelopeId);
+        clicksignCancelado = true;
+      } catch (err) {
+        const msg = err?.message || String(err);
+        erros.push({ clicksign: msg.slice(0, 200) });
+        console.warn(`[Cancelar] Falha ClickSign envelope ${acordo.clicksignEnvelopeId}: ${msg}`);
+      }
+    }
+
+    // 3. Atualizar acordo
+    const atualizado = await prisma.acordoFinanceiro.update({
       where: { id: req.params.id },
       data: {
         etapa: 'CANCELADO',
@@ -308,14 +419,51 @@ export async function cancelar(req, res, next) {
       },
     });
 
-    await sincronizarPausaPorEtapa({
-      acordoId: acordo.id,
-      etapa: acordo.etapa,
-      pessoaCodigo: acordo.pessoaCodigo,
-      pessoaNome: acordo.pessoaNome,
+    // 4. Atualizar Documento associado, se existir
+    await prisma.documento.updateMany({
+      where: { acordoId: req.params.id },
+      data: { situacao: 'CANCELADO' },
     });
 
-    res.json(acordo);
+    // 5. Sincronizar pausa de ligacao (CANCELADO libera o aluno pra contato)
+    await sincronizarPausaPorEtapa({
+      acordoId: atualizado.id,
+      etapa: atualizado.etapa,
+      pessoaCodigo: atualizado.pessoaCodigo,
+      pessoaNome: atualizado.pessoaNome,
+    });
+
+    // 6. Registrar ocorrencia com a justificativa e relatorio do cascade.
+    try {
+      await prisma.ocorrencia.create({
+        data: {
+          tipo: 'NEGOCIACAO_CANCELADA',
+          descricao: `Negociacao cancelada — ${motivo}`,
+          origem: 'AGENTE',
+          pessoaCodigo: atualizado.pessoaCodigo,
+          pessoaNome: atualizado.pessoaNome,
+          agenteNome: req.user?.nome || req.user?.email || null,
+          acordoId: atualizado.id,
+          metadados: {
+            motivoCancelamento: motivo,
+            pagamentosCancelados,
+            clicksignCancelado,
+            erros,
+          },
+        },
+      });
+    } catch (e) {
+      console.warn('[Cancelar] Falha ao registrar ocorrencia:', e?.message);
+    }
+
+    res.json({
+      ...atualizado,
+      _cancelamento: {
+        pagamentosCancelados: pagamentosCancelados.length,
+        clicksignCancelado,
+        erros,
+      },
+    });
   } catch (error) {
     next(error);
   }

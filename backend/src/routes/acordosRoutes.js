@@ -7,6 +7,7 @@ import {
   atualizarEtapa,
   vincularSei,
   cancelar,
+  previewCancelamento,
   gerarPdf,
   enviarAssinatura,
   enviarLembrete,
@@ -26,6 +27,7 @@ router.patch('/:id/etapa', requireAuth, atualizarEtapa);
 router.put('/:id/etapa', requireAuth, atualizarEtapa);
 router.patch('/:id/vincular-sei', requireAuth, vincularSei);
 router.put('/:id/vincular-sei', requireAuth, vincularSei);
+router.get('/:id/preview-cancelamento', requireAuth, previewCancelamento);
 router.delete('/:id', requireAuth, cancelar);
 router.post('/:id/gerar-pdf', requireAuth, gerarPdf);
 router.post('/:id/enviar-assinatura', requireAuth, enviarAssinatura);

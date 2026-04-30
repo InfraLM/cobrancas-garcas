@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import type { AcordoFinanceiro } from '../../types/acordo';
 import { etapaLabel, etapaCor } from '../../types/acordo';
 import Drawer from '../ui/Drawer';
@@ -8,6 +9,7 @@ import EtapaCobrancaCriada from './etapas/EtapaCobrancaCriada';
 import EtapaVincularSei from './etapas/EtapaVincularSei';
 import EtapaChecandoPagamento from './etapas/EtapaChecandoPagamento';
 import EtapaConcluido from './etapas/EtapaConcluido';
+import ModalCancelarNegociacao from './ModalCancelarNegociacao';
 import {
   ClipboardList,
   FileSignature,
@@ -15,6 +17,7 @@ import {
   Link2,
   Clock,
   CheckCircle2,
+  XCircle,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -39,12 +42,14 @@ function formatarMoeda(valor: number) {
 }
 
 export default function AcordoDrawer({ acordo, aberto, onFechar, onAtualizado }: AcordoDrawerProps) {
+  const [modalCancelarAberto, setModalCancelarAberto] = useState(false);
   if (!acordo) return null;
 
   const cor = getAvatarColor(acordo.pessoaNome);
   const iniciais = getIniciais(acordo.pessoaNome);
   const cores = etapaCor[acordo.etapa];
   const Icone = etapaIcone[acordo.etapa] || ClipboardList;
+  const podeCancelar = acordo.etapa !== 'CONCLUIDO' && acordo.etapa !== 'CANCELADO';
 
   function renderEtapa() {
     switch (acordo!.etapa) {
@@ -62,10 +67,21 @@ export default function AcordoDrawer({ acordo, aberto, onFechar, onAtualizado }:
     <Drawer aberto={aberto} onFechar={onFechar} largura="w-[560px]">
       {/* Cabeçalho */}
       <div className="bg-gradient-to-br from-surface-container-low to-surface px-6 pt-6 pb-5">
-        {/* Etapa badge */}
-        <div className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-xl ${cores.bg} mb-4`}>
-          <Icone size={14} className={cores.text} />
-          <span className={`text-[0.75rem] font-semibold ${cores.text}`}>{etapaLabel[acordo.etapa]}</span>
+        {/* Etapa badge + acao de cancelar */}
+        <div className="flex items-center justify-between mb-4">
+          <div className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-xl ${cores.bg}`}>
+            <Icone size={14} className={cores.text} />
+            <span className={`text-[0.75rem] font-semibold ${cores.text}`}>{etapaLabel[acordo.etapa]}</span>
+          </div>
+          {podeCancelar && (
+            <button
+              onClick={() => setModalCancelarAberto(true)}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-[0.75rem] text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+            >
+              <XCircle size={14} />
+              Cancelar negociação
+            </button>
+          )}
         </div>
 
         {/* Aluno */}
@@ -132,20 +148,27 @@ export default function AcordoDrawer({ acordo, aberto, onFechar, onAtualizado }:
               { label: 'Termo assinado', data: acordo.termoAssinadoEm, icone: CheckCircle2, cor: 'text-emerald-500' },
               { label: 'Cobrança gerada', data: acordo.acordoGeradoEm, icone: CreditCard, cor: 'text-amber-500' },
               { label: 'SEI vinculado', data: acordo.seiVinculadoEm, icone: Link2, cor: 'text-indigo-500' },
-              { label: 'Cancelado', data: acordo.canceladoEm, icone: Clock, cor: 'text-red-500' },
+              { label: 'Cancelado', data: acordo.canceladoEm, icone: Clock, cor: 'text-red-500', detalhe: acordo.motivoCancelamento },
             ].filter(e => e.data).map((etapa, idx) => {
               const EtapaIcone = etapa.icone;
               return (
-                <div key={idx} className="flex items-center gap-3 py-2">
-                  <div className="flex flex-col items-center">
+                <div key={idx} className="flex items-start gap-3 py-2">
+                  <div className="flex flex-col items-center pt-0.5">
                     <EtapaIcone size={14} className={etapa.cor} />
                     {idx < 5 && <div className="w-px h-4 bg-gray-100 mt-1" />}
                   </div>
-                  <div className="flex-1 flex items-center justify-between">
-                    <span className="text-[0.8125rem] text-on-surface">{etapa.label}</span>
-                    <span className="text-[0.75rem] text-on-surface-variant/60">
-                      {new Date(etapa.data!).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                    </span>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[0.8125rem] text-on-surface">{etapa.label}</span>
+                      <span className="text-[0.75rem] text-on-surface-variant/60 shrink-0 ml-2">
+                        {new Date(etapa.data!).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                      </span>
+                    </div>
+                    {(etapa as any).detalhe && (
+                      <p className="text-[0.6875rem] text-on-surface-variant/80 mt-0.5 italic">
+                        “{(etapa as any).detalhe}”
+                      </p>
+                    )}
                   </div>
                 </div>
               );
@@ -153,6 +176,14 @@ export default function AcordoDrawer({ acordo, aberto, onFechar, onAtualizado }:
           </div>
         </div>
       </div>
+
+      {/* Modal de cancelamento */}
+      <ModalCancelarNegociacao
+        acordo={acordo}
+        aberto={modalCancelarAberto}
+        onFechar={() => setModalCancelarAberto(false)}
+        onCancelado={() => { onAtualizado?.(); onFechar(); }}
+      />
     </Drawer>
   );
 }
