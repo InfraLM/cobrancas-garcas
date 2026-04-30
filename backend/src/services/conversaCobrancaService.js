@@ -153,38 +153,54 @@ export async function upsertConversa({ chatData, messageData }) {
   const textoMsg = messageData?.body || null;
 
   // Tenta buscar existente
-  const existente = await prisma.conversaCobranca.findUnique({ where: { chatId } });
+  let existente = await prisma.conversaCobranca.findUnique({ where: { chatId } });
 
   // Se nao existe, enriquecer e criar
   if (!existente) {
     const pessoa = await vincularPessoa(contatoNumero);
     const metricas = await calcularMetricasCobranca(pessoa?.codigo);
 
-    return prisma.conversaCobranca.create({
-      data: {
-        chatId,
-        instanciaId,
-        contatoNumero,
-        contatoNome: contatoNome || pessoa?.nome || null,
-        contatoImagem,
-        pessoaCodigo: pessoa?.codigo || null,
-        matricula: pessoa?.matricula || null,
-        status: 'AGUARDANDO',
-        valorInadimplente: metricas.valorInadimplente,
-        diasAtraso: metricas.diasAtraso,
-        serasaAtivo: metricas.serasaAtivo,
-        temAcordoAtivo: metricas.temAcordoAtivo,
-        acordoId: metricas.acordoId,
-        ultimaMensagemCliente: fromMe ? null : quandoMensagem,
-        ultimaMensagemAgente: fromMe ? quandoMensagem : null,
-        ultimaAtividadeEm: quandoMensagem,
-        aguardandoRespostaDesde: fromMe ? null : quandoMensagem,
-        ultimaMensagemTexto: textoMsg,
-        ultimaMensagemTipo: tipoMsg,
-        ultimaMensagemFromMe: fromMe,
-        naoLidos: fromMe ? 0 : 1,
-      },
-    });
+    try {
+      return await prisma.conversaCobranca.create({
+        data: {
+          chatId,
+          instanciaId,
+          contatoNumero,
+          contatoNome: contatoNome || pessoa?.nome || null,
+          contatoImagem,
+          pessoaCodigo: pessoa?.codigo || null,
+          matricula: pessoa?.matricula || null,
+          status: 'AGUARDANDO',
+          valorInadimplente: metricas.valorInadimplente,
+          diasAtraso: metricas.diasAtraso,
+          serasaAtivo: metricas.serasaAtivo,
+          temAcordoAtivo: metricas.temAcordoAtivo,
+          acordoId: metricas.acordoId,
+          ultimaMensagemCliente: fromMe ? null : quandoMensagem,
+          ultimaMensagemAgente: fromMe ? quandoMensagem : null,
+          ultimaAtividadeEm: quandoMensagem,
+          aguardandoRespostaDesde: fromMe ? null : quandoMensagem,
+          ultimaMensagemTexto: textoMsg,
+          ultimaMensagemTipo: tipoMsg,
+          ultimaMensagemFromMe: fromMe,
+          naoLidos: fromMe ? 0 : 1,
+        },
+      });
+    } catch (err) {
+      // Race condition: outro evento do mesmo chatId criou primeiro entre o
+      // findUnique e o create. Recupera e cai no path de update abaixo —
+      // garante que a mensagem atual seja contabilizada (preview, naoLidos,
+      // ultimaAtividadeEm). Sem isso, a mensagem era perdida com erro P2002.
+      const isP2002ChatId =
+        err?.code === 'P2002' &&
+        (Array.isArray(err?.meta?.target) ? err.meta.target.includes('chatId') : err?.meta?.target === 'chatId');
+      if (!isP2002ChatId) throw err;
+
+      console.warn(`[ConversaCobranca] Race no chatId=${chatId} — recuperando registro concorrente e atualizando`);
+      existente = await prisma.conversaCobranca.findUnique({ where: { chatId } });
+      if (!existente) throw err; // nao recuperou (improvavel) — propaga erro original
+      // continua para o path de update abaixo
+    }
   }
 
   // Se nao tem nome no contato nem na conversa, buscar do SEI

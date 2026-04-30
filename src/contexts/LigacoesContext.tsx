@@ -16,6 +16,7 @@ import type { Aluno } from '../types/aluno';
 import { qualificacoesMock } from '../mocks/ligacoes';
 import * as real3c from '../services/ligacoes3cplus';
 import { useRealtime } from './RealtimeContext';
+import { useAuth } from './AuthContext';
 
 export type EstadoSessao = 'OFFLINE' | 'CONECTANDO_SESSAO' | 'TESTE_AUDIO' | 'ONLINE';
 
@@ -86,6 +87,7 @@ function normalizarEventoRealtime(tipo: TipoEventoLigacao, data: any): EventoLig
 
 export function LigacoesProvider({ children }: { children: ReactNode }) {
   const realtime = useRealtime();
+  const { user } = useAuth();
   const [sessao, setSessao] = useState<EstadoSessao>('OFFLINE');
   const [etapaConectando, setEtapaConectando] = useState<'webrtc' | 'login' | 'aguardando_idle'>('webrtc');
 
@@ -161,16 +163,45 @@ export function LigacoesProvider({ children }: { children: ReactNode }) {
   // Ref para handler mais recente (evita resubscribe no realtime ao trocar tipoLigacao)
   const handlerRef = useRef<((e: EventoLigacao) => void) | null>(null);
 
+  // Ref para tipoLigacao acessivel dentro do listener sem causar re-subscribe.
+  const tipoLigacaoRef = useRef<TipoLigacao | null>(null);
+  useEffect(() => { tipoLigacaoRef.current = tipoLigacao; }, [tipoLigacao]);
+
   // ─── Realtime: escuta eventos de ligacao vindos do backend worker 24/7 ──
   // O backend emite 'ligacao:evento' com { tipo, data } para cada evento recebido
   // do socket.3c.plus. Frontend nao conecta mais direto ao socket deles.
+  //
+  // Filtro defensivo (Socket.io rooms ja filtra a maioria, mas eventos sem
+  // agent.id atribuido — ex: call-was-created modo massa pre-atribuicao —
+  // chegam por broadcast e podem bagunçar UI de quem nao deveria receber).
   useEffect(() => {
     const off = realtime.on<{ tipo: TipoEventoLigacao; data: any }>('ligacao:evento', (payload) => {
+      const data = payload.data || {};
+      const eventAgentId = Number(data.agent?.id || data.call?.agent) || null;
+      const myAgentId = user?.threecplusAgentId || null;
+      const isAdmin = user?.role === 'ADMIN';
+
+      // ADMIN ve tudo (bypass) — necessario porque ADMIN faz click2call usando
+      // agent token "emprestado" do .env, cujo agent.id eh diferente do
+      // user.threecplusAgentId proprio do ADMIN. Tambem permite observabilidade.
+      if (!isAdmin) {
+        // Evento com agent.id explicito que nao eh meu — descarta.
+        if (eventAgentId && myAgentId && eventAgentId !== myAgentId) {
+          return;
+        }
+        // Evento sem agent.id e nao estou em modo massa — descarta.
+        // Em modo massa, eventos sem agent.id sao usados para preFetchAluno
+        // antes do dialer atribuir a chamada para o agente.
+        if (!eventAgentId && tipoLigacaoRef.current !== 'massa') {
+          return;
+        }
+      }
+
       const evento = normalizarEventoRealtime(payload.tipo, payload.data);
       handlerRef.current?.(evento);
     });
     return off;
-  }, [realtime]);
+  }, [realtime, user]);
 
   // Reflete estado de conexao do realtime em statusConexao.socketConectado
   useEffect(() => {
