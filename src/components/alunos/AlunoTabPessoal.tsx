@@ -150,6 +150,34 @@ export default function AlunoTabPessoal({ aluno }: { aluno: Aluno }) {
         </div>
       </div>
 
+      {/* Contrato — prioridade: SEI assinado > Turma 3 ClickSign > Pendente */}
+      {(() => {
+        const assinouSEI = !!aluno.dataAssinatura;
+        const mostraDisclaimerClicksign = !assinouSEI && !!aluno.naTurma3;
+        return (
+          <div>
+            <p className="text-[0.625rem] uppercase tracking-wider text-gray-300 font-medium mb-3">Contrato</p>
+            <div className="grid grid-cols-2 gap-4 bg-white rounded-xl border border-gray-100 p-4">
+              {assinouSEI ? (
+                <>
+                  <Info label="Situação" valor="Assinado" />
+                  <Info label="Data de assinatura" valor={formatarData(aluno.dataAssinatura || undefined)} />
+                </>
+              ) : mostraDisclaimerClicksign ? (
+                <Info label="Situação" valor="Assinado externamente (ClickSign)" />
+              ) : (
+                <Info label="Situação" valor="Pendente" />
+              )}
+            </div>
+            {mostraDisclaimerClicksign && (
+              <div className="mt-3 bg-blue-50 border border-blue-200 rounded-xl p-3 text-[0.75rem] text-blue-900">
+                <strong>Atenção:</strong> Aluno da Turma 3 — contrato assinado pela ClickSign (fora do SEI). Para conferir o documento, acesse a plataforma da ClickSign.
+              </div>
+            )}
+          </div>
+        );
+      })()}
+
       {/* Acadêmico */}
       <div>
         <p className="text-[0.625rem] uppercase tracking-wider text-gray-300 font-medium mb-3">Acadêmico</p>

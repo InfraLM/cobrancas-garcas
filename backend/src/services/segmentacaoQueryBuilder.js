@@ -57,6 +57,8 @@ const CAMPO_MAP = {
   // ===== Flags =====
   nao_enviar_cobranca: { sql: 'COALESCE(mr.naoenviarmensagemcobranca, false)', join: null, escopos: ['ALUNO', 'TITULO'] },
   bloquear_contato:    { sql: 'COALESCE(p.bloquearcontatocrm, false)', join: null, escopos: ['ALUNO', 'TITULO'] },
+  // Assinou contrato: dataassinatura no SEI OU esta na Turma 3 (cod 2 — assinou via ClickSign).
+  assinou_contrato:    { sql: 'COALESCE(ca.assinou, false)', join: 'contrato_assinado', escopos: ['ALUNO', 'TITULO'] },
 
   // ===== Pausa de ligacoes (CRM) =====
   pausa_ligacao_ativa: {
@@ -169,6 +171,29 @@ const CTE_DEFS = {
         AND COALESCE(cr.tipoorigem, '') NOT IN ('OUT')
       GROUP BY cr.pessoa
     )`,
+
+  // Assinou contrato: TRUE se aluno tem matricula na Turma 3 (cod 2 — assinou via ClickSign)
+  // OU tem dataassinatura preenchida em algum documento valido no SEI.
+  contrato_assinado: `
+    contrato_assinado AS (
+      SELECT p.codigo AS pessoa,
+        (
+          EXISTS (
+            SELECT 1 FROM cobranca.matricula m
+            JOIN cobranca.matriculaperiodo mp ON mp.matricula = m.matricula
+            WHERE m.aluno = p.codigo AND mp.turma = 2
+          )
+          OR EXISTS (
+            SELECT 1 FROM cobranca.documentoassinadopessoa dap
+            JOIN cobranca.documentoassinado da ON da.codigo = dap.documentoassinado
+            WHERE dap.pessoa = p.codigo
+              AND dap.dataassinatura IS NOT NULL
+              AND COALESCE(da.documentoassinadoinvalido, false) = false
+          )
+        ) AS assinou
+      FROM cobranca.pessoa p
+      WHERE p.aluno = true
+    )`,
 };
 
 // JOINs para cada CTE ou tabela (os JOINs usam 'p' ou 'mr', presentes em ambos os builders)
@@ -187,6 +212,7 @@ const JOIN_DEFS = {
     ) turma_info ON true`,
   aluno_resumo: 'LEFT JOIN cobranca.aluno_resumo ar ON ar.codigo = p.codigo',
   vencimento: 'LEFT JOIN vencimento venc ON venc.pessoa = p.codigo',
+  contrato_assinado: 'LEFT JOIN contrato_assinado ca ON ca.pessoa = p.codigo',
 };
 
 function buildOperatorClause(sqlExpr, operador, valor, valor2) {

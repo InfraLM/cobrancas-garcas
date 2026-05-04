@@ -90,6 +90,7 @@ export const CAMPOS_SEGMENTACAO: CampoSegmentacao[] = [
   { id: 'nao_enviar_cobranca', label: 'Nao enviar cobranca', categoria: 'Flags', tipo: 'booleano', operadores: ['sim', 'nao'], escopos: AMBOS },
   { id: 'bloquear_contato', label: 'Bloquear contato CRM', categoria: 'Flags', tipo: 'booleano', operadores: ['sim', 'nao'], escopos: AMBOS },
   { id: 'pausa_ligacao_ativa', label: 'Pausa de ligacao ativa', categoria: 'Flags', tipo: 'booleano', operadores: ['sim', 'nao'], escopos: AMBOS },
+  { id: 'assinou_contrato', label: 'Assinou contrato', categoria: 'Flags', tipo: 'booleano', operadores: ['sim', 'nao'], escopos: AMBOS },
 
   // Identificacao
   { id: 'codigo_pessoa', label: 'Codigo do aluno', categoria: 'Identificacao', tipo: 'numero', operadores: ['igual', 'em', 'nao_em'], escopos: AMBOS },

@@ -97,7 +97,10 @@ export async function obter(req, res, next) {
         m.matricula, m.situacao AS situacao_matricula, m.data AS data_matricula,
         COALESCE(m.naoenviarmensagemcobranca, false) AS nao_enviar_msg,
         c.nome AS curso_nome,
-        turma_info.identificadorturma AS turma_identificador
+        turma_info.identificadorturma AS turma_identificador,
+        contrato.dataassinatura AS contrato_data_assinatura,
+        contrato.situacao AS contrato_situacao,
+        COALESCE(turma_check.na_turma_3, false) AS na_turma_3
       FROM cobranca.pessoa p
       LEFT JOIN LATERAL (
         SELECT matricula, situacao, data, curso, naoenviarmensagemcobranca
@@ -114,6 +117,22 @@ export async function obter(req, res, next) {
           AND cr.turma NOT IN (${TURMAS_EXCLUIDAS_SQL})
         LIMIT 1
       ) turma_info ON true
+      LEFT JOIN LATERAL (
+        SELECT dap.dataassinatura, dap.situacaodocumentoassinadopessoa AS situacao
+        FROM cobranca.documentoassinadopessoa dap
+        JOIN cobranca.documentoassinado da ON da.codigo = dap.documentoassinado
+        WHERE dap.pessoa = p.codigo
+          AND COALESCE(da.documentoassinadoinvalido, false) = false
+        ORDER BY dap.dataassinatura DESC NULLS LAST
+        LIMIT 1
+      ) contrato ON true
+      LEFT JOIN LATERAL (
+        SELECT EXISTS (
+          SELECT 1 FROM cobranca.matricula m2
+          JOIN cobranca.matriculaperiodo mp2 ON mp2.matricula = m2.matricula
+          WHERE m2.aluno = p.codigo AND mp2.turma = 2
+        ) AS na_turma_3
+      ) turma_check ON true
       WHERE p.codigo = $1
     `, codigo);
 
@@ -179,6 +198,11 @@ export async function obter(req, res, next) {
         naoEnviarMensagemCobranca: p.nao_enviar_msg,
         cursoNome: p.curso_nome,
         turmaIdentificador: p.turma_identificador,
+        // Contrato: dataAssinatura preenchida = assinou no SEI. naTurma3 = assinou pela ClickSign
+        // (frontend mostra disclaimer quando dataAssinatura nula E naTurma3 true).
+        situacaoAssinatura: p.contrato_situacao || null,
+        dataAssinatura: p.contrato_data_assinatura || null,
+        naTurma3: Boolean(p.na_turma_3),
         resumoFinanceiro: {
           totalParcelas: fin.total_parcelas || 0,
           parcelasEmAtraso: fin.parcelas_em_atraso || 0,

@@ -30,6 +30,10 @@ export interface Aluno {
   cursoNome?: string | null;
   turmaIdentificador?: string | null;
 
+  situacaoAssinatura?: string | null;
+  dataAssinatura?: string | null;
+  naTurma3?: boolean;
+
   financeiro?: ResumoFinanceiro;
   resumoFinanceiro?: ResumoFinanceiro;
   engajamento?: Engajamento;
