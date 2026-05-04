@@ -17,78 +17,114 @@ export async function listar(req, res, next) {
     const limitNum = Number(limit) || 50;
     const offset = (pageNum - 1) * limitNum;
 
-    // Fluxo sem busca: Prisma puro, ordenado por criadoEm desc (comportamento historico).
-    if (!termo) {
-      const where = {};
-      if (etapa) where.etapa = etapa;
-      if (criadoPor) where.criadoPor = Number(criadoPor);
+    // Antes: 5 round-trips Prisma (acordo + pagamentos + parcelas + documento + count)
+    // levavam 500ms-3.5s no Cloud SQL. Agora: 1 round-trip com json_agg/row_to_json
+    // — em ~500ms cold, ~450ms warm para a base atual.
+    // Os 2 fluxos (com/sem busca) compartilham a mesma SQL; so muda WHERE + ORDER BY.
 
-      const [acordos, total] = await Promise.all([
-        prisma.acordoFinanceiro.findMany({
-          where,
-          include: {
-            pagamentos: { orderBy: { numeroPagamento: 'asc' } },
-            parcelasOriginais: { orderBy: { dataVencimento: 'asc' } },
-            documento: true,
-          },
-          orderBy: { criadoEm: 'desc' },
-          skip: offset,
-          take: limitNum,
-        }),
-        prisma.acordoFinanceiro.count({ where }),
-      ]);
-      return res.json({ acordos, total });
+    const whereClauses = [];
+    const params = [];
+    let idx = 1;
+    let orderClause = '"criadoEm" DESC';
+
+    if (termo) {
+      const busca = buildBuscaClauses({
+        colunaNome: '"pessoaNome"',
+        termo,
+        extras: { colunaCpf: '"pessoaCpf"' },
+        paramStartIndex: idx,
+      });
+      if (busca.filterClause) {
+        whereClauses.push(busca.filterClause);
+        params.push(...busca.params);
+        idx = busca.nextIndex;
+        orderClause = busca.orderClause;
+      }
     }
-
-    // Fluxo com busca: raw query para IDs ordenados por relevancia (nome + cpf).
-    // Depois Prisma findMany por IN (ids) mantendo a ordem via Map.
-    const busca = buildBuscaClauses({
-      colunaNome: '"pessoaNome"',
-      termo,
-      extras: { colunaCpf: '"pessoaCpf"' },
-      paramStartIndex: 1,
-    });
-
-    const filtros = [busca.filterClause].filter(Boolean);
-    const params = [...busca.params];
-    let idx = busca.nextIndex;
-    if (etapa) { filtros.push(`etapa = $${idx++}`); params.push(etapa); }
-    if (criadoPor) { filtros.push(`"criadoPor" = $${idx++}`); params.push(Number(criadoPor)); }
+    if (etapa) { whereClauses.push(`etapa = $${idx++}`); params.push(etapa); }
+    if (criadoPor) { whereClauses.push(`"criadoPor" = $${idx++}`); params.push(Number(criadoPor)); }
 
     params.push(limitNum, offset);
     const limitIdx = idx++;
     const offsetIdx = idx++;
 
-    const idsResult = await prisma.$queryRawUnsafe(`
-      SELECT id, COUNT(*) OVER()::int AS total
-      FROM cobranca.acordo_financeiro
-      WHERE ${filtros.join(' AND ')}
-      ORDER BY ${busca.orderClause}
+    const where = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';
+
+    // Documento: excluimos pdfAssinado (Bytes pesados, nao usados no kanban) via json_build_object.
+    // pagamentos/parcelas: json_agg traz tudo dos respectivos models.
+    const sql = `
+      SELECT
+        a.*,
+        COALESCE((
+          SELECT json_agg(p ORDER BY p."numeroPagamento" ASC)
+          FROM cobranca.pagamento_acordo p
+          WHERE p."acordoId" = a.id
+        ), '[]'::json) AS pagamentos,
+        COALESCE((
+          SELECT json_agg(po ORDER BY po."dataVencimento" ASC)
+          FROM cobranca.parcela_original_acordo po
+          WHERE po."acordoId" = a.id
+        ), '[]'::json) AS "parcelasOriginais",
+        (SELECT json_build_object(
+            'id', d.id,
+            'acordoId', d."acordoId",
+            'tipo', d.tipo,
+            'clicksignDocumentKey', d."clicksignDocumentKey",
+            'clicksignEnvelopeId', d."clicksignEnvelopeId",
+            'situacao', d.situacao,
+            'urlOriginal', d."urlOriginal",
+            'urlAssinado', d."urlAssinado",
+            'signatarios', d.signatarios,
+            'enviadoEm', d."enviadoEm",
+            'assinadoEm', d."assinadoEm"
+          )
+          FROM cobranca.documento d
+          WHERE d."acordoId" = a.id
+          LIMIT 1) AS documento,
+        COUNT(*) OVER()::int AS _total
+      FROM cobranca.acordo_financeiro a
+      ${where}
+      ORDER BY ${orderClause}
       LIMIT $${limitIdx} OFFSET $${offsetIdx}
-    `, ...params);
+    `;
 
-    const ids = idsResult.map(r => r.id);
-    const total = idsResult.length > 0 ? idsResult[0].total : 0;
+    const rows = await prisma.$queryRawUnsafe(sql, ...params);
+    const total = rows.length > 0 ? rows[0]._total : 0;
 
-    if (ids.length === 0) return res.json({ acordos: [], total: 0 });
-
-    const acordosData = await prisma.acordoFinanceiro.findMany({
-      where: { id: { in: ids } },
-      include: {
-        pagamentos: { orderBy: { numeroPagamento: 'asc' } },
-        parcelasOriginais: { orderBy: { dataVencimento: 'asc' } },
-        documento: true,
-      },
+    // Normaliza paridade com o output do Prisma (Date objects nos campos de data dentro dos
+    // arrays). PostgreSQL retorna timestamp sem TZ via json_agg como string "YYYY-MM-DDTHH:MM:SS";
+    // convertemos para Date para que JSON.stringify produza ISO 'Z' UTC, igual ao caminho Prisma.
+    const acordos = rows.map(r => {
+      const { _total, ...acordo } = r;
+      if (Array.isArray(acordo.pagamentos)) {
+        for (const p of acordo.pagamentos) {
+          if (typeof p.dataVencimento === 'string') p.dataVencimento = parseTimestampUtc(p.dataVencimento);
+          if (typeof p.dataPagamento === 'string') p.dataPagamento = parseTimestampUtc(p.dataPagamento);
+        }
+      }
+      if (Array.isArray(acordo.parcelasOriginais)) {
+        for (const po of acordo.parcelasOriginais) {
+          if (typeof po.dataVencimento === 'string') po.dataVencimento = parseTimestampUtc(po.dataVencimento);
+        }
+      }
+      if (acordo.documento) {
+        if (typeof acordo.documento.enviadoEm === 'string') acordo.documento.enviadoEm = parseTimestampUtc(acordo.documento.enviadoEm);
+        if (typeof acordo.documento.assinadoEm === 'string') acordo.documento.assinadoEm = parseTimestampUtc(acordo.documento.assinadoEm);
+      }
+      return acordo;
     });
-
-    // Preserva ordem do ranking
-    const byId = new Map(acordosData.map(a => [a.id, a]));
-    const acordos = ids.map(id => byId.get(id)).filter(Boolean);
 
     res.json({ acordos, total });
   } catch (error) {
     next(error);
   }
+}
+
+// Helper: converte string sem timezone ('2026-04-30T00:00:00') para Date UTC
+// (mesmo formato que Prisma entrega ao serializar timestamp sem TZ).
+function parseTimestampUtc(s) {
+  if (!s) return null;
+  return new Date(s.endsWith('Z') ? s : s + 'Z');
 }
 
 // -----------------------------------------------

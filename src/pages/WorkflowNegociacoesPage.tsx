@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import type { AcordoFinanceiro } from '../types/acordo';
 import type { Aluno } from '../types/aluno';
-import { listarAcordos } from '../services/acordos';
+import { listarAcordos, obterAcordo } from '../services/acordos';
 import { obterAluno } from '../services/alunos';
 import { useRealtime } from '../contexts/RealtimeContext';
 import KanbanBoard from '../components/workflow/KanbanBoard';
@@ -53,11 +53,29 @@ export default function WorkflowNegociacoesPage() {
     }
   }, []);
 
-  // Realtime: atualizar quando webhook ClickSign processar
+  // Realtime: refetch granular do acordo afetado em vez de recarregar tudo.
+  // Em rajadas de webhooks ClickSign/Asaas, evita N refetches caros que travavam a tela.
   const realtime = useRealtime();
   useEffect(() => {
-    const unsub = realtime.on('acordo:atualizado', () => {
-      carregarAcordos();
+    const unsub = realtime.on('acordo:atualizado', async (payload?: { acordoId?: string }) => {
+      if (!payload?.acordoId) {
+        // payload sem id: fallback para recarregar tudo (nao deve acontecer no fluxo atual)
+        carregarAcordos();
+        return;
+      }
+      try {
+        const atualizado = await obterAcordo(payload.acordoId);
+        setAcordos(prev => {
+          const idx = prev.findIndex(a => a.id === atualizado.id);
+          if (idx === -1) return [atualizado, ...prev]; // acordo novo de outro agente
+          const next = [...prev];
+          next[idx] = atualizado;
+          return next;
+        });
+      } catch (err) {
+        console.error('Erro ao atualizar acordo via realtime, refazendo lista:', err);
+        carregarAcordos();
+      }
     });
     return unsub;
   }, [realtime, carregarAcordos]);
