@@ -13,11 +13,17 @@ interface Props {
  * Funil, Pago por Faixa de Inadimplencia e Recuperado por Forma.
  *
  * Vazio = todos os agentes (sem filtro). Persiste em localStorage no parent.
+ *
+ * UX: selecao no popover usa estado LOCAL — mudancas so viram efetivas
+ * (e disparam refetch) ao clicar Aplicar. Cancelar/clicar-fora descarta.
+ * Limpar via X do chip externo aplica imediato (acao clara).
  */
 export default function FiltroAgentes({ agenteIds, onChange }: Props) {
   const [aberto, setAberto] = useState(false);
   const [usuarios, setUsuarios] = useState<User[]>([]);
   const [loading, setLoading] = useState(false);
+  // Selecao local enquanto o popover esta aberto (so commita ao Aplicar)
+  const [agenteIdsLocal, setAgenteIdsLocal] = useState<number[]>(agenteIds);
   const popoverRef = useRef<HTMLDivElement>(null);
 
   // Carrega usuarios uma vez ao montar
@@ -29,31 +35,50 @@ export default function FiltroAgentes({ agenteIds, onChange }: Props) {
       .finally(() => setLoading(false));
   }, []);
 
-  // Fecha ao clicar fora
+  // Sincroniza estado local quando popover abre (ou quando o filtro externo muda)
+  useEffect(() => {
+    if (aberto) setAgenteIdsLocal(agenteIds);
+  }, [aberto, agenteIds]);
+
+  // Fecha ao clicar fora — descartando mudancas locais (mesmo efeito de Cancelar)
   useEffect(() => {
     if (!aberto) return;
     function onDocClick(e: MouseEvent) {
       if (popoverRef.current && !popoverRef.current.contains(e.target as Node)) {
+        setAgenteIdsLocal(agenteIds); // descarta
         setAberto(false);
       }
     }
     document.addEventListener('mousedown', onDocClick);
     return () => document.removeEventListener('mousedown', onDocClick);
-  }, [aberto]);
+  }, [aberto, agenteIds]);
 
   function toggleAgente(id: number) {
-    if (agenteIds.includes(id)) {
-      onChange(agenteIds.filter(x => x !== id));
-    } else {
-      onChange([...agenteIds, id]);
-    }
+    setAgenteIdsLocal(prev =>
+      prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
+    );
   }
 
-  function limparTudo() {
+  function limparLocal() {
+    setAgenteIdsLocal([]);
+  }
+
+  function aplicar() {
+    onChange(agenteIdsLocal);
+    setAberto(false);
+  }
+
+  function cancelar() {
+    setAgenteIdsLocal(agenteIds);
+    setAberto(false);
+  }
+
+  function limparChipExterno(e: React.MouseEvent) {
+    e.stopPropagation();
     onChange([]);
   }
 
-  // Label do botao: nomes selecionados ou "Todos"
+  // Label do botao reflete o estado APLICADO (agenteIds), nao o local
   const selecionados = usuarios.filter(u => agenteIds.includes(u.id));
   const labelBotao = (() => {
     if (selecionados.length === 0) return 'Todos os agentes';
@@ -61,6 +86,12 @@ export default function FiltroAgentes({ agenteIds, onChange }: Props) {
     if (selecionados.length === 2) return `${selecionados[0].nome.split(' ')[0]}, ${selecionados[1].nome.split(' ')[0]}`;
     return `${selecionados.length} agentes`;
   })();
+
+  // Botao Aplicar fica desabilitado quando local == externo (nada a aplicar)
+  const sortedLocal = [...agenteIdsLocal].sort((a, b) => a - b);
+  const sortedExterno = [...agenteIds].sort((a, b) => a - b);
+  const semMudancas = sortedLocal.length === sortedExterno.length
+    && sortedLocal.every((v, i) => v === sortedExterno[i]);
 
   return (
     <div className="relative" ref={popoverRef}>
@@ -76,7 +107,7 @@ export default function FiltroAgentes({ agenteIds, onChange }: Props) {
         <span className="font-medium">{labelBotao}</span>
         {agenteIds.length > 0 && (
           <span
-            onClick={(e) => { e.stopPropagation(); limparTudo(); }}
+            onClick={limparChipExterno}
             className="ml-1 hover:bg-white/20 rounded p-0.5"
             role="button"
             aria-label="Limpar filtro"
@@ -90,9 +121,9 @@ export default function FiltroAgentes({ agenteIds, onChange }: Props) {
         <div className="absolute right-0 top-full mt-1 w-64 bg-white rounded-xl shadow-lg border border-gray-100 z-50 overflow-hidden">
           <div className="px-3 py-2 border-b border-gray-100 flex items-center justify-between">
             <span className="text-[0.6875rem] font-bold text-on-surface-variant uppercase tracking-wider">Filtrar por agente</span>
-            {agenteIds.length > 0 && (
+            {agenteIdsLocal.length > 0 && (
               <button
-                onClick={limparTudo}
+                onClick={limparLocal}
                 className="text-[0.6875rem] text-primary hover:underline"
               >
                 Limpar
@@ -106,7 +137,7 @@ export default function FiltroAgentes({ agenteIds, onChange }: Props) {
               <div className="px-3 py-4 text-[0.75rem] text-gray-400 text-center">Nenhum usuario ativo</div>
             ) : (
               usuarios.map(u => {
-                const selecionado = agenteIds.includes(u.id);
+                const selecionado = agenteIdsLocal.includes(u.id);
                 return (
                   <button
                     key={u.id}
@@ -126,6 +157,21 @@ export default function FiltroAgentes({ agenteIds, onChange }: Props) {
                 );
               })
             )}
+          </div>
+          <div className="px-3 py-2 border-t border-gray-100 flex items-center justify-end gap-2">
+            <button
+              onClick={cancelar}
+              className="px-3 py-1 rounded-lg text-[0.75rem] text-on-surface-variant hover:bg-gray-50 transition-colors"
+            >
+              Cancelar
+            </button>
+            <button
+              onClick={aplicar}
+              disabled={semMudancas}
+              className="px-3 py-1 rounded-lg text-[0.75rem] font-medium bg-primary text-white hover:bg-primary/90 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            >
+              Aplicar
+            </button>
           </div>
         </div>
       )}

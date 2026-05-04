@@ -753,10 +753,17 @@ export async function obterFunil(req, res, next) {
       : '';
 
     // Filtro de agente: aplicado em todas as etapas EXCETO Base (universo total).
-    // Etapas de contato usam "agenteId" (registro_ligacao, mensagem_whatsapp).
-    // Etapas de acordo usam "criadoPor" (acordo_financeiro, ficou_facil).
-    // Param $4 = array de agenteIds quando ha filtro.
-    const filtroAgenteContatoSql = agenteIds ? `AND "agenteId" = ANY($4::int[])` : '';
+    // Etapas de contato (registro_ligacao, mensagem_whatsapp) usam "agenteId" que
+    // armazena o agent.id da 3C Plus, NAO o User.id interno. Traduzimos via
+    // subquery em cobranca.users (User.id -> users.threecplusAgentId).
+    // Etapas de acordo (acordo_financeiro, ficou_facil) usam "criadoPor", que
+    // referencia User.id direto — sem traducao.
+    // Param $4 = array de User.id quando ha filtro.
+    const filtroAgenteContatoSql = agenteIds ? `
+      AND "agenteId" IN (
+        SELECT "threecplusAgentId" FROM cobranca.users
+        WHERE id = ANY($4::int[]) AND "threecplusAgentId" IS NOT NULL
+      )` : '';
     const filtroAgenteAcordoSql = agenteIds ? `AND "criadoPor" = ANY($4::int[])` : '';
     const paramsBase = [snapshotData];
     const paramsEtapa = agenteIds
