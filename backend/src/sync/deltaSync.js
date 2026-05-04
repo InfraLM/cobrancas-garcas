@@ -29,7 +29,12 @@ const DELTA_TABLES = [
   { model: 'contarecebernegociacaorecebimento', serviceId: 'SEIcontarecebernegociacaorecebimento', pk: 'codigo' },
   { model: 'contareceberrecebimento', serviceId: 'SEIcontareceberrecebimento', pk: 'codigo' },
   { model: 'formapagamentonegociacaorecebimento', serviceId: 'SEIformapagamentonegociacaorecebimento', pk: 'codigo' },
-  { model: 'cartaocreditodebitorecorrenciapessoa', serviceId: 'SEIcartaocreditodebitorecorrenciapessoa', pk: 'codigo' },
+  // mode: 'full' — campos created/updated SEMPRE NULL nessa tabela no SEI, entao o filtro
+  // incremental nao funciona. Query do WebService foi alterada permanentemente para retornar
+  // a tabela inteira (tautologia em data_ultima_sync). Aqui fazemos TRUNCATE + createMany
+  // a cada ciclo de 10min — captura inclusao/edicao/cancelamento/exclusao em um so passo.
+  // ~400 registros, sub-segundo.
+  { model: 'cartaocreditodebitorecorrenciapessoa', serviceId: 'SEIcartaocreditodebitorecorrenciapessoa', pk: 'codigo', mode: 'full' },
   { model: 'documentoassinado', serviceId: 'SEIdocumentoassinado', pk: 'codigo' },
   { model: 'documentoassinadopessoa', serviceId: 'SEIdocumentoassinadopessoa', pk: 'codigo' },
   { model: 'alunoResumo', serviceId: 'seiviewalunoresumo', pk: 'codigo' },
@@ -151,7 +156,7 @@ function mapearCampos(record, model) {
 }
 
 // -----------------------------------------------
-// Chamada a API do SEI com parametro data_ultima_sync
+// Chamada a API do SEI: se dataUltimaSync ausente, faz full load (sem body)
 // -----------------------------------------------
 async function fetchDelta(serviceId, dataUltimaSync) {
   const controller = new AbortController();
@@ -164,7 +169,10 @@ async function fetchDelta(serviceId, dataUltimaSync) {
         'Authorization': SEI_AUTH_KEY,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ data_ultima_sync: dataUltimaSync }),
+      // SEI exige data_ultima_sync no body (HTTP 400 sem ele).
+      // Em modo 'full', a query do WebService eh tautologia e retorna tudo independente
+      // da data — mandamos data antiga (2000-01-01) so para satisfazer a validacao do parametro.
+      body: JSON.stringify({ data_ultima_sync: dataUltimaSync || '2000-01-01 00:00:00' }),
     });
 
     if (!response.ok) {
@@ -181,48 +189,64 @@ async function fetchDelta(serviceId, dataUltimaSync) {
 // -----------------------------------------------
 // Delta sync: fetch + upsert
 // -----------------------------------------------
-async function syncTableDelta({ model, serviceId, pk }, dataUltimaSync) {
+async function syncTableDelta({ model, serviceId, pk, mode = 'delta' }, dataUltimaSync) {
   const startTime = Date.now();
+  const isFull = mode === 'full';
 
-  console.log(`  [${model}] Buscando delta desde ${dataUltimaSync}...`);
-  let records = await fetchDelta(serviceId, dataUltimaSync);
+  if (isFull) {
+    console.log(`  [${model}] Full reload (sem data_ultima_sync)...`);
+  } else {
+    console.log(`  [${model}] Buscando delta desde ${dataUltimaSync}...`);
+  }
+
+  // Em full reload, omite dataUltimaSync para o WebService devolver a tabela inteira.
+  let records = await fetchDelta(serviceId, isFull ? null : dataUltimaSync);
 
   if (!Array.isArray(records) || records.length === 0) {
     const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
-    console.log(`  [${model}] Nenhum registro alterado (${elapsed}s)`);
+    console.log(`  [${model}] ${isFull ? 'WebService retornou vazio' : 'Nenhum registro alterado'} (${elapsed}s)`);
     records = null;
     return { model, count: 0, elapsed };
   }
 
   const totalRecords = records.length;
-  console.log(`  [${model}] ${totalRecords} registros alterados. Sincronizando...`);
+  console.log(`  [${model}] ${totalRecords} registros ${isFull ? 'no full reload' : 'alterados'}. Sincronizando...`);
 
   const fieldTypes = getFieldTypes(model);
   let sanitized = records.map(r => sanitizeRecord(mapearCampos(r, model), fieldTypes));
   // Libera o JSON original — já temos a versão sanitizada
   records = null;
 
-  // Bulk upsert: deletar existentes + inserir tudo de uma vez
-  const pks = sanitized.map(r => r[pk]).filter(v => v !== null && v !== undefined);
-
-  if (pks.length > 30000) {
-    // Volume muito grande: processar em batches de 5000 para evitar limite de bind variables
-    for (let i = 0; i < pks.length; i += 5000) {
-      const batchPks = pks.slice(i, i + 5000);
-      const batchData = sanitized.slice(i, i + 5000);
-      await prisma[model].deleteMany({ where: { [pk]: { in: batchPks } } });
-      await prisma[model].createMany({ data: batchData });
-    }
-  } else {
-    await prisma[model].deleteMany({ where: { [pk]: { in: pks } } });
+  if (isFull) {
+    // Full reload: TRUNCATE + createMany. Mesma estrategia do recargaCartaoRecorrencia.js.
+    // Justificativa: tabelas com mode 'full' tem campos created/updated SEMPRE NULL no SEI,
+    // entao o WebService incremental nao funciona. Reload completo a cada ciclo eh barato
+    // (~400 registros, sub-segundo) e captura inclusao/edicao/remocao em um so passo.
+    await prisma.$executeRawUnsafe(`TRUNCATE TABLE cobranca."${model}"`);
     await prisma[model].createMany({ data: sanitized });
+  } else {
+    // Bulk upsert: deletar existentes + inserir tudo de uma vez
+    const pks = sanitized.map(r => r[pk]).filter(v => v !== null && v !== undefined);
+
+    if (pks.length > 30000) {
+      // Volume muito grande: processar em batches de 5000 para evitar limite de bind variables
+      for (let i = 0; i < pks.length; i += 5000) {
+        const batchPks = pks.slice(i, i + 5000);
+        const batchData = sanitized.slice(i, i + 5000);
+        await prisma[model].deleteMany({ where: { [pk]: { in: batchPks } } });
+        await prisma[model].createMany({ data: batchData });
+      }
+    } else {
+      await prisma[model].deleteMany({ where: { [pk]: { in: pks } } });
+      await prisma[model].createMany({ data: sanitized });
+    }
+    pks.length = 0;
   }
   const upserted = sanitized.length;
   sanitized = null;
-  pks.length = 0;
 
   const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
-  console.log(`  [${model}] ${upserted} registros upserted (${elapsed}s)`);
+  console.log(`  [${model}] ${upserted} registros ${isFull ? 'recarregados' : 'upserted'} (${elapsed}s)`);
   return { model, count: upserted, elapsed };
 }
 
