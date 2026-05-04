@@ -6,6 +6,25 @@ import {
   type FunilEtapa,
   type Granularidade, type BucketRecorrentes, type BucketAcumulado,
 } from '../services/dashboard';
+import FiltroAgentes from '../components/dashboard/FiltroAgentes';
+
+const LS_KEY_AGENTES = 'dashboard:agenteIdsFiltro';
+
+function carregarAgentesLS(): number[] {
+  try {
+    const raw = localStorage.getItem(LS_KEY_AGENTES);
+    if (!raw) return [];
+    const arr = JSON.parse(raw);
+    return Array.isArray(arr) ? arr.filter((n) => typeof n === 'number') : [];
+  } catch { return []; }
+}
+
+function salvarAgentesLS(ids: number[]) {
+  try {
+    if (ids.length === 0) localStorage.removeItem(LS_KEY_AGENTES);
+    else localStorage.setItem(LS_KEY_AGENTES, JSON.stringify(ids));
+  } catch { /* ignora quota/disabled */ }
+}
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer,
   ComposedChart, Line, Cell,
@@ -101,18 +120,30 @@ export default function DashboardPage() {
   const [acumuladoAlunos, setAcumuladoAlunos] = useState<BucketAcumulado[]>([]);
   const [loadingAcum, setLoadingAcum] = useState(false);
 
+  // Filtro de agente: afeta Funil + Pago por Faixa + Recuperado por Forma.
+  // Vazio = todos os agentes (sem filtro). Persiste em localStorage.
+  const [agenteIdsFiltro, setAgenteIdsFiltro] = useState<number[]>(carregarAgentesLS());
+  function aplicarFiltroAgentes(ids: number[]) {
+    setAgenteIdsFiltro(ids);
+    salvarAgentesLS(ids);
+  }
+
   const carregar = useCallback(async (forcar = false) => {
     try {
       if (forcar) setRefreshing(true); else setLoading(true);
-      setData(await api.get<DashboardData>(`/dashboard${forcar ? '?forcar=true' : ''}`));
+      const qs = new URLSearchParams();
+      if (forcar) qs.set('forcar', 'true');
+      if (agenteIdsFiltro.length > 0) qs.set('agenteIds', agenteIdsFiltro.join(','));
+      const sufixo = qs.toString() ? `?${qs}` : '';
+      setData(await api.get<DashboardData>(`/dashboard${sufixo}`));
     } catch (err) { console.error('Erro dashboard:', err); }
     finally { setLoading(false); setRefreshing(false); }
-  }, []);
+  }, [agenteIdsFiltro]);
 
-  const carregarFunil = useCallback(async (inicio: string, fim: string) => {
+  const carregarFunil = useCallback(async (inicio: string, fim: string, agenteIds: number[]) => {
     setLoadingFunil(true);
     try {
-      const r = await obterFunilDashboard(inicio, fim);
+      const r = await obterFunilDashboard(inicio, fim, agenteIds);
       setFunil(r.funil);
       setSnapshotData(r.snapshotData);
       setAvisoFunil(r.aviso);
@@ -121,7 +152,7 @@ export default function DashboardPage() {
   }, []);
 
   useEffect(() => { carregar(); }, [carregar]);
-  useEffect(() => { carregarFunil(inicioFunil, fimFunil); }, [inicioFunil, fimFunil, carregarFunil]);
+  useEffect(() => { carregarFunil(inicioFunil, fimFunil, agenteIdsFiltro); }, [inicioFunil, fimFunil, agenteIdsFiltro, carregarFunil]);
 
   // Fetchs dos graficos de recorrencia
   useEffect(() => {
@@ -153,6 +184,7 @@ export default function DashboardPage() {
           <h1 className="text-lg font-bold">Dashboard</h1>
         </div>
         <div className="flex items-center gap-3 text-[0.75rem] text-on-surface-variant">
+          <FiltroAgentes agenteIds={agenteIdsFiltro} onChange={aplicarFiltroAgentes} />
           <span>Atualizado {new Date(data.atualizadoEm).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</span>
           <button onClick={() => carregar(true)} disabled={refreshing}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white hover:bg-gray-50 shadow-sm disabled:opacity-40 transition-colors">

@@ -14,8 +14,9 @@ export interface FunilResponse {
   funil: FunilEtapa[];
 }
 
-export async function obterFunilDashboard(inicio: string, fim: string): Promise<FunilResponse> {
+export async function obterFunilDashboard(inicio: string, fim: string, agenteIds?: number[]): Promise<FunilResponse> {
   const qs = new URLSearchParams({ inicio, fim });
+  if (agenteIds && agenteIds.length > 0) qs.set('agenteIds', agenteIds.join(','));
   return api.get<FunilResponse>(`/dashboard/funil?${qs}`);
 }
 

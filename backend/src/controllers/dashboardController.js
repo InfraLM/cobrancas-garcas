@@ -4,8 +4,15 @@ import { getOrSet, chaveDe } from '../utils/memCache.js';
 const TURMAS_EXCLUIDAS = '1,10,14,19,22,27,29';
 const CACHE_TTL = 5 * 60 * 1000; // 5 minutos
 
-// Cache em memoria
+// Cache em memoria (so para o caminho sem filtro de agente)
 let cache = { data: null, timestamp: 0 };
+
+// Parse query param `agenteIds` ("1,2,3") -> [1,2,3]. Retorna null se vazio (sem filtro).
+function parseAgenteIds(raw) {
+  if (!raw) return null;
+  const arr = String(raw).split(',').map(s => Number(s.trim())).filter(n => Number.isFinite(n) && n > 0);
+  return arr.length > 0 ? arr : null;
+}
 
 /**
  * GET /api/dashboard?forcar=true
@@ -15,27 +22,31 @@ let cache = { data: null, timestamp: 0 };
 export async function obterDashboard(req, res, next) {
   try {
     const forcar = req.query.forcar === 'true';
+    const agenteIds = parseAgenteIds(req.query.agenteIds);
     const agora = Date.now();
 
-    // Retornar cache se valido
-    if (!forcar && cache.data && (agora - cache.timestamp) < CACHE_TTL) {
+    // Cache global so vale para o caminho SEM filtro de agente. Quando ha
+    // filtro, recalculamos sem cache (fluxo raro, custo aceitavel).
+    if (!forcar && !agenteIds && cache.data && (agora - cache.timestamp) < CACHE_TTL) {
       return res.json(cache.data);
     }
 
-    console.log('[Dashboard] Calculando metricas...');
+    console.log(`[Dashboard] Calculando metricas${agenteIds ? ` (filtro agentes: ${agenteIds.join(',')})` : ''}...`);
     const startTime = Date.now();
 
     // recorrentesHistorico aqui usa SEMPRE granularidade=semana e janela
     // expandindo desde 2026-02-08, pra calcular a taxaRecorrencia do KPI
     // (mesmo universo do grafico "Composicao"). O grafico em si vem do
     // endpoint /dashboard/recorrentes-historico (parametrizado).
+    // Filtro de agenteIds afeta SO pagoPorAging e pagoPorForma — KPIs/aging/etc
+    // sao numeros globais (visao gerencial) e nao mudam por agente.
     const [aging, agingHistorico, recorrentesHistorico, ficouFacil, pagoPorAging, pagoPorForma] = await Promise.all([
       calcularAging(),
       calcularAgingHistorico(),
       calcularRecorrentesHistorico(),
       calcularFicouFacil(),
-      calcularPagoPorAging(),
-      calcularPagoPorForma(),
+      calcularPagoPorAging(agenteIds),
+      calcularPagoPorForma(agenteIds),
     ]);
     const kpis = await calcularKPIs(recorrentesHistorico);
 
@@ -43,8 +54,10 @@ export async function obterDashboard(req, res, next) {
     // proprios os servem com filtros dinamicos (granularidade + periodo).
     const data = { kpis, aging, agingHistorico, ficouFacil, pagoPorAging, pagoPorForma, atualizadoEm: new Date().toISOString() };
 
-    // Salvar cache
-    cache = { data, timestamp: agora };
+    // So salva cache global no caminho sem filtro
+    if (!agenteIds) {
+      cache = { data, timestamp: agora };
+    }
 
     const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
     console.log(`[Dashboard] Metricas calculadas em ${elapsed}s`);
@@ -666,6 +679,7 @@ async function calcularFicouFacil() {
 export async function obterFunil(req, res, next) {
   try {
     let { inicio, fim } = req.query;
+    const agenteIds = parseAgenteIds(req.query.agenteIds);
 
     // Compatibilidade com chamada legada `?periodo=30d`
     if (!inicio || !fim) {
@@ -683,7 +697,8 @@ export async function obterFunil(req, res, next) {
 
     // Cache 30s — funil eh agregado pesado e a mesma combinacao de datas
     // costuma ser pedida varias vezes em sequencia (re-renders, navegacao).
-    const cacheKey = chaveDe('dashboard:funil', { inicio, fim });
+    // agenteIds entra na chave para nao misturar resultados entre filtros.
+    const cacheKey = chaveDe('dashboard:funil', { inicio, fim, agenteIds: agenteIds ? agenteIds.join(',') : '' });
     const result = await getOrSet(cacheKey, 30, async () => {
     // Range de snapshots disponiveis
     const range = await prisma.$queryRawUnsafe(`
@@ -737,12 +752,23 @@ export async function obterFunil(req, res, next) {
       ? `AND "pessoaCodigo" IN (SELECT "pessoaCodigo" FROM cobranca.snapshot_inadimplencia_diario WHERE data = $1::date)`
       : '';
 
+    // Filtro de agente: aplicado em todas as etapas EXCETO Base (universo total).
+    // Etapas de contato usam "agenteId" (registro_ligacao, mensagem_whatsapp).
+    // Etapas de acordo usam "criadoPor" (acordo_financeiro, ficou_facil).
+    // Param $4 = array de agenteIds quando ha filtro.
+    const filtroAgenteContatoSql = agenteIds ? `AND "agenteId" = ANY($4::int[])` : '';
+    const filtroAgenteAcordoSql = agenteIds ? `AND "criadoPor" = ANY($4::int[])` : '';
+    const paramsBase = [snapshotData];
+    const paramsEtapa = agenteIds
+      ? [snapshotData, inicioTs, fimTs, agenteIds]
+      : [snapshotData, inicioTs, fimTs];
+
     const [base, tentativa, realizado, negociado, recuperado] = await Promise.all([
-      // Base = snapshot do dia (sempre)
+      // Base = snapshot do dia (SEMPRE — nao filtra por agente, eh universo total)
       prisma.$queryRawUnsafe(`
         SELECT COUNT(*)::int AS qtd, COALESCE(SUM("valorDevedor"), 0)::numeric AS valor
         FROM cobranca.snapshot_inadimplencia_diario WHERE data = $1::date
-      `, snapshotData),
+      `, ...paramsBase),
       // Tentativa: contactados em [inicio,fim]; se restringe, soma valorDevedor da base; senao, soma de aluno_resumo
       prisma.$queryRawUnsafe(`
         WITH contactados AS (
@@ -751,12 +777,14 @@ export async function obterFunil(req, res, next) {
           WHERE "pessoaCodigo" IS NOT NULL
             AND "dataHoraChamada" BETWEEN $2::timestamp AND $3::timestamp
             ${filtroBaseSql}
+            ${filtroAgenteContatoSql}
           UNION
           SELECT DISTINCT "pessoaCodigo" AS pessoa
           FROM cobranca.mensagem_whatsapp
           WHERE "pessoaCodigo" IS NOT NULL AND "fromMe" = true
             AND "timestamp" BETWEEN $2::timestamp AND $3::timestamp
             ${filtroBaseSql}
+            ${filtroAgenteContatoSql}
         )
         SELECT COUNT(DISTINCT c.pessoa)::int AS qtd,
           COALESCE(SUM(COALESCE(snap."valorDevedor", ar."valorDevedor")), 0)::numeric AS valor
@@ -764,7 +792,7 @@ export async function obterFunil(req, res, next) {
         LEFT JOIN cobranca.snapshot_inadimplencia_diario snap
           ON snap.data = $1::date AND snap."pessoaCodigo" = c.pessoa
         LEFT JOIN cobranca.aluno_resumo ar ON ar.codigo = c.pessoa
-      `, snapshotData, inicioTs, fimTs),
+      `, ...paramsEtapa),
       // Contato Realizado
       prisma.$queryRawUnsafe(`
         WITH efetivos AS (
@@ -774,12 +802,14 @@ export async function obterFunil(req, res, next) {
             AND "dataHoraChamada" BETWEEN $2::timestamp AND $3::timestamp
             AND COALESCE("tempoFalando", 0) >= 4
             ${filtroBaseSql}
+            ${filtroAgenteContatoSql}
           UNION
           SELECT DISTINCT "pessoaCodigo" AS pessoa
           FROM cobranca.mensagem_whatsapp
           WHERE "pessoaCodigo" IS NOT NULL AND "fromMe" = false
             AND "timestamp" BETWEEN $2::timestamp AND $3::timestamp
             ${filtroBaseSql}
+            ${filtroAgenteContatoSql}
         )
         SELECT COUNT(DISTINCT e.pessoa)::int AS qtd,
           COALESCE(SUM(COALESCE(snap."valorDevedor", ar."valorDevedor")), 0)::numeric AS valor
@@ -787,7 +817,7 @@ export async function obterFunil(req, res, next) {
         LEFT JOIN cobranca.snapshot_inadimplencia_diario snap
           ON snap.data = $1::date AND snap."pessoaCodigo" = e.pessoa
         LEFT JOIN cobranca.aluno_resumo ar ON ar.codigo = e.pessoa
-      `, snapshotData, inicioTs, fimTs),
+      `, ...paramsEtapa),
       // Negociado
       prisma.$queryRawUnsafe(`
         WITH neg AS (
@@ -795,16 +825,18 @@ export async function obterFunil(req, res, next) {
           FROM cobranca.acordo_financeiro
           WHERE etapa != 'CANCELADO' AND "criadoEm" BETWEEN $2::timestamp AND $3::timestamp
             ${filtroBaseSql}
+            ${filtroAgenteAcordoSql}
           UNION ALL
           SELECT "pessoaCodigo" AS pessoa, "valorInadimplenteMJ"::numeric AS valor
           FROM cobranca.ficou_facil
           WHERE etapa != 'CANCELADO' AND "criadoEm" BETWEEN $2::timestamp AND $3::timestamp
             ${filtroBaseSql}
+            ${filtroAgenteAcordoSql}
         )
         SELECT COUNT(DISTINCT pessoa)::int AS qtd,
           COALESCE(SUM(valor), 0)::numeric AS valor
         FROM neg
-      `, snapshotData, inicioTs, fimTs),
+      `, ...paramsEtapa),
       // Recuperado
       prisma.$queryRawUnsafe(`
         WITH rec AS (
@@ -812,16 +844,18 @@ export async function obterFunil(req, res, next) {
           FROM cobranca.acordo_financeiro
           WHERE etapa = 'CONCLUIDO' AND "concluidoEm" BETWEEN $2::timestamp AND $3::timestamp
             ${filtroBaseSql}
+            ${filtroAgenteAcordoSql}
           UNION ALL
           SELECT "pessoaCodigo" AS pessoa, "valorInadimplenteMJ"::numeric AS valor
           FROM cobranca.ficou_facil
           WHERE etapa = 'CONCLUIDO' AND "concluidoEm" BETWEEN $2::timestamp AND $3::timestamp
             ${filtroBaseSql}
+            ${filtroAgenteAcordoSql}
         )
         SELECT COUNT(DISTINCT pessoa)::int AS qtd,
           COALESCE(SUM(valor), 0)::numeric AS valor
         FROM rec
-      `, snapshotData, inicioTs, fimTs),
+      `, ...paramsEtapa),
     ]);
 
     return {
@@ -872,7 +906,9 @@ export async function obterAcumuladoAlunos(req, res, next) {
 // -----------------------------------------------
 // Pago por aging (faixa de inadimplencia)
 // -----------------------------------------------
-async function calcularPagoPorAging() {
+async function calcularPagoPorAging(agenteIds = null) {
+  const filtroAgente = agenteIds ? `AND af."criadoPor" = ANY($1::int[])` : '';
+  const params = agenteIds ? [agenteIds] : [];
   const rows = await prisma.$queryRawUnsafe(`
     SELECT faixa, qtd_parcelas, valor_recebido, valor_negociado FROM (
       SELECT
@@ -906,11 +942,12 @@ async function calcularPagoPorAging() {
         FROM cobranca.pagamento_acordo pa
         JOIN cobranca.acordo_financeiro af ON af.id = pa."acordoId"
         WHERE af.etapa != 'CANCELADO'
+          ${filtroAgente}
       ) sub
       GROUP BY 1, 5
     ) grouped
     ORDER BY ordem
-  `);
+  `, ...params);
 
   return rows.map(r => ({
     faixa: r.faixa,
@@ -943,7 +980,11 @@ function caseFormaPagamento() {
   `;
 }
 
-async function calcularPagoPorForma() {
+async function calcularPagoPorForma(agenteIds = null) {
+  const filtroAgenteAcordo = agenteIds ? `AND af."criadoPor" = ANY($1::int[])` : '';
+  const filtroAgenteFf = agenteIds ? `AND "criadoPor" = ANY($1::int[])` : '';
+  const params = agenteIds ? [agenteIds] : [];
+
   // Competencia: 1 row por pagamento_acordo CONFIRMADO, somando o valor nominal
   // do acordo (o cartao em 6x conta o total mesmo que so 1 parcela tenha caido).
   const competencia = await prisma.$queryRawUnsafe(`
@@ -953,9 +994,10 @@ async function calcularPagoPorForma() {
     FROM cobranca.pagamento_acordo pa
     JOIN cobranca.acordo_financeiro af ON af.id = pa."acordoId"
     WHERE af.etapa != 'CANCELADO' AND pa.situacao = 'CONFIRMADO'
+      ${filtroAgenteAcordo}
     GROUP BY forma
     ORDER BY valor DESC
-  `);
+  `, ...params);
 
   // Caixa: o que de fato entrou (valorPago, com fallback no nominal apenas
   // quando valorPago nao foi gravado pelo Asaas).
@@ -966,15 +1008,17 @@ async function calcularPagoPorForma() {
     FROM cobranca.pagamento_acordo pa
     JOIN cobranca.acordo_financeiro af ON af.id = pa."acordoId"
     WHERE af.etapa != 'CANCELADO' AND pa.situacao = 'CONFIRMADO'
+      ${filtroAgenteAcordo}
     GROUP BY forma
     ORDER BY valor DESC
-  `);
+  `, ...params);
 
   // Ficou Facil concluidos — valor recuperado entra nas duas visoes
   const ff = await prisma.$queryRawUnsafe(`
     SELECT COUNT(*)::int AS qtd, COALESCE(SUM("valorInadimplenteMJ"), 0)::numeric AS valor
     FROM cobranca.ficou_facil WHERE etapa = 'CONCLUIDO'
-  `);
+      ${filtroAgenteFf}
+  `, ...params);
 
   const mapearComFf = (rows) => {
     const out = rows.map(r => ({ forma: r.forma, qtd: r.qtd, valor: Number(r.valor) }));

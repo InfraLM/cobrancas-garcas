@@ -24,8 +24,8 @@ logs
 .remember/
 
 # Arquivos de referencia (nao sao codigo)
-dashboard/
-clicksign_exemplo/
+/dashboard/
+/clicksign_exemplo/
 xx.json
 
 # Scripts de uso local
