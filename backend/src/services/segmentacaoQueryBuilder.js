@@ -250,9 +250,19 @@ function escape(val) {
 // CTEs base compartilhadas pelos dois builders
 function baseCtes() {
   return [
+    // Filtro raiz: aluno SO entra na segmentacao se tem matricula no curso permitido
+    // E essa matricula tem pelo menos 1 matriculaperiodo em turma nao-excluida.
+    // Sem isso, alunos antigos da TURMA 1 E 2 (cod 1) e turmas de financiamento/teste
+    // (10, 14, 19, 22, 27, 29) entrariam na segmentacao mesmo sem cobranca ativa.
     `matricula_recente AS (
       SELECT DISTINCT ON (m.aluno) m.aluno, m.matricula, m.curso, m.data, m.naoenviarmensagemcobranca
-      FROM cobranca.matricula m WHERE m.curso = ${CURSO_PERMITIDO}
+      FROM cobranca.matricula m
+      WHERE m.curso = ${CURSO_PERMITIDO}
+        AND EXISTS (
+          SELECT 1 FROM cobranca.matriculaperiodo mp
+          WHERE mp.matricula = m.matricula
+            AND mp.turma NOT IN (${TURMAS_EXCLUIDAS})
+        )
       ORDER BY m.aluno, m.data DESC NULLS LAST
     )`,
     `cancelamento AS (
@@ -351,6 +361,12 @@ function buildAlunoQuery(condicoes, opts) {
   return `
     WITH ${ctes.join(',\n')}
     SELECT p.codigo, p.nome, p.cpf, p.celular, mr.matricula,
+      (SELECT t.identificadorturma
+        FROM cobranca.matriculaperiodo mp
+        JOIN cobranca.turma t ON t.codigo = mp.turma
+        WHERE mp.matricula = mr.matricula
+          AND mp.turma NOT IN (${TURMAS_EXCLUIDAS})
+        ORDER BY mp.codigo DESC NULLS LAST LIMIT 1) AS turma_identificador,
       CASE
         WHEN canc.data_cancelamento IS NOT NULL AND canc.data_cancelamento <= CURRENT_DATE THEN 'CANCELADO'
         WHEN tranc.data_trancamento IS NOT NULL AND tranc.data_trancamento <= CURRENT_DATE

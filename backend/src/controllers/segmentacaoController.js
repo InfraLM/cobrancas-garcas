@@ -176,6 +176,8 @@ function mapRowsAluno(rows) {
     cpf: r.cpf,
     celular: r.celular,
     matricula: r.matricula,
+    turma: r.turma_identificador,
+    turmaIdentificador: r.turma_identificador,
     situacao: r.situacao_calculada,
     situacaoFinanceira: r.situacao_financeira,
     valorDevedor: Number(r.valor_devedor),
