@@ -753,16 +753,34 @@ export async function obterFunil(req, res, next) {
       : '';
 
     // Filtro de agente: aplicado em todas as etapas EXCETO Base (universo total).
-    // Etapas de contato (registro_ligacao, mensagem_whatsapp) usam "agenteId" que
-    // armazena o agent.id da 3C Plus, NAO o User.id interno. Traduzimos via
-    // subquery em cobranca.users (User.id -> users.threecplusAgentId).
-    // Etapas de acordo (acordo_financeiro, ficou_facil) usam "criadoPor", que
-    // referencia User.id direto — sem traducao.
     // Param $4 = array de User.id quando ha filtro.
-    const filtroAgenteContatoSql = agenteIds ? `
-      AND "agenteId" IN (
-        SELECT "threecplusAgentId" FROM cobranca.users
-        WHERE id = ANY($4::int[]) AND "threecplusAgentId" IS NOT NULL
+    //
+    // Ligacao: agenteId direto (3C Plus agent.id) OR campanhaId do user.
+    // O OR cobre as ligacoes de massa do dialer preditivo (95% das ligacoes
+    // tem agenteId NULL porque o dialer nao atribui agente individual — mas
+    // pertencem a campanha do agente que subiu o mailing).
+    //
+    // Whatsapp: filtra por instanciaId via tabela N:N instancia_whatsapp_user.
+    // Nao usar mensagem_whatsapp.agenteId — payload da 3C Plus quase nunca
+    // popula msg.agent.id em mensagens recebidas (90% NULL). A relacao real
+    // user-whatsapp e user-instancia.
+    //
+    // Acordo: criadoPor referencia User.id direto, sem traducao.
+    const filtroAgenteLigacaoSql = agenteIds ? `
+      AND (
+        "agenteId" IN (
+          SELECT "threecplusAgentId" FROM cobranca.users
+          WHERE id = ANY($4::int[]) AND "threecplusAgentId" IS NOT NULL
+        )
+        OR "campanhaId" IN (
+          SELECT "campanhaId" FROM cobranca.users
+          WHERE id = ANY($4::int[]) AND "campanhaId" IS NOT NULL
+        )
+      )` : '';
+    const filtroAgenteWhatsappSql = agenteIds ? `
+      AND "instanciaId" IN (
+        SELECT "instanciaId" FROM cobranca.instancia_whatsapp_user
+        WHERE "userId" = ANY($4::int[])
       )` : '';
     const filtroAgenteAcordoSql = agenteIds ? `AND "criadoPor" = ANY($4::int[])` : '';
     const paramsBase = [snapshotData];
@@ -784,14 +802,14 @@ export async function obterFunil(req, res, next) {
           WHERE "pessoaCodigo" IS NOT NULL
             AND "dataHoraChamada" BETWEEN $2::timestamp AND $3::timestamp
             ${filtroBaseSql}
-            ${filtroAgenteContatoSql}
+            ${filtroAgenteLigacaoSql}
           UNION
           SELECT DISTINCT "pessoaCodigo" AS pessoa
           FROM cobranca.mensagem_whatsapp
           WHERE "pessoaCodigo" IS NOT NULL AND "fromMe" = true
             AND "timestamp" BETWEEN $2::timestamp AND $3::timestamp
             ${filtroBaseSql}
-            ${filtroAgenteContatoSql}
+            ${filtroAgenteWhatsappSql}
         )
         SELECT COUNT(DISTINCT c.pessoa)::int AS qtd,
           COALESCE(SUM(COALESCE(snap."valorDevedor", ar."valorDevedor")), 0)::numeric AS valor
@@ -809,14 +827,14 @@ export async function obterFunil(req, res, next) {
             AND "dataHoraChamada" BETWEEN $2::timestamp AND $3::timestamp
             AND COALESCE("tempoFalando", 0) >= 4
             ${filtroBaseSql}
-            ${filtroAgenteContatoSql}
+            ${filtroAgenteLigacaoSql}
           UNION
           SELECT DISTINCT "pessoaCodigo" AS pessoa
           FROM cobranca.mensagem_whatsapp
           WHERE "pessoaCodigo" IS NOT NULL AND "fromMe" = false
             AND "timestamp" BETWEEN $2::timestamp AND $3::timestamp
             ${filtroBaseSql}
-            ${filtroAgenteContatoSql}
+            ${filtroAgenteWhatsappSql}
         )
         SELECT COUNT(DISTINCT e.pessoa)::int AS qtd,
           COALESCE(SUM(COALESCE(snap."valorDevedor", ar."valorDevedor")), 0)::numeric AS valor

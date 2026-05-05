@@ -32,6 +32,7 @@ xx.json
 backend/src/sync/restaurarContareceber.js
 backend/src/sync/refreshResumo.js
 backend/src/sync/popularOcorrencias.js
+backend/src/sync/recargaPessoa.js
 
 # Editor
 .vscode/*
