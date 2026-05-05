@@ -35,6 +35,9 @@ backend/src/sync/popularOcorrencias.js
 backend/src/sync/recargaPessoa.js
 backend/src/sync/backfillCampanhaUser.js
 
+# Documentos de planejamento interno
+docs/multi-agentes-plano.md
+
 # Editor
 .vscode/*
 !.vscode/extensions.json
