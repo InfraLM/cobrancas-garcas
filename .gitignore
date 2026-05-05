@@ -33,6 +33,7 @@ backend/src/sync/restaurarContareceber.js
 backend/src/sync/refreshResumo.js
 backend/src/sync/popularOcorrencias.js
 backend/src/sync/recargaPessoa.js
+backend/src/sync/backfillCampanhaUser.js
 
 # Editor
 .vscode/*

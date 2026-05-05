@@ -336,23 +336,39 @@ export async function syncCampanhas(req, res, next) {
 
     const { adicionar = [], remover = [] } = req.body;
 
+    // Snapshot local de campanhas vinculadas (cobranca.campanha_user) — usado pelo
+    // filtro de agente do dashboard para cobrir ligacoes em massa do dialer
+    // (que tem agenteId NULL mas pertencem a campanha do user).
+    const campanhasInfo = adicionar.length > 0 ? await listarCampanhas() : [];
+    const nomePor = new Map(campanhasInfo.map(c => [Number(c.id), c.name]));
+
     const resultados = [];
 
     for (const campId of adicionar) {
+      const cId = Number(campId);
       try {
-        await adicionarAgenteCampanha(campId, user.threecplusAgentId);
-        resultados.push({ campanha: campId, acao: 'adicionado', ok: true });
+        await adicionarAgenteCampanha(cId, user.threecplusAgentId);
+        await prisma.campanhaUser.upsert({
+          where: { userId_campanhaId: { userId: id, campanhaId: cId } },
+          create: { userId: id, campanhaId: cId, campanhaNome: nomePor.get(cId) || null },
+          update: { campanhaNome: nomePor.get(cId) || null },
+        }).catch(err => console.warn(`[Users] Falha snapshot local campanhaUser add ${cId}: ${err.message}`));
+        resultados.push({ campanha: cId, acao: 'adicionado', ok: true });
       } catch (err) {
-        resultados.push({ campanha: campId, acao: 'adicionado', ok: false, erro: err.message });
+        resultados.push({ campanha: cId, acao: 'adicionado', ok: false, erro: err.message });
       }
     }
 
     for (const campId of remover) {
+      const cId = Number(campId);
       try {
-        await removerAgenteCampanha(campId, user.threecplusAgentId);
-        resultados.push({ campanha: campId, acao: 'removido', ok: true });
+        await removerAgenteCampanha(cId, user.threecplusAgentId);
+        await prisma.campanhaUser.deleteMany({
+          where: { userId: id, campanhaId: cId },
+        }).catch(err => console.warn(`[Users] Falha snapshot local campanhaUser remove ${cId}: ${err.message}`));
+        resultados.push({ campanha: cId, acao: 'removido', ok: true });
       } catch (err) {
-        resultados.push({ campanha: campId, acao: 'removido', ok: false, erro: err.message });
+        resultados.push({ campanha: cId, acao: 'removido', ok: false, erro: err.message });
       }
     }
 

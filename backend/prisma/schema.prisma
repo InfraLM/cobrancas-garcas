@@ -38,6 +38,7 @@ model User {
   atualizadoEm DateTime @updatedAt
 
   instanciasWhatsapp InstanciaWhatsappUser[]
+  campanhasOperadas  CampanhaUser[]
 
   @@map("users")
 }
@@ -56,6 +57,21 @@ model InstanciaWhatsappUser {
   @@unique([userId, instanciaId])
   @@index([instanciaId])
   @@map("instancia_whatsapp_user")
+}
+
+model CampanhaUser {
+  id           String   @id @default(uuid())
+  userId       Int
+  campanhaId   Int
+  campanhaNome String?
+  criadoEm     DateTime @default(now())
+  atualizadoEm DateTime @updatedAt
+
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, campanhaId])
+  @@index([campanhaId])
+  @@map("campanha_user")
 }
 
 model ErrorLog {

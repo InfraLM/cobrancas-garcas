@@ -773,8 +773,8 @@ export async function obterFunil(req, res, next) {
           WHERE id = ANY($4::int[]) AND "threecplusAgentId" IS NOT NULL
         )
         OR "campanhaId" IN (
-          SELECT "campanhaId" FROM cobranca.users
-          WHERE id = ANY($4::int[]) AND "campanhaId" IS NOT NULL
+          SELECT "campanhaId" FROM cobranca.campanha_user
+          WHERE "userId" = ANY($4::int[])
         )
       )` : '';
     const filtroAgenteWhatsappSql = agenteIds ? `
