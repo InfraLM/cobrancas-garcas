@@ -17,7 +17,29 @@ function validarCodigoFormat(codigo) {
 export async function listar(req, res, next) {
   try {
     const incluirInativos = req.query.incluirInativos === 'true';
+    const incluirUso = req.query.incluirUso === 'true';
     const { categoria } = req.query;
+
+    if (incluirUso) {
+      // Listagem com agregacao de uso (qtdAplicadaAtiva, qtdHistorico). Util pra
+      // tela de gestao decidir se vale desativar uma tag.
+      const condAtivo = incluirInativos ? '' : 'WHERE t.ativo = true';
+      const condCat = categoria ? `${condAtivo ? 'AND' : 'WHERE'} t.categoria = $1` : '';
+      const sql = `
+        SELECT t.*,
+          COUNT(at.id) FILTER (WHERE at."removidoEm" IS NULL)::int AS "qtdAplicadaAtiva",
+          COUNT(at.id)::int AS "qtdHistorico"
+        FROM cobranca.tag t
+        LEFT JOIN cobranca.aluno_tag at ON at."tagId" = t.id
+        ${condAtivo} ${condCat}
+        GROUP BY t.id
+        ORDER BY t.categoria ASC, t.ordem ASC, t.label ASC
+      `;
+      const tags = categoria
+        ? await prisma.$queryRawUnsafe(sql, String(categoria))
+        : await prisma.$queryRawUnsafe(sql);
+      return res.json({ data: tags });
+    }
 
     const where = {};
     if (!incluirInativos) where.ativo = true;

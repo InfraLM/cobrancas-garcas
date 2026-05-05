@@ -10,6 +10,9 @@ export interface Tag {
   ativo: boolean;
   criadoEm: string;
   atualizadoEm: string;
+  // Campos extras quando listado com ?incluirUso=true
+  qtdAplicadaAtiva?: number;
+  qtdHistorico?: number;
 }
 
 // Atribuicao de uma tag a um aluno (1:N).

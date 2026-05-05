@@ -42,13 +42,32 @@ export default function AlunoTagsSection({ pessoaCodigo, compacto = false, edita
   }, [pessoaCodigo]);
 
   async function aplicarTag(tag: Tag) {
+    // Atualizacao otimista: chip aparece instantaneamente. Se backend falhar, reverte.
+    const tempId = `temp-${Date.now()}-${tag.id}`;
+    const tempAtrib: AlunoTag = {
+      id: tempId,
+      pessoaCodigo,
+      tagId: tag.id,
+      tag,
+      observacao: null,
+      origemConversaId: null,
+      origemAcordoId: null,
+      criadoPor: 0,
+      criadoPorNome: null,
+      criadoEm: new Date().toISOString(),
+      removidoEm: null,
+      removidoPor: null,
+      removidoPorNome: null,
+    };
+    setAplicadas(prev => [tempAtrib, ...prev]);
     try {
-      await tagsService.aplicarTag(pessoaCodigo, { tagId: tag.id });
-      // Recarrega lista (mais simples que atualizar cliente; volume eh pequeno)
-      const ap = await tagsService.listarPorAluno(pessoaCodigo);
-      setAplicadas(ap);
+      const real = await tagsService.aplicarTag(pessoaCodigo, { tagId: tag.id });
+      // Substitui a atribuicao temporaria pela real (com id correto vindo do backend)
+      setAplicadas(prev => prev.map(a => (a.id === tempId ? real : a)));
       onChange?.();
     } catch (e) {
+      // Falhou — remove a otimista
+      setAplicadas(prev => prev.filter(a => a.id !== tempId));
       setErro((e as Error).message);
     }
   }
