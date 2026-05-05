@@ -1755,10 +1755,12 @@ model MensagemWhatsapp {
   ack                 String?   // null=pendente, "device"=entregue, "read"=lido
   timestamp           DateTime
   criadoEm            DateTime  @default(now())
+  templateWhatsappId  Int?      // FK logica para template_whatsapp.id quando enviada via template
 
   @@index([contatoNumero, timestamp])
   @@index([pessoaCodigo, timestamp])
   @@index([chatId, timestamp])
+  @@index([templateWhatsappId, timestamp])
   @@map("mensagem_whatsapp")
 }
 
@@ -2370,4 +2372,52 @@ model SnapshotInadimplenciaDiario {
   @@id([data, pessoaCodigo])
   @@index([data])
   @@map("snapshot_inadimplencia_diario")
+}
+
+// ============================================================
+// Tags qualitativas — analise contextual da inadimplencia
+// ============================================================
+//
+// Tag eh o catalogo (ex: FALTA_RECEBIMENTO, BUSCOU_CANCELAMENTO).
+// AlunoTag eh a atribuicao 1:N (um aluno pode ter varias tags ativas).
+// Soft-delete via removidoEm preserva historico para serie temporal.
+
+model Tag {
+  id          String   @id @default(uuid())
+  categoria   String   // FINANCEIRO | MATRICULA_INTENCAO | QUALIDADE_CONTATO | JURIDICO | (extensivel)
+  codigo      String   // FALTA_RECEBIMENTO, BUSCOU_CANCELAMENTO, ... (IMUTAVEL apos criacao)
+  label       String   // texto exibido no chip (mutavel)
+  descricao   String?
+  cor         String?  // amber | blue | gray | red
+  ordem       Int      @default(0)
+  ativo       Boolean  @default(true)
+  criadoEm    DateTime @default(now())
+  atualizadoEm DateTime @updatedAt
+
+  alunoTags   AlunoTag[]
+
+  @@unique([categoria, codigo])
+  @@index([ativo, ordem])
+  @@map("tag")
+}
+
+model AlunoTag {
+  id               String   @id @default(uuid())
+  pessoaCodigo     Int      // FK logica para cobranca.pessoa.codigo
+  tagId            String
+  observacao       String?
+  origemConversaId String?  // se aplicada durante atendimento
+  origemAcordoId   String?
+  criadoPor        Int
+  criadoPorNome    String?
+  criadoEm         DateTime @default(now())
+  removidoEm       DateTime?  // soft-delete
+  removidoPor      Int?
+  removidoPorNome  String?
+
+  tag              Tag      @relation(fields: [tagId], references: [id])
+
+  @@index([pessoaCodigo, removidoEm])
+  @@index([tagId, criadoEm])
+  @@map("aluno_tag")
 }

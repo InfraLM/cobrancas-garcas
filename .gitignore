@@ -34,6 +34,7 @@ backend/src/sync/refreshResumo.js
 backend/src/sync/popularOcorrencias.js
 backend/src/sync/recargaPessoa.js
 backend/src/sync/backfillCampanhaUser.js
+backend/src/sync/seedTags.js
 
 # Documentos de planejamento interno
 docs/multi-agentes-plano.md

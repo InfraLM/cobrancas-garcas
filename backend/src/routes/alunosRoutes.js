@@ -1,8 +1,12 @@
 import { Router } from 'express';
 import { requireAuth } from '../middleware/auth.js';
 import { listar, obter, parcelas, engajamento, plantoes, suporte, recorrencia, serasaRegistros, ocorrencias } from '../controllers/alunosController.js';
+import alunoTagsRoutes from './alunoTagsRoutes.js';
 
 const router = Router();
+
+// Sub-rota: /api/alunos/:codigo/tags
+router.use('/:codigo/tags', alunoTagsRoutes);
 
 router.get('/', requireAuth, listar);
 router.post('/refresh', requireAuth, async (req, res, next) => {
