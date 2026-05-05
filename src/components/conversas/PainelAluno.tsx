@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import type { Aluno } from '../../types/aluno';
 import { listarOcorrencias } from '../../services/alunos';
 import { X, Phone, FileText, ExternalLink, AlertTriangle, GraduationCap, DollarSign, Clock, UserX } from 'lucide-react';
+import AlunoTagsSection from '../tags/AlunoTagsSection';
 
 interface PainelAlunoProps {
   aluno: Aluno | null;
@@ -146,6 +147,11 @@ export default function PainelAluno({ aluno, contatoNumero, onFechar }: PainelAl
               </div>
             </div>
           </div>
+        </div>
+
+        {/* Tags */}
+        <div className="px-4 py-3 border-b border-gray-50">
+          <AlunoTagsSection pessoaCodigo={aluno.codigo} />
         </div>
 
         {/* Course info */}
