@@ -1,5 +1,6 @@
 import type { ConversaCobranca } from '../../types/conversa';
 import { ArrowRightLeft, CheckSquare, Clock, User, Handshake } from 'lucide-react';
+import AlunoTagsSection from '../tags/AlunoTagsSection';
 
 interface HeaderChatProps {
   conversa: ConversaCobranca;
@@ -66,6 +67,20 @@ export default function HeaderChat({
               <span className="text-[0.625rem] text-gray-400">Encerrada</span>
             )}
           </div>
+          {conversa.pessoaCodigo && (
+            <button
+              type="button"
+              onClick={onTogglePainelAluno}
+              className="mt-1 hover:opacity-80 transition-opacity"
+              title="Clique para gerenciar tags no painel do aluno"
+            >
+              <AlunoTagsSection
+                pessoaCodigo={conversa.pessoaCodigo}
+                compacto
+                editavel={false}
+              />
+            </button>
+          )}
         </div>
       </div>
 

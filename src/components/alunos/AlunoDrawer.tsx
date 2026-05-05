@@ -16,6 +16,7 @@ import AlunoTabRecorrencia from './AlunoTabRecorrencia';
 import AlunoTabRepositorio from './AlunoTabRepositorio';
 import PausarLigacaoModal from './PausarLigacaoModal';
 import { removerPausa } from '../../services/pausasLigacao';
+import AlunoTagsSection from '../tags/AlunoTagsSection';
 import { User, Wallet, BookOpen, Stethoscope, Headphones, Clock, CreditCard, FolderOpen, Loader2, Pause, Play } from 'lucide-react';
 
 interface AlunoDrawerProps {
@@ -159,6 +160,10 @@ function AlunoConteudo({ aluno }: { aluno: Aluno }) {
             <span className="text-[0.8125rem] text-gray-400 ml-auto">{formatarMoeda(fin.valorPago)} pagos</span>
           </div>
         )}
+
+        <div className="mt-4 pt-4 border-t border-gray-100">
+          <AlunoTagsSection pessoaCodigo={aluno.codigo} />
+        </div>
       </div>
 
       <Tabs tabs={tabsConfig}>
