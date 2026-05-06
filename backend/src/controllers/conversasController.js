@@ -143,6 +143,7 @@ async function persistirMensagemEnviada(apiResponse, chatIdFallback, tipoOverrid
     const templateWhatsappId = Number.isFinite(Number(extras?.templateWhatsappId))
       ? Number(extras.templateWhatsappId)
       : null;
+    const templateMetaId = extras?.templateMetaId || null;
 
     const mensagem = await prisma.mensagemWhatsapp.upsert({
       where: { mensagemExternaId },
@@ -170,6 +171,7 @@ async function persistirMensagemEnviada(apiResponse, chatIdFallback, tipoOverrid
         ack: ackInicial,
         timestamp: new Date(timestamp * 1000),
         templateWhatsappId,
+        templateMetaId,
       },
       update: ackInicial ? { ack: ackInicial } : {},
     });
@@ -225,6 +227,83 @@ export async function enviarTexto(req, res, next) {
       return res.status(response.status).json(data);
     }
     await persistirMensagemEnviada(data, chat_id, 'chat', { templateWhatsappId });
+    res.json(data);
+  } catch (error) {
+    next(error);
+  }
+}
+
+// Envio de template Meta WABA (fora da janela 24h ou primeira mensagem ao aluno).
+// Diferente de enviarTexto: passa pelo endpoint /message/send_template da 3C Plus,
+// que roteia para Meta Cloud API. Body precisa estar com variáveis ja resolvidas
+// (substituidas com valores reais das variáveis).
+export async function enviarTemplate(req, res, next) {
+  try {
+    const { chat_id, instance_id, template_meta_id, parametros } = req.body;
+    if (!chat_id || !instance_id || !template_meta_id) {
+      return res.status(400).json({
+        error: 'chat_id, instance_id e template_meta_id sao obrigatorios',
+      });
+    }
+
+    // Lookup do template local
+    const tpl = await prisma.templateMeta.findUnique({ where: { id: template_meta_id } });
+    if (!tpl) return res.status(404).json({ error: 'Template nao encontrado' });
+    if (tpl.status !== 'APPROVED') {
+      return res.status(400).json({
+        error: `Template esta com status ${tpl.status}. Apenas APPROVED pode ser enviado.`,
+      });
+    }
+    if (!tpl.metaTemplateId) {
+      return res.status(400).json({ error: 'Template nao tem metaTemplateId — precisa ser sincronizado com Meta' });
+    }
+
+    // Resolve body com parametros: substitui {{1}}, {{2}}, ... pelos valores
+    const bodyComp = (tpl.components || []).find(c => c.type === 'BODY' || c.type === 'body');
+    if (!bodyComp || !bodyComp.text) {
+      return res.status(400).json({ error: 'Template sem componente BODY' });
+    }
+    let bodyResolvido = bodyComp.text;
+    for (const [k, v] of Object.entries(parametros || {})) {
+      const re = new RegExp('\\{\\{\\s*' + k + '\\s*\\}\\}', 'g');
+      bodyResolvido = bodyResolvido.replace(re, String(v));
+    }
+
+    // Sanity check: nenhuma variavel restante
+    const variaveisRestantes = bodyResolvido.match(/\{\{\d+\}\}/g);
+    if (variaveisRestantes && variaveisRestantes.length > 0) {
+      return res.status(400).json({
+        error: 'Variaveis nao preenchidas: ' + variaveisRestantes.join(', '),
+      });
+    }
+
+    // Chama 3C Plus
+    const response = await fetch(chatUrl('/message/send_template'), {
+      method: 'POST',
+      headers: bearerHeaders(),
+      body: JSON.stringify({
+        chat_id,
+        instance_id,
+        template_id: tpl.metaTemplateId,
+        template_name: tpl.name,
+        template_language: tpl.language,
+        body: bodyResolvido,
+      }),
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      console.error('[3C+ Chat API] send_template falhou:', response.status, data);
+      // Se 3C/Meta retornar 401, mapear pra 502 pra nao deslogar (mesmo padrao
+      // do templatesMetaController).
+      const isAuthErr = response.status === 401 || response.status === 403;
+      const statusResp = isAuthErr ? 502 : response.status;
+      return res.status(statusResp).json({
+        error: data?.error?.error_user_msg || data?.error?.message || data?.detail || 'Erro ao enviar template',
+        meta: data,
+      });
+    }
+
+    await persistirMensagemEnviada(data, chat_id, 'chat', { templateMetaId: tpl.id });
     res.json(data);
   } catch (error) {
     next(error);

@@ -39,6 +39,31 @@ export async function listarMensagens(chatId: string | number, page = 1): Promis
 }
 
 // ─── REST: Send ────────────────────────────────────────────
+// Envia template Meta WABA (fora da janela 24h ou primeira mensagem ativa).
+// O backend resolve as variaveis e chama 3C Plus /message/send_template.
+export async function enviarTemplate(
+  chatId: string | number,
+  instanceId: string,
+  templateMetaId: string,
+  parametros: Record<string, string>,
+): Promise<any> {
+  const res = await fetch(`${API_BASE}/enviar/template`, {
+    method: 'POST',
+    headers: authHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify({
+      chat_id: chatId,
+      instance_id: instanceId,
+      template_meta_id: templateMetaId,
+      parametros,
+    }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || `Erro ao enviar template: ${res.status}`);
+  }
+  return res.json();
+}
+
 export async function enviarTexto(
   chatId: string | number,
   body: string,
@@ -254,6 +279,9 @@ export function normalizarMensagem(raw: any): Mensagem3CPlus {
     mensagemCitada: raw.quoted_msg?.body ? { corpo: raw.quoted_msg.body, id: raw.quoted_msg.id } : undefined,
     interno: raw.internal != null && raw.internal !== false,
     deletado: raw.is_deleted || raw.deleted || false,
+    templateWhatsappId: raw.templateWhatsappId ?? null,
+    templateMetaId: raw.templateMetaId ?? null,
+    templateMetaNome: raw.templateMetaNome ?? null,
   };
 }
 

@@ -14,6 +14,7 @@ export interface ConversaCobranca {
   id: string;
   chatId: string;
   instanciaId: string;
+  instanciaTipo: 'whatsapp-3c' | 'waba' | null;  // canal: distingue janela 24h e modo de envio
   contatoNumero: string;
   contatoNome: string | null;
   contatoImagem: string | null;
@@ -112,6 +113,10 @@ export interface Mensagem3CPlus {
   };
   interno: boolean;
   deletado: boolean;
+  // Tracking de templates (Sprints 3 e 4)
+  templateWhatsappId?: number | null;  // atalho rapido enviado durante conversa
+  templateMetaId?: string | null;      // template Meta WABA enviado fora da janela 24h
+  templateMetaNome?: string | null;    // nome do template Meta (denormalizado pra UI)
 }
 
 // --- Estado ---

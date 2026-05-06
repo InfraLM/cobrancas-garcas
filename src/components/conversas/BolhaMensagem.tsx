@@ -1,6 +1,6 @@
 import { useState, useRef } from 'react';
 import type { Mensagem3CPlus } from '../../types/conversa';
-import { Check, CheckCheck, Lock, FileText, Play, Pause, Download } from 'lucide-react';
+import { Check, CheckCheck, Lock, FileText, Play, Pause, Download, BadgeCheck } from 'lucide-react';
 
 interface BolhaMensagemProps {
   mensagem: Mensagem3CPlus;
@@ -11,7 +11,8 @@ function formatarHora(ts: number): string {
 }
 
 export default function BolhaMensagem({ mensagem }: BolhaMensagemProps) {
-  const { tipo, corpo, fromMe, timestamp, ack, interno, mediaUrl, mediaNome, deletado } = mensagem;
+  const { tipo, corpo, fromMe, timestamp, ack, interno, mediaUrl, mediaNome, deletado, templateMetaId, templateMetaNome } = mensagem;
+  const eTemplateMeta = !!templateMetaId;
 
   // System messages (protocol, transfer, qualification, snooze)
   if (['protocol-message', 'transfer', 'qualification-message', 'snooze-message'].includes(tipo)) {
@@ -59,8 +60,16 @@ export default function BolhaMensagem({ mensagem }: BolhaMensagemProps) {
   const alinhamento = fromMe ? 'justify-end' : 'justify-start';
 
   return (
-    <div className={`flex ${alinhamento} my-0.5 px-4`}>
-      <div className={`${bolhaCor} rounded-xl px-3 py-1.5 max-w-[65%] shadow-sm`}>
+    <div className={`flex flex-col ${alinhamento} items-${fromMe ? 'end' : 'start'} my-0.5 px-4`}>
+      {/* Badge indicador de template Meta WABA — aparece acima da bolha */}
+      {eTemplateMeta && (
+        <div className="flex items-center gap-1 mb-0.5 mr-1 text-[0.625rem] text-emerald-600">
+          <BadgeCheck size={10} />
+          <span>Template{templateMetaNome ? `: ${templateMetaNome}` : ''}</span>
+        </div>
+      )}
+      <div className={`flex ${alinhamento} w-full`}>
+      <div className={`${bolhaCor} rounded-xl px-3 py-1.5 max-w-[65%] shadow-sm ${eTemplateMeta ? 'border border-emerald-200' : ''}`}>
         {/* Quoted message */}
         {mensagem.mensagemCitada?.corpo && (
           <div className="bg-black/5 rounded-lg px-2.5 py-1.5 mb-1.5 border-l-2 border-gray-400">
@@ -142,6 +151,7 @@ export default function BolhaMensagem({ mensagem }: BolhaMensagemProps) {
             )
           )}
         </div>
+      </div>
       </div>
     </div>
   );

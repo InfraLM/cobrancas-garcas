@@ -137,6 +137,9 @@ export async function upsertConversa({ chatData, messageData }) {
   const contatoNome = chatData?.contact?.name || null;
   const contatoImagem = chatData?.contact?.image || null;
   const instanciaId = chatData?.instance?.id || chatData?.instance_id || messageData?.instance_id || '';
+  // Tipo do canal — extraido do payload da 3C Plus (instance.type = 'whatsapp-3c' | 'waba')
+  // Usado pelo frontend para detectar janela 24h e modo de envio (livre vs template).
+  const instanciaTipo = chatData?.instance?.type || messageData?.instance?.type || null;
 
   // Detecta @lid do WhatsApp: ID interno (14+ digitos sem prefixo 55).
   // Quando isso chega, vincularPessoa nao casa com nenhum celular do SEI e
@@ -165,6 +168,7 @@ export async function upsertConversa({ chatData, messageData }) {
         data: {
           chatId,
           instanciaId,
+          instanciaTipo,
           contatoNumero,
           contatoNome: contatoNome || pessoa?.nome || null,
           contatoImagem,
@@ -223,6 +227,11 @@ export async function upsertConversa({ chatData, messageData }) {
     // Bumpa atividade tanto no envio quanto no recebimento (ordering)
     ultimaAtividadeEm: quandoMensagem,
   };
+  // Atualiza instanciaTipo se o payload trouxe (corrige conversas antigas que tinham
+  // `whatsapp-3c` por backfill quando recebem msg via WABA depois)
+  if (instanciaTipo && existente.instanciaTipo !== instanciaTipo) {
+    patch.instanciaTipo = instanciaTipo;
+  }
 
   if (fromMe) {
     patch.ultimaMensagemAgente = quandoMensagem;

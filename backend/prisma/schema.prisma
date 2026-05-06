@@ -1835,6 +1835,7 @@ model ConversaCobranca {
   // Vinculacao com 3C Plus (canal)
   chatId                  String    @unique
   instanciaId             String
+  instanciaTipo           String?   // "whatsapp-3c" | "waba" — detecta janela 24h e modo de envio
   contatoNumero           String
   contatoNome             String?
   contatoImagem           String?

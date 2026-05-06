@@ -1,8 +1,10 @@
 import { useState, useRef, type KeyboardEvent } from 'react';
-import { Send, Paperclip, Mic, Lock, Image, FileText, Square, X } from 'lucide-react';
+import { Send, Paperclip, Mic, Lock, Image, FileText, Square, X, BadgeCheck } from 'lucide-react';
 import BotaoTemplates from './BotaoTemplates';
 import ModalSelecionarTemplate from './ModalSelecionarTemplate';
+import SelecionarTemplateMetaModal from './SelecionarTemplateMetaModal';
 import type { DadosResolucao } from '../../utils/resolverTemplate';
+import type { Aluno } from '../../types/aluno';
 
 interface InputMensagemProps {
   onEnviar: (texto: string, interno: boolean, templateWhatsappId?: number | null) => void;
@@ -10,7 +12,16 @@ interface InputMensagemProps {
   onEnviarAudio?: (blob: Blob) => void;
   desabilitado?: boolean;
   dadosTemplate?: DadosResolucao;
+  // Suporte a envio de template Meta WABA (quando janela 24h fechou)
+  instanciaTipo?: 'whatsapp-3c' | 'waba' | null;
+  ultimaMensagemCliente?: string | null;
+  chatId?: string | number;
+  instanciaId?: string;
+  aluno?: Aluno | null;
+  onTemplateMetaEnviado?: () => void;
 }
+
+const VINTE_QUATRO_HORAS_MS = 24 * 60 * 60 * 1000;
 
 export default function InputMensagem({
   onEnviar,
@@ -18,6 +29,12 @@ export default function InputMensagem({
   onEnviarAudio,
   desabilitado,
   dadosTemplate,
+  instanciaTipo,
+  ultimaMensagemCliente,
+  chatId,
+  instanciaId,
+  aluno,
+  onTemplateMetaEnviado,
 }: InputMensagemProps) {
   const [texto, setTexto] = useState('');
   const [interno, setInterno] = useState(false);
@@ -25,6 +42,14 @@ export default function InputMensagem({
   const [gravando, setGravando] = useState(false);
   const [tempoGravacao, setTempoGravacao] = useState(0);
   const [modalTemplateAberto, setModalTemplateAberto] = useState(false);
+  const [modalTemplateMetaAberto, setModalTemplateMetaAberto] = useState(false);
+
+  // Detecta se conversa eh WABA com janela 24h fechada — neste caso, agente
+  // so pode enviar via template aprovado pela Meta (regra do WhatsApp Business).
+  const ehWaba = instanciaTipo === 'waba';
+  const ultimaMsgClienteMs = ultimaMensagemCliente ? new Date(ultimaMensagemCliente).getTime() : 0;
+  const janelaFechada = ehWaba && (!ultimaMsgClienteMs || (Date.now() - ultimaMsgClienteMs > VINTE_QUATRO_HORAS_MS));
+  const podeEnviarTemplate = janelaFechada && chatId !== undefined && !!instanciaId;
   // Tracking de template: setado quando agente seleciona um template no modal.
   // Zera apenas quando o textarea fica completamente vazio (regra acordada).
   // Mensagem enviada com este ID setado eh contabilizada como uso do template,
@@ -158,6 +183,40 @@ export default function InputMensagem({
         el.focus();
       }
     });
+  }
+
+  // ─── Modo WABA com janela 24h fechada — só template aprovado ──
+  if (podeEnviarTemplate && !gravando) {
+    return (
+      <>
+        <div className="bg-white border-t border-gray-100 px-4 py-3">
+          <div className="flex items-center gap-2 mb-2">
+            <BadgeCheck size={13} className="text-emerald-600" />
+            <p className="text-[0.6875rem] text-gray-600">
+              Janela de 24h da WABA fechada. Envie um template aprovado pela Meta.
+            </p>
+          </div>
+          <button
+            onClick={() => setModalTemplateMetaAberto(true)}
+            disabled={desabilitado}
+            className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-emerald-600 text-white text-[0.875rem] font-medium hover:bg-emerald-700 transition-colors disabled:opacity-50"
+          >
+            <BadgeCheck size={16} />
+            Selecione um modelo de mensagem
+          </button>
+        </div>
+        {chatId !== undefined && instanciaId && (
+          <SelecionarTemplateMetaModal
+            aberto={modalTemplateMetaAberto}
+            onFechar={() => setModalTemplateMetaAberto(false)}
+            chatId={chatId}
+            instanciaId={instanciaId}
+            aluno={aluno}
+            onEnviado={onTemplateMetaEnviado}
+          />
+        )}
+      </>
+    );
   }
 
   // ─── Recording mode ───────────────────────────────────

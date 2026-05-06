@@ -7,6 +7,7 @@ import {
   obterChat,
   listarMensagens,
   enviarTexto,
+  enviarTemplate,
   enviarInterno,
   enviarImagem,
   enviarAudio,
@@ -37,6 +38,7 @@ router.get('/chats/:chatId/messages', requireAuth, listarMensagens);
 
 // Send (Chat API — Bearer)
 router.post('/enviar/texto', requireAuth, enviarTexto);
+router.post('/enviar/template', requireAuth, enviarTemplate);
 router.post('/enviar/interno', requireAuth, enviarInterno);
 router.post('/enviar/imagem', requireAuth, upload.single('image'), enviarImagem);
 router.post('/enviar/audio', requireAuth, upload.single('audio'), enviarAudio);

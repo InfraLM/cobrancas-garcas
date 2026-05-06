@@ -448,6 +448,11 @@ export default function ConversasPage() {
                 conversa: conversaAtiva,
                 agente: user,
               }}
+              instanciaTipo={conversaAtiva.instanciaTipo}
+              ultimaMensagemCliente={conversaAtiva.ultimaMensagemCliente}
+              chatId={conversaAtiva.chatId}
+              instanciaId={conversaAtiva.instanciaId}
+              aluno={alunoVinculado}
             />
           </>
         ) : (
