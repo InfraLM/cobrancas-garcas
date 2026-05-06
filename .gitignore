@@ -38,6 +38,7 @@ backend/src/sync/seedTags.js
 
 # Documentos de planejamento interno
 docs/multi-agentes-plano.md
+docs/whatsapp-oficial-plano.md
 
 # Editor
 .vscode/*
