@@ -22,6 +22,7 @@ import disparosRoutes from './disparosRoutes.js';
 import reguasCobrancaRoutes from './reguasCobrancaRoutes.js';
 import atividadesRoutes from './atividadesRoutes.js';
 import tagsRoutes from './tagsRoutes.js';
+import templatesMetaRoutes from './templatesMetaRoutes.js';
 
 const router = Router();
 
@@ -51,5 +52,6 @@ router.use('/disparos', disparosRoutes);
 router.use('/reguas-cobranca', reguasCobrancaRoutes);
 router.use('/atividades', atividadesRoutes);
 router.use('/tags', tagsRoutes);
+router.use('/templates-meta', templatesMetaRoutes);
 
 export default router;

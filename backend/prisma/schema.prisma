@@ -1756,11 +1756,13 @@ model MensagemWhatsapp {
   timestamp           DateTime
   criadoEm            DateTime  @default(now())
   templateWhatsappId  Int?      // FK logica para template_whatsapp.id quando enviada via template
+  templateMetaId      String?   // FK logica para template_meta.id quando enviada via template Meta WABA
 
   @@index([contatoNumero, timestamp])
   @@index([pessoaCodigo, timestamp])
   @@index([chatId, timestamp])
   @@index([templateWhatsappId, timestamp])
+  @@index([templateMetaId, timestamp])
   @@map("mensagem_whatsapp")
 }
 
@@ -2420,4 +2422,67 @@ model AlunoTag {
   @@index([pessoaCodigo, removidoEm])
   @@index([tagId, criadoEm])
   @@map("aluno_tag")
+}
+
+// ============================================================
+// Templates Meta WABA (canal oficial WhatsApp Business)
+// ============================================================
+//
+// Diferente de TemplateBlip (regua via Blip): TemplateMeta vai DIRETO
+// para Meta Graph API. Lifecycle: DRAFT (local) -> PENDING (submetido)
+// -> APPROVED/REJECTED/PAUSED (gerenciado pela Meta, sincronizado via
+// webhook + cron de fallback).
+
+model TemplateMeta {
+  id               String    @id @default(uuid())
+
+  // Identificacao Meta
+  metaTemplateId   String?   @unique  // populado apos POST /message_templates
+  metaWabaId       String              // qual WABA pertence
+  name             String              // lowercase + underscore, unico por (waba, language)
+  language         String    @default("pt_BR")
+  category         String              // MARKETING | UTILITY | AUTHENTICATION
+
+  // Status sincronizado da Meta (webhook + cron 30min)
+  status           String    @default("DRAFT")
+  // DRAFT (nao submetido) | PENDING | APPROVED | REJECTED | PAUSED | DISABLED | IN_APPEAL
+  rejectReason     String?
+  qualityRating    String?   // HIGH | MEDIUM | LOW | UNKNOWN
+
+  // Estrutura dos componentes em formato Meta-compatible
+  // Ex: [{ type: 'BODY', text: 'Ola {{1}}', example: { body_text: [['Joao']] } }]
+  components       Json
+
+  // Mapeamento das variaveis para fontes do CRM (compativel com reguaExecutorService.resolverVariaveis)
+  // Ex: { body: [{indice:1, fonte:'NOME_ALUNO'}], header: [], buttons: {} }
+  variaveisMap     Json?
+
+  // Telemetria
+  ativo            Boolean   @default(true)
+  criadoPor        Int       @default(0)  // 0 = importado via sync inicial
+  criadoPorNome    String?
+  criadoEm         DateTime  @default(now())
+  atualizadoEm     DateTime  @updatedAt
+  submetidoEm      DateTime?
+  aprovadoEm       DateTime?
+
+  @@unique([metaWabaId, name, language])
+  @@index([status, ativo])
+  @@index([category, status])
+  @@map("template_meta")
+}
+
+// Auditoria de eventos do webhook Meta (template status, quality update, etc.)
+// Append-only. Util para debug e replay de eventos perdidos.
+model MetaWebhookEvent {
+  id          String    @id @default(uuid())
+  field       String    // ex: message_template_status_update | template_category_update | message_template_quality_update
+  payload     Json
+  processado  Boolean   @default(false)
+  erro        String?
+  recebidoEm  DateTime  @default(now())
+
+  @@index([field, recebidoEm])
+  @@index([processado, recebidoEm])
+  @@map("meta_webhook_event")
 }
