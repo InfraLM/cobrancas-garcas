@@ -190,10 +190,17 @@ export async function submeter(req, res, next) {
       });
       res.json({ data: atualizado, meta: remoto });
     } catch (err) {
-      // Meta retornou erro de validacao — devolve para usuario com detalhe
+      // Meta retornou erro de validacao — devolve para usuario com detalhe.
+      // CRITICO: nunca propagar 401/403 da Meta. O frontend trata 401 como
+      // sessao do nosso JWT expirada e desloga o usuario. Mapear pra 502
+      // (Bad Gateway) preserva a mensagem mas evita o redirect pra /login.
       const metaErr = err.metaError;
-      return res.status(err.status || 502).json({
-        error: err.message,
+      const isAuthMeta = err.status === 401 || err.status === 403;
+      const statusResposta = isAuthMeta ? 502 : (err.status || 502);
+      return res.status(statusResposta).json({
+        error: isAuthMeta
+          ? `Erro de autenticação com a Meta: ${err.message}. Verifique se META_ACCESS_TOKEN esta configurado e tem as permissoes whatsapp_business_management + whatsapp_business_messaging.`
+          : err.message,
         metaError: metaErr ? {
           code: metaErr.code,
           subcode: metaErr.error_subcode,
@@ -240,11 +247,18 @@ export async function deletar(req, res, next) {
 // ============================================================
 // SINCRONIZAR (puxa estado atual da Meta)
 // ============================================================
-export async function sincronizar(_req, res, next) {
+export async function sincronizar(_req, res, _next) {
   try {
     const result = await metaService.sincronizarStatus();
     res.json({ data: result });
-  } catch (error) {
-    next(error);
+  } catch (err) {
+    // Mesmo cuidado do submeter: nao propagar 401/403 da Meta para o frontend.
+    const isAuthMeta = err.status === 401 || err.status === 403;
+    const statusResposta = isAuthMeta ? 502 : (err.status || 500);
+    res.status(statusResposta).json({
+      error: isAuthMeta
+        ? `Erro de autenticação com a Meta: ${err.message}. Verifique se META_ACCESS_TOKEN esta configurado e tem as permissoes whatsapp_business_management + whatsapp_business_messaging.`
+        : err.message,
+    });
   }
 }
