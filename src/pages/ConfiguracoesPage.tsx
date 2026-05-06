@@ -27,7 +27,7 @@ const sections: ConfigSection[] = [
     titulo: 'Atendimento',
     cards: [
       { label: 'Qualificações', descricao: 'Critérios de tabulação das ligações', icone: ListChecks, path: '/configuracoes/qualificacoes', ativo: false },
-      { label: 'Templates WhatsApp', descricao: 'Mensagens rápidas com variáveis', icone: MessageSquareQuote, path: '/configuracoes/templates-whatsapp', ativo: true },
+      { label: 'Templates da conversa', descricao: 'Atalhos rápidos e modelos oficiais Meta', icone: MessageSquareQuote, path: '/configuracoes/templates-conversa', ativo: true },
       { label: 'Tags', descricao: 'Catálogo de motivos de inadimplência', icone: Tags, path: '/configuracoes/tags', ativo: true },
       { label: 'Templates', descricao: 'Modelos de documentos e termos', icone: FileText, path: '/configuracoes/templates', ativo: false },
     ],

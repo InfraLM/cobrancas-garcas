@@ -20,6 +20,8 @@ import RepositorioPage from './pages/RepositorioPage';
 import ConfiguracoesPage from './pages/ConfiguracoesPage';
 import UsuariosPage from './pages/UsuariosPage';
 import TemplatesWhatsappPage from './pages/TemplatesWhatsappPage';
+import TemplatesConversaPage from './pages/TemplatesConversaPage';
+import TemplateMetaEditorPage from './pages/TemplateMetaEditorPage';
 import TagsPage from './pages/TagsPage';
 import AtividadesPage from './pages/AtividadesPage';
 
@@ -70,6 +72,9 @@ function App() {
             <Route path="/configuracoes" element={<ConfiguracoesPage />} />
             <Route path="/configuracoes/usuarios" element={<UsuariosPage />} />
             <Route path="/configuracoes/templates-whatsapp" element={<TemplatesWhatsappPage />} />
+            <Route path="/configuracoes/templates-conversa" element={<TemplatesConversaPage />} />
+            <Route path="/configuracoes/templates-conversa/novo-meta" element={<TemplateMetaEditorPage />} />
+            <Route path="/configuracoes/templates-conversa/meta/:id" element={<TemplateMetaEditorPage />} />
             <Route path="/configuracoes/tags" element={<TagsPage />} />
             <Route path="*" element={<Navigate to="/atendimento/conversas" replace />} />
           </Route>
