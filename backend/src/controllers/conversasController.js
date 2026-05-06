@@ -123,7 +123,7 @@ export async function listarMensagens(req, res, next) {
 // ─── Helper: persistir mensagem enviada no banco ─────────
 // Chamado depois que a 3C Plus confirma o envio (REST 200).
 // Garante que mensagens enviadas sobrevivem ao F5 mesmo se o socket nao ecoar.
-async function persistirMensagemEnviada(apiResponse, chatIdFallback, tipoOverride) {
+async function persistirMensagemEnviada(apiResponse, chatIdFallback, tipoOverride, extras = {}) {
   try {
     const sent = apiResponse?.data || apiResponse;
     if (!sent?.id) return;
@@ -136,6 +136,13 @@ async function persistirMensagemEnviada(apiResponse, chatIdFallback, tipoOverrid
     // Tratamos HTTP 200 do REST como confirmacao de entrega (ack = "device" = 2 tracos).
     // Nao temos "read" nesse canal — aceito pelo usuario.
     const ackInicial = sent.ack && sent.ack !== '' ? sent.ack : 'device';
+
+    // Tracking de template: se a mensagem foi enviada a partir de um template
+    // (mesmo que editada parcialmente), guardamos a referencia para futuras
+    // analises de efetividade.
+    const templateWhatsappId = Number.isFinite(Number(extras?.templateWhatsappId))
+      ? Number(extras.templateWhatsappId)
+      : null;
 
     const mensagem = await prisma.mensagemWhatsapp.upsert({
       where: { mensagemExternaId },
@@ -162,6 +169,7 @@ async function persistirMensagemEnviada(apiResponse, chatIdFallback, tipoOverrid
         mensagemCitadaCorpo: null,
         ack: ackInicial,
         timestamp: new Date(timestamp * 1000),
+        templateWhatsappId,
       },
       update: ackInicial ? { ack: ackInicial } : {},
     });
@@ -201,7 +209,7 @@ async function persistirMensagemEnviada(apiResponse, chatIdFallback, tipoOverrid
 // ─── Send Messages (Chat API — Bearer) ───────────────────
 export async function enviarTexto(req, res, next) {
   try {
-    const { chat_id, body, instance_id } = req.body;
+    const { chat_id, body, instance_id, templateWhatsappId } = req.body;
     if (!chat_id || !body) {
       return res.status(400).json({ error: 'chat_id e body são obrigatórios' });
     }
@@ -216,7 +224,7 @@ export async function enviarTexto(req, res, next) {
       console.error('[3C+ Chat API] send_chat falhou:', response.status, data);
       return res.status(response.status).json(data);
     }
-    await persistirMensagemEnviada(data, chat_id, 'chat');
+    await persistirMensagemEnviada(data, chat_id, 'chat', { templateWhatsappId });
     res.json(data);
   } catch (error) {
     next(error);

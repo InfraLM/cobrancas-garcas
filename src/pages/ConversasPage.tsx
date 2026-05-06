@@ -268,11 +268,11 @@ export default function ConversasPage() {
   }, [conversaAtiva]);
 
   // ─── Envio de mensagens ──────────────────────────────────
-  const handleEnviarMensagem = useCallback((texto: string, interno: boolean) => {
+  const handleEnviarMensagem = useCallback((texto: string, interno: boolean, templateWhatsappId?: number | null) => {
     if (!conversaAtiva) return;
     const promise = interno
       ? conversasService.enviarInterno(conversaAtiva.chatId, texto)
-      : conversasService.enviarTexto(conversaAtiva.chatId, texto, conversaAtiva.instanciaId);
+      : conversasService.enviarTexto(conversaAtiva.chatId, texto, conversaAtiva.instanciaId, templateWhatsappId);
 
     const optimistic: Mensagem3CPlus = {
       id: `optimistic-${Date.now()}`,

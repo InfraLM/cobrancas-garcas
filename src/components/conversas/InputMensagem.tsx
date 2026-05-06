@@ -5,7 +5,7 @@ import ModalSelecionarTemplate from './ModalSelecionarTemplate';
 import type { DadosResolucao } from '../../utils/resolverTemplate';
 
 interface InputMensagemProps {
-  onEnviar: (texto: string, interno: boolean) => void;
+  onEnviar: (texto: string, interno: boolean, templateWhatsappId?: number | null) => void;
   onEnviarArquivo?: (file: File, tipo: 'image' | 'document') => void;
   onEnviarAudio?: (blob: Blob) => void;
   desabilitado?: boolean;
@@ -25,6 +25,11 @@ export default function InputMensagem({
   const [gravando, setGravando] = useState(false);
   const [tempoGravacao, setTempoGravacao] = useState(0);
   const [modalTemplateAberto, setModalTemplateAberto] = useState(false);
+  // Tracking de template: setado quando agente seleciona um template no modal.
+  // Zera apenas quando o textarea fica completamente vazio (regra acordada).
+  // Mensagem enviada com este ID setado eh contabilizada como uso do template,
+  // mesmo se o texto foi parcialmente editado.
+  const [templateAtivoId, setTemplateAtivoId] = useState<number | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const docInputRef = useRef<HTMLInputElement>(null);
@@ -35,8 +40,11 @@ export default function InputMensagem({
   function handleEnviar() {
     const msg = texto.trim();
     if (!msg) return;
-    onEnviar(msg, interno);
+    // Notas internas nao tracam template (nao sao mensagem real ao aluno)
+    const tplId = interno ? null : templateAtivoId;
+    onEnviar(msg, interno, tplId);
     setTexto('');
+    setTemplateAtivoId(null);
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto';
     }
@@ -138,8 +146,9 @@ export default function InputMensagem({
     return `${m}:${sec.toString().padStart(2, '0')}`;
   }
 
-  function handleInserirTemplate(textoResolvido: string) {
+  function handleInserirTemplate(textoResolvido: string, templateId: number) {
     setTexto(textoResolvido);
+    setTemplateAtivoId(templateId);
     // Ajusta altura do textarea para mostrar o conteudo inserido
     requestAnimationFrame(() => {
       const el = textareaRef.current;
@@ -256,7 +265,12 @@ export default function InputMensagem({
           <textarea
             ref={textareaRef}
             value={texto}
-            onChange={(e) => setTexto(e.target.value)}
+            onChange={(e) => {
+              const novo = e.target.value;
+              setTexto(novo);
+              // Apagou tudo? Considera que o template foi descartado.
+              if (novo.length === 0 && templateAtivoId !== null) setTemplateAtivoId(null);
+            }}
             onKeyDown={handleKeyDown}
             onInput={handleInput}
             disabled={desabilitado}

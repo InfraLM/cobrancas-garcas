@@ -39,11 +39,21 @@ export async function listarMensagens(chatId: string | number, page = 1): Promis
 }
 
 // ─── REST: Send ────────────────────────────────────────────
-export async function enviarTexto(chatId: string | number, body: string, instanceId?: string): Promise<any> {
+export async function enviarTexto(
+  chatId: string | number,
+  body: string,
+  instanceId?: string,
+  templateWhatsappId?: number | null,
+): Promise<any> {
   const res = await fetch(`${API_BASE}/enviar/texto`, {
     method: 'POST',
     headers: authHeaders({ 'Content-Type': 'application/json' }),
-    body: JSON.stringify({ chat_id: chatId, body, instance_id: instanceId }),
+    body: JSON.stringify({
+      chat_id: chatId,
+      body,
+      instance_id: instanceId,
+      ...(templateWhatsappId ? { templateWhatsappId } : {}),
+    }),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));

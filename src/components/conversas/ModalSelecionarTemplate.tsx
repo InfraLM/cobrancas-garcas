@@ -8,7 +8,7 @@ import { resolverTemplate, type DadosResolucao } from '../../utils/resolverTempl
 interface ModalSelecionarTemplateProps {
   aberto: boolean;
   onFechar: () => void;
-  onInserir: (texto: string) => void;
+  onInserir: (texto: string, templateId: number) => void;
   dados: DadosResolucao;
 }
 
@@ -64,7 +64,7 @@ export default function ModalSelecionarTemplate({
 
   function handleInserir() {
     if (!resolucao || !templateSelecionado) return;
-    onInserir(resolucao.texto);
+    onInserir(resolucao.texto, templateSelecionado.id);
     onFechar();
   }
 
