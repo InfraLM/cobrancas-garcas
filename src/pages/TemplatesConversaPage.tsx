@@ -19,6 +19,7 @@ import {
   listarTemplatesMeta,
   sincronizarTemplatesMeta,
 } from '../services/templatesMeta';
+import { useRealtime } from '../contexts/RealtimeContext';
 import TemplateDrawer from '../components/conversas/TemplateDrawer';
 import EscolherTipoTemplateModal from '../components/templatesConversa/EscolherTipoTemplateModal';
 import TemplateMetaDrawer from '../components/templatesConversa/TemplateMetaDrawer';
@@ -64,6 +65,20 @@ export default function TemplatesConversaPage() {
   }, []);
 
   useEffect(() => { carregar(); }, [carregar]);
+
+  // Escuta atualizacoes em tempo real do webhook Meta:
+  // quando Meta aprova/rejeita/pausa um template, evento `template-meta:atualizado`
+  // chega via socket e mesclamos no estado local sem refresh manual.
+  const realtime = useRealtime();
+  useEffect(() => {
+    if (!realtime.socket) return;
+    const off = realtime.on('template-meta:atualizado', (payload: any) => {
+      if (!payload?.id) return;
+      setMetas(prev => prev.map(t => t.id === payload.id ? { ...t, ...payload } : t));
+    });
+    return off;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [realtime.socket]);
 
   // Lista unificada com filtragem
   const itens = useMemo<ItemUnificado[]>(() => {

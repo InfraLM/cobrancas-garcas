@@ -23,6 +23,7 @@ import reguasCobrancaRoutes from './reguasCobrancaRoutes.js';
 import atividadesRoutes from './atividadesRoutes.js';
 import tagsRoutes from './tagsRoutes.js';
 import templatesMetaRoutes from './templatesMetaRoutes.js';
+import metaWebhookRoutes from './metaWebhookRoutes.js';
 
 const router = Router();
 
@@ -53,5 +54,6 @@ router.use('/reguas-cobranca', reguasCobrancaRoutes);
 router.use('/atividades', atividadesRoutes);
 router.use('/tags', tagsRoutes);
 router.use('/templates-meta', templatesMetaRoutes);
+router.use('/webhooks/meta', metaWebhookRoutes);
 
 export default router;
