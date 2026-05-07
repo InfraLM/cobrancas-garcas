@@ -1758,6 +1758,7 @@ model MensagemWhatsapp {
   criadoEm            DateTime  @default(now())
   templateWhatsappId  Int?      // FK logica para template_whatsapp.id quando enviada via template
   templateMetaId      String?   // FK logica para template_meta.id quando enviada via template Meta WABA
+  templateMetaNome    String?   // nome do template (snake_case), denormalizado pra UI
   instanciaTipo       String?   // "whatsapp-3c" | "waba" — denormalizado do payload 3C Plus para UI
 
   @@index([contatoNumero, timestamp])

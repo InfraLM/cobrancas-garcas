@@ -152,6 +152,12 @@ async function persistirMensagemEnviada(apiResponse, chatIdFallback, tipoOverrid
       || sent.instance?.type
       || null;
 
+    // Corpo da mensagem: para templates Meta, a 3C Plus retorna body=null
+    // (o conteudo fica em waba_template_data.components). Quem chama pode
+    // passar o texto ja resolvido via extras.corpoOverride para a UI exibir.
+    const corpoFinal = extras?.corpoOverride ?? sent.body ?? null;
+    const templateMetaNome = extras?.templateMetaNomeOverride ?? null;
+
     const mensagem = await prisma.mensagemWhatsapp.upsert({
       where: { mensagemExternaId },
       create: {
@@ -165,7 +171,7 @@ async function persistirMensagemEnviada(apiResponse, chatIdFallback, tipoOverrid
         instanciaTipo: instanciaTipoFinal,
         pessoaCodigo: null,
         tipo: tipoOverride || sent.type || 'chat',
-        corpo: sent.body || null,
+        corpo: corpoFinal,
         mediaUrl: sent.media || null,
         mediaNome: sent.media_name || sent.media_original_name || null,
         transcricaoAudio: null,
@@ -180,6 +186,7 @@ async function persistirMensagemEnviada(apiResponse, chatIdFallback, tipoOverrid
         timestamp: new Date(timestamp * 1000),
         templateWhatsappId,
         templateMetaId,
+        templateMetaNome,
       },
       update: ackInicial ? { ack: ackInicial } : {},
     });
@@ -285,6 +292,14 @@ export async function enviarTemplate(req, res, next) {
       return String(valor);
     });
 
+    // Resolve corpo localmente para persistir e exibir na UI (3C Plus retorna body=null
+    // no response do send_template). Substitui {{1}}, {{2}}, ... pelos valores na ordem.
+    let corpoResolvido = bodyComp.text;
+    indicesNoBody.forEach((idx, pos) => {
+      const re = new RegExp('\\{\\{\\s*' + idx + '\\s*\\}\\}', 'g');
+      corpoResolvido = corpoResolvido.replace(re, body_variables[pos]);
+    });
+
     // Chama 3C Plus
     // chat_id como NUMERO (postman exemplo: "chat_id": 42 sem aspas) — string falha 400.
     const chatIdNum = Number(chat_id);
@@ -319,9 +334,11 @@ export async function enviarTemplate(req, res, next) {
       });
     }
 
-    await persistirMensagemEnviada(data, chat_id, 'chat', {
+    await persistirMensagemEnviada(data, chat_id, 'template', {
       templateMetaId: tpl.id,
+      templateMetaNomeOverride: tpl.name,
       instanciaTipoOverride: 'waba',
+      corpoOverride: corpoResolvido,
     });
     res.json(data);
   } catch (error) {

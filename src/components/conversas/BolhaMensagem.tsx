@@ -99,8 +99,8 @@ export default function BolhaMensagem({ mensagem }: BolhaMensagemProps) {
           <p className="text-[0.625rem] font-medium text-emerald-700 mb-0.5">{mensagem.agenteNome}</p>
         )}
 
-        {/* Text */}
-        {tipo === 'chat' && (
+        {/* Text — chat livre ou template ja resolvido (badge "Template: ..." aparece acima da bolha) */}
+        {(tipo === 'chat' || tipo === 'template') && corpo && (
           <p className="text-[0.8125rem] text-gray-900 whitespace-pre-wrap break-words">{corpo}</p>
         )}
 
@@ -139,14 +139,6 @@ export default function BolhaMensagem({ mensagem }: BolhaMensagemProps) {
                 <Play size={32} className="text-white/70" />
               </div>
             )}
-          </div>
-        )}
-
-        {/* Template */}
-        {tipo === 'template' && (
-          <div className="bg-gray-50 rounded-lg px-3 py-2 mb-1 border border-gray-200">
-            <p className="text-[0.625rem] text-gray-400 mb-1">Template</p>
-            <p className="text-[0.8125rem] text-gray-900">{corpo || 'Mensagem template'}</p>
           </div>
         )}
 
