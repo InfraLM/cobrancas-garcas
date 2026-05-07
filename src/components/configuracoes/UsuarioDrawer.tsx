@@ -41,6 +41,7 @@ export default function UsuarioDrawer({ usuario, onClose, onSalvo }: UsuarioDraw
   const [novaInstanciaId, setNovaInstanciaId] = useState('');
   const [novoApelido, setNovoApelido] = useState('');
   const [novoTelefone, setNovoTelefone] = useState('');
+  const [novoTipo, setNovoTipo] = useState<'whatsapp-3c' | 'waba'>('whatsapp-3c');
   const [salvandoNovaInstancia, setSalvandoNovaInstancia] = useState(false);
   const [instanciaEditando, setInstanciaEditando] = useState<string | null>(null);
   const [editApelido, setEditApelido] = useState('');
@@ -115,11 +116,13 @@ export default function UsuarioDrawer({ usuario, onClose, onSalvo }: UsuarioDraw
         instanciaId,
         apelido,
         telefone: novoTelefone.trim() || undefined,
+        tipo: novoTipo,
       });
       setInstancias(prev => [...prev, nova]);
       setNovaInstanciaId('');
       setNovoApelido('');
       setNovoTelefone('');
+      setNovoTipo('whatsapp-3c');
     } catch (err) {
       setInstanciaError(err instanceof Error ? err.message : 'Erro ao adicionar instancia');
     } finally {
@@ -520,7 +523,16 @@ export default function UsuarioDrawer({ usuario, onClose, onSalvo }: UsuarioDraw
                       ) : (
                         <div className="flex items-start gap-3">
                           <div className="flex-1 min-w-0">
-                            <p className="text-[0.8125rem] font-medium text-on-surface truncate">{inst.apelido}</p>
+                            <div className="flex items-center gap-2">
+                              <p className="text-[0.8125rem] font-medium text-on-surface truncate">{inst.apelido}</p>
+                              <span className={`shrink-0 inline-flex items-center px-1.5 py-0.5 rounded text-[0.625rem] font-medium border ${
+                                inst.tipo === 'waba'
+                                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                  : 'bg-gray-50 text-gray-600 border-gray-200'
+                              }`}>
+                                {inst.tipo === 'waba' ? 'WABA' : 'WhatsApp 3C+'}
+                              </span>
+                            </div>
                             <p className="text-[0.75rem] text-on-surface-variant">
                               {inst.telefone || 'Sem telefone'}
                             </p>
@@ -544,6 +556,14 @@ export default function UsuarioDrawer({ usuario, onClose, onSalvo }: UsuarioDraw
                   {/* Form de nova instancia */}
                   <div className="px-3 py-3 rounded-xl border border-dashed border-gray-200 space-y-2">
                     <p className="text-[0.6875rem] font-medium text-gray-500">Adicionar instância</p>
+                    <select
+                      value={novoTipo}
+                      onChange={(e) => setNovoTipo(e.target.value as 'whatsapp-3c' | 'waba')}
+                      className="w-full px-3 py-1.5 rounded-lg border border-gray-200 text-[0.8125rem] bg-white focus:outline-none focus:ring-1 focus:ring-primary"
+                    >
+                      <option value="whatsapp-3c">WhatsApp 3C+ (não oficial)</option>
+                      <option value="waba">WABA (oficial)</option>
+                    </select>
                     <input
                       type="text"
                       value={novoApelido}

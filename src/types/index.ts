@@ -64,4 +64,5 @@ export interface NovaInstanciaWhatsapp {
   instanciaId: string;
   apelido: string;
   telefone?: string;
+  tipo?: 'whatsapp-3c' | 'waba' | null;
 }

@@ -505,6 +505,16 @@ export async function listarInstanciasUser(req, res, next) {
     const userId = Number(req.params.id);
     if (Number.isNaN(userId)) return res.status(400).json({ error: 'ID invalido' });
 
+    // ADMIN ve todas as instancias do sistema (distinct por instanciaId).
+    // Util para validacao geral sem precisar cadastrar manualmente.
+    if (req.user?.role === 'ADMIN') {
+      const todas = await prisma.instanciaWhatsappUser.findMany({
+        orderBy: { criadoEm: 'asc' },
+        distinct: ['instanciaId'],
+      });
+      return res.json(todas);
+    }
+
     const instancias = await prisma.instanciaWhatsappUser.findMany({
       where: { userId },
       orderBy: { criadoEm: 'asc' },
@@ -526,12 +536,17 @@ export async function adicionarInstancia(req, res, next) {
     const user = await prisma.user.findUnique({ where: { id: userId }, select: { id: true } });
     if (!user) return res.status(404).json({ error: 'Usuario nao encontrado' });
 
+    const tipoValido = req.body.tipo === 'whatsapp-3c' || req.body.tipo === 'waba'
+      ? req.body.tipo
+      : null;
+
     const nova = await prisma.instanciaWhatsappUser.create({
       data: {
         userId,
         instanciaId: req.body.instanciaId.trim(),
         apelido: req.body.apelido.trim(),
         telefone: req.body.telefone ? String(req.body.telefone).trim() : null,
+        tipo: tipoValido,
       },
     });
 
@@ -565,6 +580,11 @@ export async function editarInstancia(req, res, next) {
         ...(req.body.apelido !== undefined && { apelido: req.body.apelido.trim() }),
         ...(req.body.telefone !== undefined && {
           telefone: req.body.telefone ? String(req.body.telefone).trim() : null,
+        }),
+        ...(req.body.tipo !== undefined && {
+          tipo: req.body.tipo === 'whatsapp-3c' || req.body.tipo === 'waba'
+            ? req.body.tipo
+            : null,
         }),
       },
     });
