@@ -286,8 +286,13 @@ export async function enviarTemplate(req, res, next) {
     }
 
     // Chama 3C Plus
+    // chat_id como NUMERO (postman exemplo: "chat_id": 42 sem aspas) — string falha 400.
+    const chatIdNum = Number(chat_id);
+    if (!Number.isFinite(chatIdNum)) {
+      return res.status(400).json({ error: 'chat_id invalido (deve ser numerico)' });
+    }
     const payload = {
-      chat_id,
+      chat_id: chatIdNum,
       instance_id,
       template_id: tpl.metaTemplateId,
       template_name: tpl.name,
