@@ -21,6 +21,9 @@ function broadcastAtualizacao(conversa) {
 }
 
 // ─── Listagem ─────────────────────────────────────────────
+// Agrupa conversas por aluno (pessoaCodigo quando vinculado, contatoNumero senao).
+// Retorna a "campea" (mais recente) por grupo, com instanciasTipo:string[]
+// indicando quais canais o aluno tem chat.
 export async function listar(req, res, next) {
   try {
     const { status, agenteId, instanciaId } = req.query;
@@ -35,12 +38,27 @@ export async function listar(req, res, next) {
         { status: 'asc' },
         { ultimaAtividadeEm: 'desc' },
       ],
-      take: 200,
+      take: 400,  // dobrado pq agrupamento abaixo pode reduzir o set
     });
 
-    // Enriquecer com pessoaNome do SEI (conversa_cobranca so tem contatoNome,
-    // que pode ser o numero quando o aluno nao tem nome no contato WhatsApp).
-    const codigos = [...new Set(conversas.map(c => c.pessoaCodigo).filter(Boolean))];
+    // Agrupar por chave (pessoaCodigo:N | numero:contato). Manter a "campea"
+    // (primeira do array — ja vem ordenada por ultimaAtividadeEm desc dentro do mesmo status).
+    const grupos = new Map();
+    for (const c of conversas) {
+      const chave = c.pessoaCodigo ? `pessoa:${c.pessoaCodigo}` : `numero:${c.contatoNumero}`;
+      if (!grupos.has(chave)) {
+        grupos.set(chave, { campea: c, instanciasTipo: new Set() });
+      }
+      if (c.instanciaTipo) grupos.get(chave).instanciasTipo.add(c.instanciaTipo);
+    }
+
+    const agregadas = [...grupos.values()].slice(0, 200).map(g => ({
+      ...g.campea,
+      instanciasTipo: [...g.instanciasTipo],
+    }));
+
+    // Enriquecer com pessoaNome do SEI
+    const codigos = [...new Set(agregadas.map(c => c.pessoaCodigo).filter(Boolean))];
     const pessoas = codigos.length > 0
       ? await prisma.pessoa.findMany({
           where: { codigo: { in: codigos } },
@@ -49,7 +67,7 @@ export async function listar(req, res, next) {
       : [];
     const mapa = new Map(pessoas.map(p => [p.codigo, p]));
 
-    const enriquecidas = conversas.map(c => {
+    const enriquecidas = agregadas.map(c => {
       const p = c.pessoaCodigo ? mapa.get(c.pessoaCodigo) : null;
       return {
         ...c,
@@ -64,20 +82,37 @@ export async function listar(req, res, next) {
   }
 }
 
-// ─── Detalhes + mensagens ─────────────────────────────────
+// ─── Detalhes + mensagens unificadas (do mesmo aluno em todas as instancias) ──
 export async function obter(req, res, next) {
   try {
     const { id } = req.params;
     const conversa = await prisma.conversaCobranca.findUnique({ where: { id } });
     if (!conversa) return res.status(404).json({ error: 'Conversa nao encontrada' });
 
-    const mensagens = await prisma.mensagemWhatsapp.findMany({
-      where: { chatId: Number(conversa.chatId) },
-      orderBy: { timestamp: 'asc' },
-      take: 500,
+    // Conversas "irmas" do mesmo aluno: vincula por pessoaCodigo (preferencial,
+    // robusto a numero diferente de telefone) ou por contatoNumero quando ainda
+    // nao ha pessoa vinculada.
+    const irmas = await prisma.conversaCobranca.findMany({
+      where: conversa.pessoaCodigo
+        ? { pessoaCodigo: conversa.pessoaCodigo }
+        : { contatoNumero: conversa.contatoNumero },
+      select: {
+        id: true,
+        chatId: true,
+        instanciaId: true,
+        instanciaTipo: true,
+        ultimaMensagemCliente: true,
+      },
     });
 
-    res.json({ data: { conversa, mensagens } });
+    const chatIds = irmas.map(c => Number(c.chatId)).filter(n => !Number.isNaN(n));
+    const mensagens = await prisma.mensagemWhatsapp.findMany({
+      where: { chatId: { in: chatIds } },
+      orderBy: { timestamp: 'asc' },
+      take: 1000,
+    });
+
+    res.json({ data: { conversa, mensagens, conversasIrmas: irmas } });
   } catch (error) {
     next(error);
   }

@@ -68,9 +68,10 @@ export default function BolhaMensagem({ mensagem }: BolhaMensagemProps) {
           <span>Template{templateMetaNome ? `: ${templateMetaNome}` : ''}</span>
         </div>
       )}
-      {/* Badge de canal (apenas para mensagens enviadas pelo agente, sem ser template Meta) */}
-      {fromMe && !eTemplateMeta && instanciaTipo && (
-        <div className="flex items-center gap-1 mb-0.5 mr-1 text-[0.625rem] text-gray-500">
+      {/* Badge de canal — em ambos os lados (sem ser template Meta, que tem badge proprio).
+          Permite o agente saber por qual canal o aluno respondeu / por qual ele enviou. */}
+      {!eTemplateMeta && instanciaTipo && (
+        <div className={`flex items-center gap-1 mb-0.5 text-[0.625rem] text-gray-500 ${fromMe ? 'mr-1' : 'ml-1'}`}>
           {instanciaTipo === 'waba' ? (
             <>
               <BadgeCheck size={10} className="text-emerald-600" />

@@ -1,5 +1,5 @@
-import { useState, useRef, type KeyboardEvent } from 'react';
-import { Send, Paperclip, Mic, Lock, Image, FileText, Square, X, BadgeCheck } from 'lucide-react';
+import { useState, useRef, useMemo, type KeyboardEvent } from 'react';
+import { Send, Paperclip, Mic, Lock, Image, FileText, Square, X, BadgeCheck, MessageSquarePlus } from 'lucide-react';
 import BotaoTemplates from './BotaoTemplates';
 import ModalSelecionarTemplate from './ModalSelecionarTemplate';
 import SelecionarTemplateMetaModal from './SelecionarTemplateMetaModal';
@@ -7,18 +7,25 @@ import SeletorCanal from './SeletorCanal';
 import type { DadosResolucao } from '../../utils/resolverTemplate';
 import type { Aluno } from '../../types/aluno';
 import type { InstanciaWhatsappUser } from '../../types';
+import type { Mensagem3CPlus, ConversaIrma } from '../../types/conversa';
 
 interface InputMensagemProps {
-  onEnviar: (texto: string, interno: boolean, templateWhatsappId?: number | null, instanciaIdOverride?: string) => void;
+  onEnviar: (texto: string, interno: boolean, templateWhatsappId?: number | null, instanciaIdOverride?: string, chatIdOverride?: string | number) => void;
   onEnviarArquivo?: (file: File, tipo: 'image' | 'document') => void;
   onEnviarAudio?: (blob: Blob) => void;
   desabilitado?: boolean;
   dadosTemplate?: DadosResolucao;
-  // Suporte a envio de template Meta WABA (quando janela 24h fechou)
-  ultimaMensagemCliente?: string | null;
-  chatId?: string | number;
+  // Janela 24h e historico unificado: o calculo correto vem de filtrar
+  // mensagens carregadas pelo canal (instanciaTipo) e fromMe=false.
+  mensagens?: Mensagem3CPlus[];
+  // Conversas "irmas" do mesmo aluno em outras instancias. Permite resolver
+  // o chatId correto ao enviar pela instancia selecionada.
+  conversasIrmas?: ConversaIrma[];
+  chatId?: string | number;  // chatId da conversa ativa (default quando nao ha irma)
   aluno?: Aluno | null;
   onTemplateMetaEnviado?: () => void;
+  // Quando agente seleciona uma instancia que ainda nao tem chat com o aluno.
+  onIniciarConversaInstancia?: (instanciaId: string) => void;
   // Seletor de canal: agente troca entre instâncias vinculadas ao perfil
   instanciasDisponiveis?: InstanciaWhatsappUser[];
   instanciaSelecionada?: string;  // instanciaId da escolhida atualmente
@@ -33,10 +40,12 @@ export default function InputMensagem({
   onEnviarAudio,
   desabilitado,
   dadosTemplate,
-  ultimaMensagemCliente,
+  mensagens = [],
+  conversasIrmas = [],
   chatId,
   aluno,
   onTemplateMetaEnviado,
+  onIniciarConversaInstancia,
   instanciasDisponiveis = [],
   instanciaSelecionada,
   onTrocarInstancia,
@@ -50,12 +59,37 @@ export default function InputMensagem({
   const [modalTemplateMetaAberto, setModalTemplateMetaAberto] = useState(false);
 
   // Tipo do canal selecionado — derivado da instancia escolhida no seletor.
-  // Se nao tiver seletor (versao antiga ou apenas 1 instancia), cai no comportamento padrao.
   const instAtual = instanciasDisponiveis.find(i => i.instanciaId === instanciaSelecionada);
   const ehWaba = instAtual?.tipo === 'waba';
-  const ultimaMsgClienteMs = ultimaMensagemCliente ? new Date(ultimaMensagemCliente).getTime() : 0;
-  const janelaFechada = ehWaba && (!ultimaMsgClienteMs || (Date.now() - ultimaMsgClienteMs > VINTE_QUATRO_HORAS_MS));
-  const podeEnviarTemplate = janelaFechada && chatId !== undefined && !!instanciaSelecionada;
+
+  // Resolve a conversa "irma" correspondente a instancia selecionada.
+  // Ela contem o chatId correto pra rotear o envio pelo canal escolhido.
+  const irmaSelecionada = useMemo(() => {
+    if (!instAtual?.tipo) return null;
+    return conversasIrmas.find(i => i.instanciaTipo === instAtual.tipo) || null;
+  }, [conversasIrmas, instAtual?.tipo]);
+
+  // Calcula janela 24h pela ultima mensagem RECEBIDA via WABA dentro do
+  // historico unificado. Cobre tanto a conversa primaria quanto as irmas.
+  const ultimaMsgWabaClienteMs = useMemo(() => {
+    if (!ehWaba) return 0;
+    let max = 0;
+    for (const m of mensagens) {
+      if (!m.fromMe && m.instanciaTipo === 'waba') {
+        const ms = m.timestamp * 1000;
+        if (ms > max) max = ms;
+      }
+    }
+    return max;
+  }, [mensagens, ehWaba]);
+
+  const janelaFechada = ehWaba && (Date.now() - ultimaMsgWabaClienteMs > VINTE_QUATRO_HORAS_MS);
+
+  // Agente selecionou WABA mas o aluno nunca conversou via WABA: precisa iniciar.
+  const semConversaParaInstancia = !!instAtual && !!instanciaSelecionada && !irmaSelecionada;
+
+  // Modo template Meta so faz sentido se ja existe conversa WABA (precisa do chatId WABA).
+  const podeEnviarTemplate = janelaFechada && !!irmaSelecionada;
   // Tracking de template: setado quando agente seleciona um template no modal.
   // Zera apenas quando o textarea fica completamente vazio (regra acordada).
   // Mensagem enviada com este ID setado eh contabilizada como uso do template,
@@ -73,7 +107,11 @@ export default function InputMensagem({
     if (!msg) return;
     // Notas internas nao tracam template (nao sao mensagem real ao aluno)
     const tplId = interno ? null : templateAtivoId;
-    onEnviar(msg, interno, tplId, instanciaSelecionada);
+    // Roteia pelo chatId da instancia selecionada (irma) quando ela existe;
+    // senao usa o chatId default (conversa primaria).
+    const chatIdRoteado = irmaSelecionada?.chatId ?? chatId;
+    const instIdRoteado = irmaSelecionada?.instanciaId ?? instanciaSelecionada;
+    onEnviar(msg, interno, tplId, instIdRoteado, chatIdRoteado);
     setTexto('');
     setTemplateAtivoId(null);
     if (textareaRef.current) {
@@ -191,8 +229,41 @@ export default function InputMensagem({
     });
   }
 
+  // ─── Modo "iniciar conversa": agente escolheu instancia que ainda nao tem chat ──
+  if (semConversaParaInstancia && !gravando) {
+    const labelCanal = ehWaba ? 'WABA' : 'WhatsApp 3C+';
+    return (
+      <div className="bg-white border-t border-gray-100 px-4 py-3">
+        <div className="flex items-center justify-between mb-2">
+          <div className="flex items-center gap-2">
+            <MessageSquarePlus size={13} className="text-gray-500" />
+            <p className="text-[0.6875rem] text-gray-600">
+              Este aluno ainda não conversou via {labelCanal}.
+            </p>
+          </div>
+          {instanciasDisponiveis.length > 0 && instanciaSelecionada && onTrocarInstancia && (
+            <SeletorCanal
+              instancias={instanciasDisponiveis}
+              selecionadaId={instanciaSelecionada}
+              onSelecionar={onTrocarInstancia}
+              desabilitado={desabilitado}
+            />
+          )}
+        </div>
+        <button
+          onClick={() => onIniciarConversaInstancia?.(instanciaSelecionada!)}
+          disabled={desabilitado || !onIniciarConversaInstancia}
+          className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-gray-900 text-white text-[0.875rem] font-medium hover:bg-gray-800 transition-colors disabled:opacity-50"
+        >
+          <MessageSquarePlus size={16} />
+          Iniciar conversa via {labelCanal}
+        </button>
+      </div>
+    );
+  }
+
   // ─── Modo WABA com janela 24h fechada — só template aprovado ──
-  if (podeEnviarTemplate && !gravando) {
+  if (podeEnviarTemplate && !gravando && irmaSelecionada) {
     return (
       <>
         <div className="bg-white border-t border-gray-100 px-4 py-3">
@@ -221,16 +292,14 @@ export default function InputMensagem({
             Selecione um modelo de mensagem
           </button>
         </div>
-        {chatId !== undefined && instanciaSelecionada && (
-          <SelecionarTemplateMetaModal
-            aberto={modalTemplateMetaAberto}
-            onFechar={() => setModalTemplateMetaAberto(false)}
-            chatId={chatId}
-            instanciaId={instanciaSelecionada}
-            aluno={aluno}
-            onEnviado={onTemplateMetaEnviado}
-          />
-        )}
+        <SelecionarTemplateMetaModal
+          aberto={modalTemplateMetaAberto}
+          onFechar={() => setModalTemplateMetaAberto(false)}
+          chatId={irmaSelecionada.chatId}
+          instanciaId={irmaSelecionada.instanciaId}
+          aluno={aluno}
+          onEnviado={onTemplateMetaEnviado}
+        />
       </>
     );
   }

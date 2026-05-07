@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import type { ConversaCobranca, Mensagem3CPlus, MotivoEncerramento } from '../types/conversa';
+import type { ConversaCobranca, ConversaIrma, Mensagem3CPlus, MotivoEncerramento } from '../types/conversa';
 import type { Aluno } from '../types/aluno';
 import { obterAluno } from '../services/alunos';
 import ListaChats from '../components/conversas/ListaChats';
@@ -28,6 +28,10 @@ export default function ConversasPage() {
   const [conversas, setConversas] = useState<ConversaCobranca[]>([]);
   const [conversaAtiva, setConversaAtiva] = useState<ConversaCobranca | null>(null);
   const [mensagens, setMensagens] = useState<Mensagem3CPlus[]>([]);
+  // Conversas irmas do mesmo aluno (mesma pessoa em outras instancias).
+  // Permite roteamento correto do envio + calculo de janela 24h.
+  const [conversasIrmas, setConversasIrmas] = useState<ConversaIrma[]>([]);
+  conversasIrmasRef.current = conversasIrmas;
   const [painelAlunoAberto, setPainelAlunoAberto] = useState(true);
   const [carregando, setCarregando] = useState(true);
   const [modalEncerrar, setModalEncerrar] = useState(false);
@@ -36,6 +40,10 @@ export default function ConversasPage() {
 
   const conversaAtivaRef = useRef(conversaAtiva);
   conversaAtivaRef.current = conversaAtiva;
+  // Realtime cross-chat: para o aluno com 2 conversas (3C+ + WABA), as msgs
+  // chegam em chatIds distintos. Mantemos ref atualizada para o handler decidir
+  // se aceita mensagens das irmas no historico unificado.
+  const conversasIrmasRef = useRef<ConversaIrma[]>([]);
 
   const [alunoVinculado, setAlunoVinculado] = useState<Aluno | null>(null);
   const alunoCache = useRef<Record<number, Aluno>>({});
@@ -136,9 +144,13 @@ export default function ConversasPage() {
         return [conversa, ...prev];
       });
 
-      // Se a mensagem é da conversa ativa, adiciona ou atualiza (para ack)
+      // Se a mensagem pertence a conversa ativa OU a uma das irmas do mesmo aluno
+      // (historico unificado), adiciona ou atualiza (para ack)
       const ativa = conversaAtivaRef.current;
-      if (ativa && ativa.chatId === conversa.chatId) {
+      const chatIdsAceitos = ativa
+        ? new Set([ativa.chatId, ...conversasIrmasRef.current.map(i => i.chatId)])
+        : new Set<string>();
+      if (ativa && chatIdsAceitos.has(conversa.chatId)) {
         // Mensagem nova chegou em chat ja aberto pelo agente — marca como lida
         // imediatamente. Mantem o badge visualmente em zero (idempotente).
         const msgFromMe = payload.mensagem?.fromMe ?? false;
@@ -204,6 +216,35 @@ export default function ConversasPage() {
         }
         return [conversa, ...prev];
       });
+
+      // Se a conversa atualizada e do mesmo aluno da conversa ativa, mantem irmas
+      // atualizadas — cobre o caso de agente ter clicado "Iniciar via WABA" e o
+      // worker ter persistido a nova conversa: ela vira irma da ativa e o seletor
+      // passa a roteia mensagens corretamente.
+      const ativa = conversaAtivaRef.current;
+      if (ativa && conversa.id !== ativa.id) {
+        const mesmoAluno = ativa.pessoaCodigo
+          ? ativa.pessoaCodigo === conversa.pessoaCodigo
+          : ativa.contatoNumero === conversa.contatoNumero;
+        if (mesmoAluno) {
+          setConversasIrmas(prev => {
+            const idx = prev.findIndex(i => i.id === conversa.id);
+            const irma: ConversaIrma = {
+              id: conversa.id,
+              chatId: conversa.chatId,
+              instanciaId: conversa.instanciaId,
+              instanciaTipo: conversa.instanciaTipo,
+              ultimaMensagemCliente: conversa.ultimaMensagemCliente,
+            };
+            if (idx >= 0) {
+              const next = [...prev];
+              next[idx] = irma;
+              return next;
+            }
+            return [...prev, irma];
+          });
+        }
+      }
       if (conversaAtivaRef.current?.id === conversa.id) {
         setConversaAtiva(conversa);
       }
@@ -222,6 +263,7 @@ export default function ConversasPage() {
   const handleSelecionar = useCallback(async (c: ConversaCobranca) => {
     setConversaAtiva(c);
     setMensagens([]);
+    setConversasIrmas([]);
 
     // Zera contador de nao lidas no servidor + update otimista local
     if (c.naoLidos > 0) {
@@ -232,7 +274,8 @@ export default function ConversasPage() {
     }
 
     try {
-      const { mensagens: msgs } = await conversasCobrancaService.obterConversa(c.id);
+      const { mensagens: msgs, conversasIrmas: irmas } = await conversasCobrancaService.obterConversa(c.id);
+      setConversasIrmas(irmas || []);
       const normalizadas: Mensagem3CPlus[] = msgs.map((m: any) => ({
         id: m.mensagemExternaId || m.id,
         chatId: String(m.chatId),
@@ -294,12 +337,21 @@ export default function ConversasPage() {
   }, [conversaAtiva]);
 
   // ─── Envio de mensagens ──────────────────────────────────
-  const handleEnviarMensagem = useCallback((texto: string, interno: boolean, templateWhatsappId?: number | null, instanciaIdOverride?: string) => {
+  const handleEnviarMensagem = useCallback((
+    texto: string,
+    interno: boolean,
+    templateWhatsappId?: number | null,
+    instanciaIdOverride?: string,
+    chatIdOverride?: string | number,
+  ) => {
     if (!conversaAtiva) return;
     const inst = instanciaIdOverride || instanciaSelecionada || conversaAtiva.instanciaId;
+    // chatId roteado vem do InputMensagem quando troca de canal: usa o chatId
+    // da conversa "irma" da instancia selecionada (e nao o da conversa primaria).
+    const chat = chatIdOverride ?? conversaAtiva.chatId;
     const promise = interno
-      ? conversasService.enviarInterno(conversaAtiva.chatId, texto)
-      : conversasService.enviarTexto(conversaAtiva.chatId, texto, inst, templateWhatsappId);
+      ? conversasService.enviarInterno(String(chat), texto)
+      : conversasService.enviarTexto(String(chat), texto, inst, templateWhatsappId);
 
     const optimistic: Mensagem3CPlus = {
       id: `optimistic-${Date.now()}`,
@@ -369,6 +421,19 @@ export default function ConversasPage() {
     conversasService.enviarAudio(conversaAtiva.chatId, blob, inst)
       .catch((err) => console.error('[ConversasPage] Erro ao enviar áudio:', err));
   }, [conversaAtiva, instanciaSelecionada]);
+
+  // ─── Iniciar conversa em uma instancia que ainda nao tem chat com este aluno ──
+  const handleIniciarConversaInstancia = useCallback(async (instanciaId: string) => {
+    if (!conversaAtiva) return;
+    try {
+      await conversasService.abrirChatNovo(conversaAtiva.contatoNumero, instanciaId);
+      // Worker cria ConversaCobranca + emite conversa:atualizada → realtime adiciona
+      // a nova conversa em `conversas` e o useEffect que recalcula irmas pega.
+    } catch (err) {
+      console.error('[ConversasPage] Erro ao iniciar conversa em outra instancia:', err);
+      alert(err instanceof Error ? err.message : 'Erro ao iniciar conversa');
+    }
+  }, [conversaAtiva]);
 
   return (
     <div className="flex h-[calc(100vh-3.5rem)] overflow-hidden -mx-6 -mb-6">
@@ -477,12 +542,14 @@ export default function ConversasPage() {
                 conversa: conversaAtiva,
                 agente: user,
               }}
-              ultimaMensagemCliente={conversaAtiva.ultimaMensagemCliente}
+              mensagens={mensagens}
+              conversasIrmas={conversasIrmas}
               chatId={conversaAtiva.chatId}
               aluno={alunoVinculado}
               instanciasDisponiveis={instanciasDisponiveis}
               instanciaSelecionada={instanciaSelecionada}
               onTrocarInstancia={setInstanciaSelecionada}
+              onIniciarConversaInstancia={handleIniciarConversaInstancia}
             />
           </>
         ) : (

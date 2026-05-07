@@ -2,7 +2,7 @@
  * Service de ConversaCobranca — interage com /api/conversas-cobranca.
  */
 
-import type { ConversaCobranca, MotivoEncerramento, StatusConversa } from '../types/conversa';
+import type { ConversaCobranca, ConversaIrma, MotivoEncerramento, StatusConversa } from '../types/conversa';
 import type { Mensagem3CPlus } from '../types/conversa';
 
 const API_URL = import.meta.env.VITE_API_URL || '/api';
@@ -34,7 +34,9 @@ export async function listarConversas(filtros: ListarFiltros = {}): Promise<Conv
   return json.data || [];
 }
 
-export async function obterConversa(id: string): Promise<{ conversa: ConversaCobranca; mensagens: Mensagem3CPlus[] }> {
+export async function obterConversa(
+  id: string
+): Promise<{ conversa: ConversaCobranca; mensagens: Mensagem3CPlus[]; conversasIrmas: ConversaIrma[] }> {
   const res = await fetch(`${API_BASE}/${id}`, { headers: getHeaders() });
   if (!res.ok) throw new Error(`Erro ao obter conversa: ${res.status}`);
   const json = await res.json();

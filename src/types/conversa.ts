@@ -47,6 +47,19 @@ export interface ConversaCobranca {
   criadoEm: string;
   atualizadoEm: string;
   encerradoEm: string | null;
+  // Lista de canais que o aluno usa (preenchida pelo backend so na listagem agregada).
+  // Permite a ListaChats mostrar varios badges quando o aluno conversa por 3C+ + WABA.
+  instanciasTipo?: ('whatsapp-3c' | 'waba')[];
+}
+
+// Conversa "irma" — outro chat do mesmo aluno, em outra instancia.
+// Usada para envio cruzado de canal e calculo de janela 24h.
+export interface ConversaIrma {
+  id: string;
+  chatId: string;
+  instanciaId: string;
+  instanciaTipo: 'whatsapp-3c' | 'waba' | null;
+  ultimaMensagemCliente: string | null;
 }
 
 export const MOTIVOS_ENCERRAMENTO_LABELS: Record<MotivoEncerramento, string> = {

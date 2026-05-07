@@ -1,6 +1,6 @@
 import type { ConversaCobranca } from '../../types/conversa';
 import { formatarTimestampChat } from '../../types/conversa';
-import { AlertTriangle, Handshake, Clock, Mic, Camera, FileText, Film } from 'lucide-react';
+import { AlertTriangle, Handshake, Clock, Mic, Camera, FileText, Film, BadgeCheck, MessageCircle } from 'lucide-react';
 
 interface ChatItemProps {
   conversa: ConversaCobranca;
@@ -92,6 +92,20 @@ export default function ChatItem({ conversa, ativo, onClick }: ChatItemProps) {
             {conversa.status === 'SNOOZE' && (
               <Clock size={11} className="text-amber-500 shrink-0" aria-label="Adiado" />
             )}
+            {/* Badges de canais que o aluno usa (lista agregada por aluno) */}
+            {(conversa.instanciasTipo ?? (conversa.instanciaTipo ? [conversa.instanciaTipo] : []))
+              .filter((t): t is 'whatsapp-3c' | 'waba' => t === 'whatsapp-3c' || t === 'waba')
+              .map(tipo => (
+                <span
+                  key={tipo}
+                  className={`shrink-0 inline-flex items-center justify-center w-3.5 h-3.5 rounded ${
+                    tipo === 'waba' ? 'text-emerald-600' : 'text-gray-400'
+                  }`}
+                  title={tipo === 'waba' ? 'WABA' : 'WhatsApp 3C+'}
+                >
+                  {tipo === 'waba' ? <BadgeCheck size={11} /> : <MessageCircle size={11} />}
+                </span>
+              ))}
           </span>
           <span className={`text-[0.625rem] shrink-0 ml-2 ${
             conversa.naoLidos > 0 ? 'text-blue-600 font-semibold' : 'text-gray-400'
