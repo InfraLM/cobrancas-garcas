@@ -145,6 +145,13 @@ async function persistirMensagemEnviada(apiResponse, chatIdFallback, tipoOverrid
       : null;
     const templateMetaId = extras?.templateMetaId || null;
 
+    // Override defensivo de instanciaTipo: send_template e sempre WABA por
+    // definicao (template Meta), mas a 3C Plus pode retornar instance.type=
+    // whatsapp-3c quando o chat primario e 3C+. O caller pode forcar via extras.
+    const instanciaTipoFinal = extras?.instanciaTipoOverride
+      || sent.instance?.type
+      || null;
+
     const mensagem = await prisma.mensagemWhatsapp.upsert({
       where: { mensagemExternaId },
       create: {
@@ -155,7 +162,7 @@ async function persistirMensagemEnviada(apiResponse, chatIdFallback, tipoOverrid
         contatoImagem: null,
         instanciaId: sent.instance?.id || sent.instance_id || '',
         instanciaNome: sent.instance?.name || null,
-        instanciaTipo: sent.instance?.type || null,
+        instanciaTipo: instanciaTipoFinal,
         pessoaCodigo: null,
         tipo: tipoOverride || sent.type || 'chat',
         corpo: sent.body || null,
@@ -304,7 +311,10 @@ export async function enviarTemplate(req, res, next) {
       });
     }
 
-    await persistirMensagemEnviada(data, chat_id, 'chat', { templateMetaId: tpl.id });
+    await persistirMensagemEnviada(data, chat_id, 'chat', {
+      templateMetaId: tpl.id,
+      instanciaTipoOverride: 'waba',
+    });
     res.json(data);
   } catch (error) {
     next(error);

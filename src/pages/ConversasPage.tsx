@@ -422,40 +422,6 @@ export default function ConversasPage() {
       .catch((err) => console.error('[ConversasPage] Erro ao enviar áudio:', err));
   }, [conversaAtiva, instanciaSelecionada]);
 
-  // ─── Iniciar conversa em uma instancia que ainda nao tem chat com este aluno ──
-  // O trigger fica armado: assim que a irma da instancia escolhida aparecer
-  // (via realtime), o efeito abaixo dispara setTriggerAbrirTemplateMeta, que e
-  // observado pelo InputMensagem para abrir o modal de templates automaticamente.
-  const [aguardandoIrmaInstancia, setAguardandoIrmaInstancia] = useState<string | null>(null);
-  const [triggerAbrirTemplateMeta, setTriggerAbrirTemplateMeta] = useState(0);
-
-  const handleIniciarConversaInstancia = useCallback(async (instanciaId: string) => {
-    if (!conversaAtiva) return;
-    try {
-      setAguardandoIrmaInstancia(instanciaId);
-      // Sincroniza o seletor para a instancia escolhida (UX consistente)
-      setInstanciaSelecionada(instanciaId);
-      await conversasService.abrirChatNovo(conversaAtiva.contatoNumero, instanciaId);
-      // Worker cria ConversaCobranca + emite conversa:atualizada → realtime adiciona
-      // a nova conversa em `conversasIrmas` via onConversaAtualizada → useEffect abaixo
-      // detecta e dispara abertura do modal de template.
-    } catch (err) {
-      setAguardandoIrmaInstancia(null);
-      console.error('[ConversasPage] Erro ao iniciar conversa em outra instancia:', err);
-      alert(err instanceof Error ? err.message : 'Erro ao iniciar conversa');
-    }
-  }, [conversaAtiva]);
-
-  // Detecta quando a irma da instancia aguardada aparece e dispara abertura do modal.
-  useEffect(() => {
-    if (!aguardandoIrmaInstancia) return;
-    const irma = conversasIrmas.find(i => i.instanciaId === aguardandoIrmaInstancia);
-    if (irma) {
-      setTriggerAbrirTemplateMeta(t => t + 1);
-      setAguardandoIrmaInstancia(null);
-    }
-  }, [conversasIrmas, aguardandoIrmaInstancia]);
-
   return (
     <div className="flex h-[calc(100vh-3.5rem)] overflow-hidden -mx-6 -mb-6">
       {/* Left column */}
@@ -570,8 +536,6 @@ export default function ConversasPage() {
               instanciasDisponiveis={instanciasDisponiveis}
               instanciaSelecionada={instanciaSelecionada}
               onTrocarInstancia={setInstanciaSelecionada}
-              onIniciarConversaInstancia={handleIniciarConversaInstancia}
-              abrirModalTemplateAuto={triggerAbrirTemplateMeta}
             />
           </>
         ) : (

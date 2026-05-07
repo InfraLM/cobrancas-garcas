@@ -1,5 +1,5 @@
-import { useState, useRef, useMemo, useEffect, type KeyboardEvent } from 'react';
-import { Send, Paperclip, Mic, Lock, Image, FileText, Square, X, BadgeCheck, MessageSquarePlus } from 'lucide-react';
+import { useState, useRef, useMemo, type KeyboardEvent } from 'react';
+import { Send, Paperclip, Mic, Lock, Image, FileText, Square, X, BadgeCheck } from 'lucide-react';
 import BotaoTemplates from './BotaoTemplates';
 import ModalSelecionarTemplate from './ModalSelecionarTemplate';
 import SelecionarTemplateMetaModal from './SelecionarTemplateMetaModal';
@@ -24,12 +24,6 @@ interface InputMensagemProps {
   chatId?: string | number;  // chatId da conversa ativa (default quando nao ha irma)
   aluno?: Aluno | null;
   onTemplateMetaEnviado?: () => void;
-  // Quando agente seleciona uma instancia que ainda nao tem chat com o aluno.
-  onIniciarConversaInstancia?: (instanciaId: string) => void;
-  // Trigger externo para abrir o modal de template Meta. Usado quando o agente
-  // clica "Iniciar via WABA" e a irma WABA acabou de ser criada — abre o modal
-  // automaticamente para nao exigir clique extra.
-  abrirModalTemplateAuto?: number;
   // Seletor de canal: agente troca entre instâncias vinculadas ao perfil
   instanciasDisponiveis?: InstanciaWhatsappUser[];
   instanciaSelecionada?: string;  // instanciaId da escolhida atualmente
@@ -49,8 +43,6 @@ export default function InputMensagem({
   chatId,
   aluno,
   onTemplateMetaEnviado,
-  onIniciarConversaInstancia,
-  abrirModalTemplateAuto,
   instanciasDisponiveis = [],
   instanciaSelecionada,
   onTrocarInstancia,
@@ -90,22 +82,11 @@ export default function InputMensagem({
 
   const janelaFechada = ehWaba && (Date.now() - ultimaMsgWabaClienteMs > VINTE_QUATRO_HORAS_MS);
 
-  // Agente selecionou WABA mas o aluno nunca conversou via WABA: precisa iniciar.
-  const semConversaParaInstancia = !!instAtual && !!instanciaSelecionada && !irmaSelecionada;
+  // Modo template Meta: pode enviar quando WABA + janela fechada + tem chat (proprio ou irma).
+  // O modal usa chatId da irma WABA quando existe, caso contrario do chat primario — a 3C Plus
+  // aceita send_template num chat 3C+ existente roteando pela instance_id WABA do body.
+  const podeEnviarTemplate = ehWaba && janelaFechada && !!chatId && !!instanciaSelecionada;
 
-  // Modo template Meta so faz sentido se ja existe conversa WABA (precisa do chatId WABA).
-  const podeEnviarTemplate = janelaFechada && !!irmaSelecionada;
-
-  // Abre o modal de template automaticamente quando o agente acabou de iniciar
-  // uma nova conversa via WABA e a irma correspondente acabou de aparecer.
-  // O `abrirModalTemplateAuto` e um contador externo (timestamp) que muda toda
-  // vez que o usuario clica "Iniciar via WABA" — disparando este efeito so apos
-  // a irma WABA estar disponivel.
-  useEffect(() => {
-    if (abrirModalTemplateAuto && irmaSelecionada && ehWaba) {
-      setModalTemplateMetaAberto(true);
-    }
-  }, [abrirModalTemplateAuto, irmaSelecionada, ehWaba]);
   // Tracking de template: setado quando agente seleciona um template no modal.
   // Zera apenas quando o textarea fica completamente vazio (regra acordada).
   // Mensagem enviada com este ID setado eh contabilizada como uso do template,
@@ -245,41 +226,12 @@ export default function InputMensagem({
     });
   }
 
-  // ─── Modo "iniciar conversa": agente escolheu instancia que ainda nao tem chat ──
-  if (semConversaParaInstancia && !gravando) {
-    const labelCanal = ehWaba ? 'WABA' : 'WhatsApp 3C+';
-    return (
-      <div className="bg-white border-t border-gray-100 px-4 py-3">
-        <div className="flex items-center justify-between mb-2">
-          <div className="flex items-center gap-2">
-            <MessageSquarePlus size={13} className="text-gray-500" />
-            <p className="text-[0.6875rem] text-gray-600">
-              Este aluno ainda não conversou via {labelCanal}.
-            </p>
-          </div>
-          {instanciasDisponiveis.length > 0 && instanciaSelecionada && onTrocarInstancia && (
-            <SeletorCanal
-              instancias={instanciasDisponiveis}
-              selecionadaId={instanciaSelecionada}
-              onSelecionar={onTrocarInstancia}
-              desabilitado={desabilitado}
-            />
-          )}
-        </div>
-        <button
-          onClick={() => onIniciarConversaInstancia?.(instanciaSelecionada!)}
-          disabled={desabilitado || !onIniciarConversaInstancia}
-          className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-gray-900 text-white text-[0.875rem] font-medium hover:bg-gray-800 transition-colors disabled:opacity-50"
-        >
-          <MessageSquarePlus size={16} />
-          Iniciar conversa via {labelCanal}
-        </button>
-      </div>
-    );
-  }
-
   // ─── Modo WABA com janela 24h fechada — só template aprovado ──
-  if (podeEnviarTemplate && !gravando && irmaSelecionada) {
+  // Usa irma WABA quando existe; senao usa chat primario + instancia selecionada.
+  // A 3C Plus aceita send_template em chat existente roteando pela instance_id no body.
+  if (podeEnviarTemplate && !gravando) {
+    const chatIdParaTemplate = irmaSelecionada?.chatId ?? chatId!;
+    const instanciaIdParaTemplate = irmaSelecionada?.instanciaId ?? instanciaSelecionada!;
     return (
       <>
         <div className="bg-white border-t border-gray-100 px-4 py-3">
@@ -311,8 +263,8 @@ export default function InputMensagem({
         <SelecionarTemplateMetaModal
           aberto={modalTemplateMetaAberto}
           onFechar={() => setModalTemplateMetaAberto(false)}
-          chatId={irmaSelecionada.chatId}
-          instanciaId={irmaSelecionada.instanciaId}
+          chatId={chatIdParaTemplate}
+          instanciaId={instanciaIdParaTemplate}
           aluno={aluno}
           onEnviado={onTemplateMetaEnviado}
         />
