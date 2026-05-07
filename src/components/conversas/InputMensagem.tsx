@@ -1,5 +1,5 @@
 import { useState, useRef, useMemo, type KeyboardEvent } from 'react';
-import { Send, Paperclip, Mic, Lock, Image, FileText, Square, X, BadgeCheck } from 'lucide-react';
+import { Send, Paperclip, Mic, Lock, Image, FileText, Square, X, BadgeCheck, Trash2 } from 'lucide-react';
 import BotaoTemplates from './BotaoTemplates';
 import ModalSelecionarTemplate from './ModalSelecionarTemplate';
 import SelecionarTemplateMetaModal from './SelecionarTemplateMetaModal';
@@ -52,6 +52,9 @@ export default function InputMensagem({
   const [menuAnexo, setMenuAnexo] = useState(false);
   const [gravando, setGravando] = useState(false);
   const [tempoGravacao, setTempoGravacao] = useState(0);
+  // Pre-escuta: ao parar gravacao, em vez de enviar direto, armazena
+  // pra agente escutar antes de mandar (igual WhatsApp original).
+  const [audioPreview, setAudioPreview] = useState<{ url: string; blob: Blob } | null>(null);
   const [modalTemplateAberto, setModalTemplateAberto] = useState(false);
   const [modalTemplateMetaAberto, setModalTemplateMetaAberto] = useState(false);
 
@@ -165,8 +168,10 @@ export default function InputMensagem({
       mediaRecorder.onstop = () => {
         stream.getTracks().forEach(t => t.stop());
         const blob = new Blob(chunksRef.current, { type: 'audio/ogg; codecs=opus' });
-        if (onEnviarAudio && blob.size > 0) {
-          onEnviarAudio(blob);
+        if (blob.size > 0) {
+          // Nao envia direto: abre o modo de pre-escuta. Agente decide enviar
+          // ou descartar via botoes do modo audioPreview.
+          setAudioPreview({ url: URL.createObjectURL(blob), blob });
         }
         chunksRef.current = [];
       };
@@ -295,9 +300,42 @@ export default function InputMensagem({
           <button
             onClick={pararGravacao}
             className="p-2.5 rounded-xl bg-red-500 text-white hover:bg-red-600 transition-colors"
-            title="Enviar áudio"
+            title="Parar e revisar"
           >
             <Square size={14} fill="white" />
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // ─── Audio preview (pre-escuta antes de enviar) ─────────
+  if (audioPreview) {
+    return (
+      <div className="bg-white border-t border-gray-100">
+        <div className="flex items-center gap-2 px-4 py-3">
+          <button
+            onClick={() => {
+              URL.revokeObjectURL(audioPreview.url);
+              setAudioPreview(null);
+            }}
+            className="p-2 rounded-lg text-red-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+            title="Descartar áudio"
+          >
+            <Trash2 size={16} />
+          </button>
+          <audio src={audioPreview.url} controls className="flex-1 h-9" />
+          <button
+            onClick={() => {
+              if (onEnviarAudio) onEnviarAudio(audioPreview.blob);
+              URL.revokeObjectURL(audioPreview.url);
+              setAudioPreview(null);
+            }}
+            disabled={desabilitado}
+            className="p-2.5 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700 transition-colors disabled:opacity-50"
+            title="Enviar áudio"
+          >
+            <Send size={16} />
           </button>
         </div>
       </div>

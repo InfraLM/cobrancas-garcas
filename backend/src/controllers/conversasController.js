@@ -224,6 +224,18 @@ async function persistirMensagemEnviada(apiResponse, chatIdFallback, tipoOverrid
 }
 
 // ─── Send Messages (Chat API — Bearer) ───────────────────
+// Lookup do tipo real (whatsapp-3c | waba) da instancia no banco. Garante que o
+// badge da bolha mostre o canal correto, independente do que a 3C Plus retorna
+// em sent.instance.type (que reflete a instancia primaria do chat, nao a usada).
+async function lookupInstanciaTipo(instanceId) {
+  if (!instanceId) return null;
+  const inst = await prisma.instanciaWhatsappUser.findFirst({
+    where: { instanciaId: instanceId },
+    select: { tipo: true },
+  });
+  return inst?.tipo || null;
+}
+
 export async function enviarTexto(req, res, next) {
   try {
     const { chat_id, body, instance_id, templateWhatsappId } = req.body;
@@ -242,21 +254,9 @@ export async function enviarTexto(req, res, next) {
       return res.status(response.status).json(data);
     }
 
-    // Lookup do tipo real da instancia pra garantir que o badge da bolha
-    // mostre WABA / WhatsApp 3C+ certo, mesmo se a 3C Plus retornar instance.type
-    // diferente (caso a plataforma use a "instancia primaria" do chat no response).
-    let instanciaTipoOverride = null;
-    if (instance_id) {
-      const inst = await prisma.instanciaWhatsappUser.findFirst({
-        where: { instanciaId: instance_id },
-        select: { tipo: true },
-      });
-      if (inst?.tipo) instanciaTipoOverride = inst.tipo;
-    }
-
     await persistirMensagemEnviada(data, chat_id, 'chat', {
       templateWhatsappId,
-      instanciaTipoOverride,
+      instanciaTipoOverride: await lookupInstanciaTipo(instance_id),
     });
     res.json(data);
   } catch (error) {
@@ -429,7 +429,9 @@ export async function enviarImagem(req, res, next) {
     try {
       const data = JSON.parse(text);
       if (!response.ok) return res.status(response.status).json(data);
-      await persistirMensagemEnviada(data, req.body.chat_id, 'image');
+      await persistirMensagemEnviada(data, req.body.chat_id, 'image', {
+        instanciaTipoOverride: await lookupInstanciaTipo(req.body.instance_id),
+      });
       res.json(data);
     } catch {
       if (!response.ok) return res.status(response.status).json({ error: text });
@@ -464,7 +466,9 @@ export async function enviarAudio(req, res, next) {
     try {
       const data = JSON.parse(text);
       if (!response.ok) return res.status(response.status).json(data);
-      await persistirMensagemEnviada(data, req.body.chat_id, 'voice');
+      await persistirMensagemEnviada(data, req.body.chat_id, 'voice', {
+        instanciaTipoOverride: await lookupInstanciaTipo(req.body.instance_id),
+      });
       res.json(data);
     } catch {
       if (!response.ok) return res.status(response.status).json({ error: text });
@@ -498,7 +502,9 @@ export async function enviarDocumento(req, res, next) {
     try {
       const data = JSON.parse(text);
       if (!response.ok) return res.status(response.status).json(data);
-      await persistirMensagemEnviada(data, req.body.chat_id, 'document');
+      await persistirMensagemEnviada(data, req.body.chat_id, 'document', {
+        instanciaTipoOverride: await lookupInstanciaTipo(req.body.instance_id),
+      });
       res.json(data);
     } catch {
       if (!response.ok) return res.status(response.status).json({ error: text });

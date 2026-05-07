@@ -59,10 +59,41 @@ export default function ConversasPage() {
       .catch(() => setInstanciasDisponiveis([]));
   }, [user?.id]);
 
-  // Quando troca de conversa, sincroniza o seletor com a instancia da conversa
+  // Define a instancia selecionada por prioridade:
+  // 1. Ultima escolha do agente salva no localStorage (se ainda existe na lista)
+  // 2. WABA disponivel (default conservador — fora da janela exige template,
+  //    evita "vazar" pelo canal nao oficial sem querer)
+  // 3. Instancia da conversa atual
+  // 4. Primeira da lista
+  const STORAGE_KEY_INSTANCIA = `instancia_preferida_${user?.id || 'guest'}`;
   useEffect(() => {
-    if (conversaAtiva?.instanciaId) setInstanciaSelecionada(conversaAtiva.instanciaId);
-  }, [conversaAtiva?.id, conversaAtiva?.instanciaId]);
+    if (!conversaAtiva || instanciasDisponiveis.length === 0) return;
+
+    const salva = localStorage.getItem(STORAGE_KEY_INSTANCIA);
+    const valida = salva && instanciasDisponiveis.find(i => i.instanciaId === salva);
+    if (valida) {
+      setInstanciaSelecionada(valida.instanciaId);
+      return;
+    }
+
+    const waba = instanciasDisponiveis.find(i => i.tipo === 'waba');
+    if (waba) {
+      setInstanciaSelecionada(waba.instanciaId);
+      return;
+    }
+
+    if (conversaAtiva.instanciaId) {
+      setInstanciaSelecionada(conversaAtiva.instanciaId);
+      return;
+    }
+
+    setInstanciaSelecionada(instanciasDisponiveis[0].instanciaId);
+  }, [conversaAtiva?.id, instanciasDisponiveis, STORAGE_KEY_INSTANCIA]);
+
+  const handleTrocarInstancia = useCallback((id: string) => {
+    setInstanciaSelecionada(id);
+    if (user?.id) localStorage.setItem(STORAGE_KEY_INSTANCIA, id);
+  }, [user?.id, STORAGE_KEY_INSTANCIA]);
 
   useEffect(() => {
     const codigo = conversaAtiva?.pessoaCodigo;
@@ -535,7 +566,7 @@ export default function ConversasPage() {
               aluno={alunoVinculado}
               instanciasDisponiveis={instanciasDisponiveis}
               instanciaSelecionada={instanciaSelecionada}
-              onTrocarInstancia={setInstanciaSelecionada}
+              onTrocarInstancia={handleTrocarInstancia}
             />
           </>
         ) : (
