@@ -173,10 +173,9 @@ async function syncTable({ model, serviceId }) {
 
   // 1. Fetch da API
   console.log(`  [${model}] Buscando ${serviceId}...`);
-  // seiviewalunoresumo exige data_ultima_sync — enviar data antiga para full load
-  const records = serviceId === 'seiviewalunoresumo'
-    ? await fetchFromSEI(serviceId, { data_ultima_sync: '2000-01-01 00:00:00' })
-    : await fetchFromSEI(serviceId);
+  // Webservice SEI passou a exigir data_ultima_sync no body de todos os endpoints —
+  // enviar data antiga (2000-01-01) para forcar retorno completo.
+  const records = await fetchFromSEI(serviceId, { data_ultima_sync: '2000-01-01 00:00:00' });
 
   if (!Array.isArray(records) || records.length === 0) {
     console.log(`  [${model}] Nenhum registro recebido`);
@@ -200,9 +199,19 @@ async function syncTable({ model, serviceId }) {
     return sanitizeRecord(r, fieldTypes);
   });
 
-  // 3. Full refresh: TRUNCATE + createMany (sem transacao interativa do Prisma)
-  await prisma.$executeRawUnsafe(`TRUNCATE TABLE cobranca."${model}"`);
-  await prisma[model].createMany({ data: sanitized });
+  // 3. Full refresh: TRUNCATE + createMany dentro de transacao atomica.
+  // Sem transacao, o worker em producao (Railway) pode rodar um delta entre o TRUNCATE
+  // e o createMany — deixando o codigo do delta no banco e quebrando o createMany com
+  // unique constraint na PK. A transacao bloqueia a tabela ate o final.
+  // Resolver nome real da tabela via DMMF (model.dbName cobre @@map; senao usa o nome do model)
+  const dmmfModel = Prisma.dmmf.datamodel.models.find(
+    m => m.name.toLowerCase() === model.toLowerCase()
+  );
+  const tableName = dmmfModel?.dbName || model;
+  await prisma.$transaction(async (tx) => {
+    await tx.$executeRawUnsafe(`TRUNCATE TABLE cobranca."${tableName}"`);
+    await tx[model].createMany({ data: sanitized });
+  }, { timeout: 600_000, maxWait: 60_000 });
 
   const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
   console.log(`  [${model}] ${sanitized.length} registros sincronizados (${elapsed}s)`);
