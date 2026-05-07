@@ -286,21 +286,24 @@ export async function enviarTemplate(req, res, next) {
     }
 
     // Chama 3C Plus
+    const payload = {
+      chat_id,
+      instance_id,
+      template_id: tpl.metaTemplateId,
+      template_name: tpl.name,
+      template_language: tpl.language,
+      body: bodyResolvido,
+      tempTime: Math.floor(Date.now() / 1000),  // exemplo postman da 3C Plus inclui
+    };
+    console.log('[3C+ Chat API] send_template payload:', JSON.stringify(payload));
     const response = await fetch(chatUrl('/message/send_template'), {
       method: 'POST',
       headers: bearerHeaders(),
-      body: JSON.stringify({
-        chat_id,
-        instance_id,
-        template_id: tpl.metaTemplateId,
-        template_name: tpl.name,
-        template_language: tpl.language,
-        body: bodyResolvido,
-      }),
+      body: JSON.stringify(payload),
     });
     const data = await response.json();
     if (!response.ok) {
-      console.error('[3C+ Chat API] send_template falhou:', response.status, data);
+      console.error('[3C+ Chat API] send_template falhou:', response.status, JSON.stringify(data));
       // Se 3C/Meta retornar 401, mapear pra 502 pra nao deslogar (mesmo padrao
       // do templatesMetaController).
       const isAuthErr = response.status === 401 || response.status === 403;
