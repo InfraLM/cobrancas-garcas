@@ -104,11 +104,12 @@ export default function InputMensagem({
     if (!msg) return;
     // Notas internas nao tracam template (nao sao mensagem real ao aluno)
     const tplId = interno ? null : templateAtivoId;
-    // Roteia pelo chatId da instancia selecionada (irma) quando ela existe;
-    // senao usa o chatId default (conversa primaria).
+    // O instanciaId vem do seletor (fonte da verdade pra qual canal o agente
+    // escolheu enviar). Nao usar irmaSelecionada.instanciaId porque o upsertConversa
+    // nao atualiza instanciaId quando o canal muda — so instanciaTipo. Resultado
+    // seria enviar com instance_id antigo apesar do seletor mostrar outro canal.
     const chatIdRoteado = irmaSelecionada?.chatId ?? chatId;
-    const instIdRoteado = irmaSelecionada?.instanciaId ?? instanciaSelecionada;
-    onEnviar(msg, interno, tplId, instIdRoteado, chatIdRoteado);
+    onEnviar(msg, interno, tplId, instanciaSelecionada, chatIdRoteado);
     setTexto('');
     setTemplateAtivoId(null);
     if (textareaRef.current) {

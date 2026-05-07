@@ -241,7 +241,23 @@ export async function enviarTexto(req, res, next) {
       console.error('[3C+ Chat API] send_chat falhou:', response.status, data);
       return res.status(response.status).json(data);
     }
-    await persistirMensagemEnviada(data, chat_id, 'chat', { templateWhatsappId });
+
+    // Lookup do tipo real da instancia pra garantir que o badge da bolha
+    // mostre WABA / WhatsApp 3C+ certo, mesmo se a 3C Plus retornar instance.type
+    // diferente (caso a plataforma use a "instancia primaria" do chat no response).
+    let instanciaTipoOverride = null;
+    if (instance_id) {
+      const inst = await prisma.instanciaWhatsappUser.findFirst({
+        where: { instanciaId: instance_id },
+        select: { tipo: true },
+      });
+      if (inst?.tipo) instanciaTipoOverride = inst.tipo;
+    }
+
+    await persistirMensagemEnviada(data, chat_id, 'chat', {
+      templateWhatsappId,
+      instanciaTipoOverride,
+    });
     res.json(data);
   } catch (error) {
     next(error);
