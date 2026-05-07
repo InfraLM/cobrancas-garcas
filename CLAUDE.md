@@ -9,10 +9,11 @@ Sistema de cobranca da Liberdade Medica. Monorepo com frontend React e backend E
 - **Backend**: Express 5 + Prisma ORM (pasta `/backend`)
 - **Banco de dados**: PostgreSQL (Google Cloud SQL)
 - **Integracao**: API REST do SEI para dados academicos e financeiros
-- **Integracao**: 3C Plus para ligacoes (Click2Call, WebRTC) e WhatsApp (Omnichannel)
+- **Integracao**: 3C Plus para ligacoes (Click2Call, WebRTC) e WhatsApp (Omnichannel — 3C+ nao oficial + WABA oficial)
+- **Integracao**: Meta Graph API direto para CRUD de templates WABA + webhook de status (ver `docs/waba-integration.md`)
 - **Integracao**: Asaas para cobranças e ClickSign para assinaturas digitais
 - **Realtime**: Worker Socket.io 24/7 conectado a 3C Plus + Socket.io proprio (/ws) para browsers
-- **Deploy**: Vercel (frontend como static site, backend como serverless functions)
+- **Deploy**: Railway para frontend (cobranca.lmedu.com.br) E backend (api-cobranca.lmedu.com.br) — backend NAO pode ser serverless por causa do worker 24/7 + setInterval do delta sync + Puppeteer. Banco no Google Cloud SQL. Ver `docs/ARQUITETURA_DEPLOY.md` para detalhes da decisao
 
 ## Regras Criticas
 
@@ -25,7 +26,7 @@ Sistema de cobranca da Liberdade Medica. Monorepo com frontend React e backend E
 ### Banco de dados
 - SEMPRE use Prisma para acessar o banco. NUNCA escreva SQL diretamente (exceto em scripts de sync/validacao via `prisma.$queryRawUnsafe`)
 - O schema fica em `/backend/prisma/schema.prisma`
-- Apos modificar o schema, SEMPRE execute: `cd backend && npx prisma migrate dev --name descricao_da_mudanca`
+- **Migrations sao MANUAIS no projeto** (drift conhecido com `prisma migrate dev`). Padrao: criar pasta `backend/prisma/migrations/YYYYMMDDHHMMSS_descricao/migration.sql` com o ALTER TABLE + backfill, e aplicar direto no banco prod via Prisma client (`prisma.$executeRawUnsafe('ALTER TABLE ...')`). Ver migrations existentes como modelo.
 - Se o Prisma gerar AUTOINCREMENT nas PKs das tabelas SEI, edite o SQL da migration para remover (IDs vem da API)
 - Importe o client de `/backend/src/config/database.js`: `import { prisma } from '../config/database.js'`
 
@@ -132,7 +133,8 @@ O banco e PostgreSQL. Use sintaxe nativa: `DISTINCT ON`, `ILIKE`, `INTERVAL`, `T
 src/                         # FRONTEND
   pages/                     # Uma pagina por arquivo (ConversasPage.tsx, LigacoesPage.tsx, etc.)
   components/                # Componentes reutilizaveis
-    conversas/               # 8 componentes: ChatItem, BolhaMensagem, HeaderChat, InputMensagem, etc.
+    conversas/               # ChatItem, BolhaMensagem, HeaderChat, InputMensagem, SeletorCanal, SelecionarTemplateMetaModal, ModalSelecionarTemplate, etc.
+    templatesMeta/           # TemplateMetaFormModal, TemplateMetaPreview (gestao Meta WABA)
     ligacoes/                # 16 componentes: PainelLigacaoAtiva, WebRTCIframe, BotaoChamar, etc.
     alunos/                  # Drawer e tabs de perfil do aluno
     workflow/                # Kanban de negociacoes
@@ -147,12 +149,14 @@ src/                         # FRONTEND
     alunos.ts                # CRUD alunos com dados reais do SEI
     users.ts                 # CRUD usuarios + integracao 3C Plus
     segmentacao.ts           # CRUD regras de segmentacao + executar
+    templatesMeta.ts         # CRUD templates Meta WABA (Graph API via backend)
   contexts/                  # React Contexts
     AuthContext.tsx           # Autenticacao
     LigacoesContext.tsx      # Estado de sessao de ligacoes (WebRTC, campanha, chamada ativa)
     RealtimeContext.tsx      # Socket.io /ws — conexao persistente com backend (GLOBAL)
   types/                     # Tipos TypeScript
-    conversa.ts              # Chat3CPlus, ConversaCobranca, Mensagem3CPlus, StatusConversa, etc.
+    conversa.ts              # Chat3CPlus, ConversaCobranca, Mensagem3CPlus, ConversaIrma, StatusConversa, etc.
+    templateMeta.ts          # TemplateMeta, status, components
     ligacao.ts               # LigacaoAtiva, EventoLigacao, StatusConexao, etc.
     aluno.ts                 # Aluno, ResumoFinanceiro, Engajamento, etc.
     ocorrencia.ts            # TipoOcorrencia, OrigemOcorrencia
@@ -196,6 +200,11 @@ SEI_database/                # DOCUMENTACAO SEI
     api_endpoints.md         # 159 endpoints REST
     socket_events.md         # 40 eventos Socket.io com payloads
     omnichannel_api_endpoints.md # ~80 endpoints da API Omnichannel
+
+docs/                        # DOCUMENTACAO DO PROJETO
+  ARQUITETURA_DEPLOY.md      # Setup Vercel/Railway/Cloud SQL
+  workflow-negociacao.md     # Fluxo de acordos + ClickSign + Asaas
+  waba-integration.md        # Integracao Meta WABA: sprints, decisoes, bugs (CONSULTAR antes de mexer em template/WABA)
 ```
 
 ## Arquitetura Realtime (Worker 24/7)
@@ -340,3 +349,14 @@ Secao de aprendizado continuo do projeto. Atualizada a cada sessao com descobert
 - [PADRAO] GET /users (discador 3C Plus) retorna email + api_token + extension de todos os usuarios. Usar para vincular agentes existentes automaticamente (2026-04-16)
 - [PADRAO] Equipes WhatsApp: vincular via PUT /users/{id} com campo teams:[teamIds]. GET /team/agents retorna agentes com suas equipes (2026-04-16)
 - [PADRAO] Campanhas paginadas na 3C Plus: GET /campaigns retorna 15 por pagina. Percorrer com ?page=N ate items.length < 15 (2026-04-16)
+- [ARQUITETURA] Integracao WABA completa documentada em docs/waba-integration.md — 5 sprints + 14 correcoes. Templates Meta gerenciados direto via Graph API; envio de mensagens via 3C Plus (/message/send_template). Janela 24h calculada localmente filtrando mensagens por instanciaTipo+fromMe (2026-05-07)
+- [PADRAO] /message/send_template da 3C Plus exige body_variables (array ordenado pelos indices {{1}},{{2}},...) — NAO aceita "body" com texto resolvido. chat_id deve ser NUMERICO (string da 400 generico). Inclui tempTime (unix segundos) (2026-05-07)
+- [PADRAO] 3C Plus tem 1 chat por contato — open_new_chat ignora instance_id quando ja existe chat. Para enviar via WABA num chat originalmente 3C+, basta passar instance_id WABA no body do send_template/send_chat. A 3C Plus rotea pela instancia indicada, nao pela primaria do chat (2026-05-07)
+- [PADRAO] sent.instance.type no response da 3C Plus reflete a instancia primaria do chat, nao a usada. Lookup defensivo do tipo real em instancia_whatsapp_user.tipo via lookupInstanciaTipo() e passa instanciaTipoOverride no persistirMensagemEnviada — garante badge correto na UI. Aplicado em todos os enviar* (2026-05-07)
+- [PADRAO] ConversaCobranca eh unique por chatId (1 por (instancia, contato)). Frontend agrupa visualmente por aluno — endpoint obter retorna mensagens de TODAS as ConversaCobranca do mesmo aluno (mesma pessoaCodigo OU mesmo contatoNumero) com lista de conversasIrmas. Listagem agrupa via Map no controller (2026-05-07)
+- [PADRAO] Janela 24h da WABA calculada no frontend via mensagens carregadas, filtradas por instanciaTipo='waba' AND fromMe=false (Max(timestamp)). Nao usar conversa.ultimaMensagemCliente — esse campo nao distingue por instancia (2026-05-07)
+- [PADRAO] Preferencia por user via localStorage chave instancia_preferida_<userId>. Default WABA conservador (forca template fora da janela em vez de "vazar" pelo nao oficial). Toda troca no SeletorCanal grava (2026-05-07)
+- [BUG] sync:full passou a exigir data_ultima_sync no body de TODOS os endpoints SEI — antes so o seiviewalunoresumo. Sem isso retorna 400 BAD_REQUEST em todas as 20 tabelas. fullLoad.js envia '2000-01-01 00:00:00' para forcar full retorno. TRUNCATE+createMany tambem precisa estar dentro de prisma.$transaction para evitar race com worker delta concorrente (2026-05-07)
+- [BUG] delta sync de contareceber falhava com unique constraint (nossonumero, contacorrente) quando SEI re-emitia boleto (deletava codigo antigo, criava novo com mesmo nossonumero). Webservice nao expoe deletes — fix: deletar locais com (nossonumero, contacorrente) presentes no batch antes do createMany. Aplicado so a contareceber (2026-05-07)
+- [PADRAO] Audio gravado pelo MediaRecorder em Chrome/Firefox e audio/webm;codecs=opus. NAO renomear o Blob para audio/ogg — Meta WABA rejeita silenciosamente (response 200 mas size=0). Usar mediaRecorder.mimeType real e passar req.file.mimetype no backend (2026-05-07)
+- [ARQUITETURA] Tela de conversas tem 4 modos no InputMensagem: digitacao livre, gravando audio, audioPreview (pre-escuta) e podeEnviarTemplate (CTA WABA fora da janela). Modal SelecionarTemplateMetaModal abre ao click ou via abrirModalTemplateAuto trigger (2026-05-07)

@@ -4,11 +4,30 @@ Documento tecnico sobre a decisao de nao deployar o backend inteiro na Vercel e 
 
 ---
 
+## Estado atual em producao (atualizado 2026-05-07)
+
+```
+Frontend:      Railway → cobranca.lmedu.com.br
+Backend:       Railway → api-cobranca.lmedu.com.br
+Banco:         Google Cloud SQL (35.199.101.38:5432, schema "cobranca")
+DNS/SSL:       Cloudflare apontando para os deploys da Railway
+```
+
+**Por que Railway para AMBOS** (em vez do split frontend Vercel + backend Railway sugerido na recomendacao original):
+- Unifica deploy/CI em uma plataforma so
+- Push-to-deploy no GitHub para os dois servicos
+- Mesma origem (apontamentos DNS, SSL gerenciado, dashboards)
+- Custo previsivel — ambos no mesmo plano
+
+A analise de "por que NAO Vercel sozinha" continua valida (worker 24/7, sem webhooks 3C Plus, Puppeteer, setInterval delta sync). Railway atende todos os requisitos de processo persistente.
+
+---
+
 ## TL;DR
 
 O backend deste sistema **nao pode** ser deployado 100% na Vercel porque depende de **processos stateful de longa duracao** — principalmente um Worker Socket.io que mantem conexao WebSocket persistente com a 3C Plus 24/7. A arquitetura Serverless da Vercel (incluindo Fluid Compute) nao oferece garantias de vida continua necessarias para este caso de uso.
 
-A recomendacao e arquitetura split: **frontend na Vercel (estatico Vite)** + **backend em servidor persistente (Node.js)**. O cPanel moderno suporta Node.js nativamente via `cPanel Node.js Selector` com Phusion Passenger — nao e mais exclusivo de PHP. Alternativas validas incluem Railway, Render, Fly.io, DigitalOcean App Platform ou VPS Linux tradicional com PM2+Nginx.
+A recomendacao original era split: **frontend na Vercel (estatico Vite)** + **backend em servidor persistente (Node.js)**. **Decisao final foi unificar tudo na Railway** (ver "Estado atual em producao" acima). O cPanel moderno tambem suporta Node.js nativamente via `cPanel Node.js Selector` com Phusion Passenger — nao e mais exclusivo de PHP. Alternativas validas incluem Railway (escolhida), Render, Fly.io, DigitalOcean App Platform ou VPS Linux tradicional com PM2+Nginx.
 
 ---
 
