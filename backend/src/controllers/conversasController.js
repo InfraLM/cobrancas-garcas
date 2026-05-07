@@ -446,14 +446,19 @@ export async function enviarAudio(req, res, next) {
   try {
     if (!req.file) return res.status(400).json({ error: 'Nenhum áudio enviado' });
 
+    // Usa o mimetype real recebido do browser (audio/webm;codecs=opus em
+    // Chrome/Firefox). Forçar 'audio/ogg' so renomeia o container e a Meta
+    // WABA rejeita silenciosamente (size=0 no response). A 3C Plus aceita
+    // ambos formatos ja que ela proxia para a Meta.
+    const mimetype = req.file.mimetype || 'audio/webm';
+    const ext = mimetype.includes('ogg') ? '.ogg' : '.webm';
+    const filename = req.file.originalname.endsWith(ext) ? req.file.originalname : `audio${ext}`;
     const formData = new FormData();
-    // 3C Plus espera .ogg para voice
-    const filename = req.file.originalname.endsWith('.ogg') ? req.file.originalname : 'audio.ogg';
-    formData.append('audio', bufferToFile(req.file.buffer, filename, 'audio/ogg'));
+    formData.append('audio', bufferToFile(req.file.buffer, filename, mimetype));
     formData.append('chat_id', req.body.chat_id);
     if (req.body.instance_id) formData.append('instance_id', req.body.instance_id);
 
-    console.log('[3C+ Upload] Enviando áudio:', filename, req.file.size, 'bytes');
+    console.log('[3C+ Upload] Enviando áudio:', filename, mimetype, req.file.size, 'bytes');
 
     const response = await fetch(chatUrl('/message/send_voice'), {
       method: 'POST',

@@ -167,10 +167,14 @@ export default function InputMensagem({
 
       mediaRecorder.onstop = () => {
         stream.getTracks().forEach(t => t.stop());
-        const blob = new Blob(chunksRef.current, { type: 'audio/ogg; codecs=opus' });
+        // Mantem o mimetype real do MediaRecorder (audio/webm;codecs=opus em
+        // Chrome/Firefox). Nao "renomeia" para audio/ogg porque a Meta WABA
+        // e rigorosa e rejeita webm com label de ogg silenciosamente (size=0
+        // no response).
+        const mimetype = mediaRecorder.mimeType || 'audio/webm;codecs=opus';
+        const blob = new Blob(chunksRef.current, { type: mimetype });
+        console.log('[Audio] gravacao parada — blob size:', blob.size, 'mimetype:', mimetype);
         if (blob.size > 0) {
-          // Nao envia direto: abre o modo de pre-escuta. Agente decide enviar
-          // ou descartar via botoes do modo audioPreview.
           setAudioPreview({ url: URL.createObjectURL(blob), blob });
         }
         chunksRef.current = [];
