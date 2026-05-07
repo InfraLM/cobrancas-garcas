@@ -228,6 +228,29 @@ async function syncTableDelta({ model, serviceId, pk, mode = 'delta' }, dataUlti
     // Bulk upsert: deletar existentes + inserir tudo de uma vez
     const pks = sanitized.map(r => r[pk]).filter(v => v !== null && v !== undefined);
 
+    // contareceber tem unique composto (nossonumero, contacorrente). Quando o SEI re-emite
+    // boleto (renegociacao, ajuste de valor), ele DELETA o codigo antigo e cria um codigo
+    // novo com o mesmo nossonumero. O webservice nao retorna deletes, entao o delete por
+    // PK aqui nao cobre o codigo antigo orfao no banco local — e o createMany seguinte quebra
+    // com unique violation. Fix: tambem deletar locais com (nossonumero, contacorrente) que
+    // estao no batch novo. Sem perda de dado: o registro novo entra logo em seguida com o
+    // mesmo unique mas codigo novo.
+    if (model === 'contareceber') {
+      const pares = sanitized.filter(r => r.nossonumero && r.contacorrente != null);
+      for (let i = 0; i < pares.length; i += 500) {
+        const slice = pares.slice(i, i + 500);
+        const params = [];
+        const conds = slice.map((r, j) => {
+          params.push(r.nossonumero, r.contacorrente);
+          return `($${j*2+1}, $${j*2+2})`;
+        });
+        await prisma.$executeRawUnsafe(
+          `DELETE FROM cobranca.contareceber WHERE (nossonumero, contacorrente) IN (${conds.join(',')})`,
+          ...params
+        );
+      }
+    }
+
     if (pks.length > 30000) {
       // Volume muito grande: processar em batches de 5000 para evitar limite de bind variables
       for (let i = 0; i < pks.length; i += 5000) {
