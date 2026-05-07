@@ -31,19 +31,19 @@ export default function ConversasPage() {
   // Conversas irmas do mesmo aluno (mesma pessoa em outras instancias).
   // Permite roteamento correto do envio + calculo de janela 24h.
   const [conversasIrmas, setConversasIrmas] = useState<ConversaIrma[]>([]);
-  conversasIrmasRef.current = conversasIrmas;
   const [painelAlunoAberto, setPainelAlunoAberto] = useState(true);
   const [carregando, setCarregando] = useState(true);
   const [modalEncerrar, setModalEncerrar] = useState(false);
   const [modalNovaConversa, setModalNovaConversa] = useState(false);
   const [novoTelefone, setNovoTelefone] = useState('');
 
+  // Refs para handlers de realtime que precisam de leitura sincrona do state atual.
   const conversaAtivaRef = useRef(conversaAtiva);
   conversaAtivaRef.current = conversaAtiva;
-  // Realtime cross-chat: para o aluno com 2 conversas (3C+ + WABA), as msgs
-  // chegam em chatIds distintos. Mantemos ref atualizada para o handler decidir
-  // se aceita mensagens das irmas no historico unificado.
+  // Realtime cross-chat: msgs do mesmo aluno chegam em chatIds distintos (3C+ vs WABA).
+  // Handler precisa saber quais chatIds das irmas sao aceitos no historico unificado.
   const conversasIrmasRef = useRef<ConversaIrma[]>([]);
+  conversasIrmasRef.current = conversasIrmas;
 
   const [alunoVinculado, setAlunoVinculado] = useState<Aluno | null>(null);
   const alunoCache = useRef<Record<number, Aluno>>({});
