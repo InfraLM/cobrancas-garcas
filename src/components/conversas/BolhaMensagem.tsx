@@ -1,6 +1,6 @@
 import { useState, useRef } from 'react';
 import type { Mensagem3CPlus } from '../../types/conversa';
-import { Check, CheckCheck, Lock, FileText, Play, Pause, Download, BadgeCheck } from 'lucide-react';
+import { Check, CheckCheck, Lock, FileText, Play, Pause, Download, BadgeCheck, MessageCircle } from 'lucide-react';
 
 interface BolhaMensagemProps {
   mensagem: Mensagem3CPlus;
@@ -11,7 +11,7 @@ function formatarHora(ts: number): string {
 }
 
 export default function BolhaMensagem({ mensagem }: BolhaMensagemProps) {
-  const { tipo, corpo, fromMe, timestamp, ack, interno, mediaUrl, mediaNome, deletado, templateMetaId, templateMetaNome } = mensagem;
+  const { tipo, corpo, fromMe, timestamp, ack, interno, mediaUrl, mediaNome, deletado, templateMetaId, templateMetaNome, instanciaTipo } = mensagem;
   const eTemplateMeta = !!templateMetaId;
 
   // System messages (protocol, transfer, qualification, snooze)
@@ -66,6 +66,22 @@ export default function BolhaMensagem({ mensagem }: BolhaMensagemProps) {
         <div className="flex items-center gap-1 mb-0.5 mr-1 text-[0.625rem] text-emerald-600">
           <BadgeCheck size={10} />
           <span>Template{templateMetaNome ? `: ${templateMetaNome}` : ''}</span>
+        </div>
+      )}
+      {/* Badge de canal (apenas para mensagens enviadas pelo agente, sem ser template Meta) */}
+      {fromMe && !eTemplateMeta && instanciaTipo && (
+        <div className="flex items-center gap-1 mb-0.5 mr-1 text-[0.625rem] text-gray-500">
+          {instanciaTipo === 'waba' ? (
+            <>
+              <BadgeCheck size={10} className="text-emerald-600" />
+              <span className="text-emerald-600">WABA</span>
+            </>
+          ) : (
+            <>
+              <MessageCircle size={10} className="text-gray-400" />
+              <span>WhatsApp 3C+</span>
+            </>
+          )}
         </div>
       )}
       <div className={`flex ${alinhamento} w-full`}>

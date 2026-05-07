@@ -117,6 +117,8 @@ export interface Mensagem3CPlus {
   templateWhatsappId?: number | null;  // atalho rapido enviado durante conversa
   templateMetaId?: string | null;      // template Meta WABA enviado fora da janela 24h
   templateMetaNome?: string | null;    // nome do template Meta (denormalizado pra UI)
+  // Canal de envio (Sprint 5) — usado pra badge "WhatsApp 3C+" / "WABA" no balao
+  instanciaTipo?: 'whatsapp-3c' | 'waba' | null;
 }
 
 // --- Estado ---

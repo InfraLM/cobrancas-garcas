@@ -12,6 +12,8 @@ import ModalEncerrarConversa from '../components/conversas/ModalEncerrarConversa
 import { MessageSquare, Radio, Plus, Loader2, X } from 'lucide-react';
 import * as conversasService from '../services/conversas3cplus';
 import * as conversasCobrancaService from '../services/conversasCobranca';
+import { listarInstanciasUser } from '../services/users';
+import type { InstanciaWhatsappUser } from '../types';
 import { useRealtime } from '../contexts/RealtimeContext';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -37,6 +39,22 @@ export default function ConversasPage() {
 
   const [alunoVinculado, setAlunoVinculado] = useState<Aluno | null>(null);
   const alunoCache = useRef<Record<number, Aluno>>({});
+
+  // Instancias vinculadas ao agente logado (seletor de canal no rodape do chat)
+  const [instanciasDisponiveis, setInstanciasDisponiveis] = useState<InstanciaWhatsappUser[]>([]);
+  const [instanciaSelecionada, setInstanciaSelecionada] = useState<string>('');
+
+  useEffect(() => {
+    if (!user?.id) { setInstanciasDisponiveis([]); return; }
+    listarInstanciasUser(user.id)
+      .then(setInstanciasDisponiveis)
+      .catch(() => setInstanciasDisponiveis([]));
+  }, [user?.id]);
+
+  // Quando troca de conversa, sincroniza o seletor com a instancia da conversa
+  useEffect(() => {
+    if (conversaAtiva?.instanciaId) setInstanciaSelecionada(conversaAtiva.instanciaId);
+  }, [conversaAtiva?.id, conversaAtiva?.instanciaId]);
 
   useEffect(() => {
     const codigo = conversaAtiva?.pessoaCodigo;
@@ -144,6 +162,10 @@ export default function ConversasPage() {
           ack: msg.ack || null,
           interno: false,
           deletado: false,
+          templateWhatsappId: msg.templateWhatsappId ?? null,
+          templateMetaId: msg.templateMetaId ?? null,
+          templateMetaNome: msg.templateMetaNome ?? null,
+          instanciaTipo: msg.instanciaTipo ?? null,
         };
         setMensagens(prev => {
           const idx = prev.findIndex(m => m.id === idReal);
@@ -226,6 +248,10 @@ export default function ConversasPage() {
         mensagemCitada: m.mensagemCitadaCorpo ? { corpo: m.mensagemCitadaCorpo, id: m.mensagemCitadaId } : undefined,
         interno: false,
         deletado: false,
+        templateWhatsappId: m.templateWhatsappId ?? null,
+        templateMetaId: m.templateMetaId ?? null,
+        templateMetaNome: m.templateMetaNome ?? null,
+        instanciaTipo: m.instanciaTipo ?? null,
       }));
       normalizadas.sort((a, b) => a.timestamp - b.timestamp);
       setMensagens(normalizadas);
@@ -268,11 +294,12 @@ export default function ConversasPage() {
   }, [conversaAtiva]);
 
   // ─── Envio de mensagens ──────────────────────────────────
-  const handleEnviarMensagem = useCallback((texto: string, interno: boolean, templateWhatsappId?: number | null) => {
+  const handleEnviarMensagem = useCallback((texto: string, interno: boolean, templateWhatsappId?: number | null, instanciaIdOverride?: string) => {
     if (!conversaAtiva) return;
+    const inst = instanciaIdOverride || instanciaSelecionada || conversaAtiva.instanciaId;
     const promise = interno
       ? conversasService.enviarInterno(conversaAtiva.chatId, texto)
-      : conversasService.enviarTexto(conversaAtiva.chatId, texto, conversaAtiva.instanciaId, templateWhatsappId);
+      : conversasService.enviarTexto(conversaAtiva.chatId, texto, inst, templateWhatsappId);
 
     const optimistic: Mensagem3CPlus = {
       id: `optimistic-${Date.now()}`,
@@ -292,13 +319,14 @@ export default function ConversasPage() {
     setMensagens(prev => [...prev, optimistic]);
 
     promise.catch((err) => console.error('[ConversasPage] Erro ao enviar:', err));
-  }, [conversaAtiva]);
+  }, [conversaAtiva, instanciaSelecionada]);
 
   const handleEnviarArquivo = useCallback((file: File, tipo: 'image' | 'document') => {
     if (!conversaAtiva) return;
+    const inst = instanciaSelecionada || conversaAtiva.instanciaId;
     const promise = tipo === 'image'
-      ? conversasService.enviarImagem(conversaAtiva.chatId, file, conversaAtiva.instanciaId)
-      : conversasService.enviarDocumento(conversaAtiva.chatId, file, conversaAtiva.instanciaId);
+      ? conversasService.enviarImagem(conversaAtiva.chatId, file, inst)
+      : conversasService.enviarDocumento(conversaAtiva.chatId, file, inst);
 
     const optimistic: Mensagem3CPlus = {
       id: `optimistic-file-${Date.now()}`,
@@ -317,10 +345,11 @@ export default function ConversasPage() {
     };
     setMensagens(prev => [...prev, optimistic]);
     promise.catch((err) => console.error('[ConversasPage] Erro ao enviar arquivo:', err));
-  }, [conversaAtiva]);
+  }, [conversaAtiva, instanciaSelecionada]);
 
   const handleEnviarAudio = useCallback((blob: Blob) => {
     if (!conversaAtiva) return;
+    const inst = instanciaSelecionada || conversaAtiva.instanciaId;
     const optimistic: Mensagem3CPlus = {
       id: `optimistic-audio-${Date.now()}`,
       chatId: conversaAtiva.chatId,
@@ -337,9 +366,9 @@ export default function ConversasPage() {
       deletado: false,
     };
     setMensagens(prev => [...prev, optimistic]);
-    conversasService.enviarAudio(conversaAtiva.chatId, blob, conversaAtiva.instanciaId)
+    conversasService.enviarAudio(conversaAtiva.chatId, blob, inst)
       .catch((err) => console.error('[ConversasPage] Erro ao enviar áudio:', err));
-  }, [conversaAtiva]);
+  }, [conversaAtiva, instanciaSelecionada]);
 
   return (
     <div className="flex h-[calc(100vh-3.5rem)] overflow-hidden -mx-6 -mb-6">
@@ -448,11 +477,12 @@ export default function ConversasPage() {
                 conversa: conversaAtiva,
                 agente: user,
               }}
-              instanciaTipo={conversaAtiva.instanciaTipo}
               ultimaMensagemCliente={conversaAtiva.ultimaMensagemCliente}
               chatId={conversaAtiva.chatId}
-              instanciaId={conversaAtiva.instanciaId}
               aluno={alunoVinculado}
+              instanciasDisponiveis={instanciasDisponiveis}
+              instanciaSelecionada={instanciaSelecionada}
+              onTrocarInstancia={setInstanciaSelecionada}
             />
           </>
         ) : (

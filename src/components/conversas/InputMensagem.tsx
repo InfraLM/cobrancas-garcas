@@ -3,22 +3,26 @@ import { Send, Paperclip, Mic, Lock, Image, FileText, Square, X, BadgeCheck } fr
 import BotaoTemplates from './BotaoTemplates';
 import ModalSelecionarTemplate from './ModalSelecionarTemplate';
 import SelecionarTemplateMetaModal from './SelecionarTemplateMetaModal';
+import SeletorCanal from './SeletorCanal';
 import type { DadosResolucao } from '../../utils/resolverTemplate';
 import type { Aluno } from '../../types/aluno';
+import type { InstanciaWhatsappUser } from '../../types';
 
 interface InputMensagemProps {
-  onEnviar: (texto: string, interno: boolean, templateWhatsappId?: number | null) => void;
+  onEnviar: (texto: string, interno: boolean, templateWhatsappId?: number | null, instanciaIdOverride?: string) => void;
   onEnviarArquivo?: (file: File, tipo: 'image' | 'document') => void;
   onEnviarAudio?: (blob: Blob) => void;
   desabilitado?: boolean;
   dadosTemplate?: DadosResolucao;
   // Suporte a envio de template Meta WABA (quando janela 24h fechou)
-  instanciaTipo?: 'whatsapp-3c' | 'waba' | null;
   ultimaMensagemCliente?: string | null;
   chatId?: string | number;
-  instanciaId?: string;
   aluno?: Aluno | null;
   onTemplateMetaEnviado?: () => void;
+  // Seletor de canal: agente troca entre instâncias vinculadas ao perfil
+  instanciasDisponiveis?: InstanciaWhatsappUser[];
+  instanciaSelecionada?: string;  // instanciaId da escolhida atualmente
+  onTrocarInstancia?: (instanciaId: string) => void;
 }
 
 const VINTE_QUATRO_HORAS_MS = 24 * 60 * 60 * 1000;
@@ -29,12 +33,13 @@ export default function InputMensagem({
   onEnviarAudio,
   desabilitado,
   dadosTemplate,
-  instanciaTipo,
   ultimaMensagemCliente,
   chatId,
-  instanciaId,
   aluno,
   onTemplateMetaEnviado,
+  instanciasDisponiveis = [],
+  instanciaSelecionada,
+  onTrocarInstancia,
 }: InputMensagemProps) {
   const [texto, setTexto] = useState('');
   const [interno, setInterno] = useState(false);
@@ -44,12 +49,13 @@ export default function InputMensagem({
   const [modalTemplateAberto, setModalTemplateAberto] = useState(false);
   const [modalTemplateMetaAberto, setModalTemplateMetaAberto] = useState(false);
 
-  // Detecta se conversa eh WABA com janela 24h fechada — neste caso, agente
-  // so pode enviar via template aprovado pela Meta (regra do WhatsApp Business).
-  const ehWaba = instanciaTipo === 'waba';
+  // Tipo do canal selecionado — derivado da instancia escolhida no seletor.
+  // Se nao tiver seletor (versao antiga ou apenas 1 instancia), cai no comportamento padrao.
+  const instAtual = instanciasDisponiveis.find(i => i.instanciaId === instanciaSelecionada);
+  const ehWaba = instAtual?.tipo === 'waba';
   const ultimaMsgClienteMs = ultimaMensagemCliente ? new Date(ultimaMensagemCliente).getTime() : 0;
   const janelaFechada = ehWaba && (!ultimaMsgClienteMs || (Date.now() - ultimaMsgClienteMs > VINTE_QUATRO_HORAS_MS));
-  const podeEnviarTemplate = janelaFechada && chatId !== undefined && !!instanciaId;
+  const podeEnviarTemplate = janelaFechada && chatId !== undefined && !!instanciaSelecionada;
   // Tracking de template: setado quando agente seleciona um template no modal.
   // Zera apenas quando o textarea fica completamente vazio (regra acordada).
   // Mensagem enviada com este ID setado eh contabilizada como uso do template,
@@ -67,7 +73,7 @@ export default function InputMensagem({
     if (!msg) return;
     // Notas internas nao tracam template (nao sao mensagem real ao aluno)
     const tplId = interno ? null : templateAtivoId;
-    onEnviar(msg, interno, tplId);
+    onEnviar(msg, interno, tplId, instanciaSelecionada);
     setTexto('');
     setTemplateAtivoId(null);
     if (textareaRef.current) {
@@ -190,11 +196,21 @@ export default function InputMensagem({
     return (
       <>
         <div className="bg-white border-t border-gray-100 px-4 py-3">
-          <div className="flex items-center gap-2 mb-2">
-            <BadgeCheck size={13} className="text-emerald-600" />
-            <p className="text-[0.6875rem] text-gray-600">
-              Janela de 24h da WABA fechada. Envie um template aprovado pela Meta.
-            </p>
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2">
+              <BadgeCheck size={13} className="text-emerald-600" />
+              <p className="text-[0.6875rem] text-gray-600">
+                Janela de 24h da WABA fechada. Envie um template aprovado pela Meta.
+              </p>
+            </div>
+            {instanciasDisponiveis.length > 0 && instanciaSelecionada && onTrocarInstancia && (
+              <SeletorCanal
+                instancias={instanciasDisponiveis}
+                selecionadaId={instanciaSelecionada}
+                onSelecionar={onTrocarInstancia}
+                desabilitado={desabilitado}
+              />
+            )}
           </div>
           <button
             onClick={() => setModalTemplateMetaAberto(true)}
@@ -205,12 +221,12 @@ export default function InputMensagem({
             Selecione um modelo de mensagem
           </button>
         </div>
-        {chatId !== undefined && instanciaId && (
+        {chatId !== undefined && instanciaSelecionada && (
           <SelecionarTemplateMetaModal
             aberto={modalTemplateMetaAberto}
             onFechar={() => setModalTemplateMetaAberto(false)}
             chatId={chatId}
-            instanciaId={instanciaId}
+            instanciaId={instanciaSelecionada}
             aluno={aluno}
             onEnviado={onTemplateMetaEnviado}
           />
@@ -252,6 +268,18 @@ export default function InputMensagem({
 
   return (
     <div className="bg-white border-t border-gray-100">
+      {/* Seletor de canal no modo de digitacao normal */}
+      {instanciasDisponiveis.length > 1 && instanciaSelecionada && onTrocarInstancia && (
+        <div className="flex items-center justify-end px-4 pt-2">
+          <SeletorCanal
+            instancias={instanciasDisponiveis}
+            selecionadaId={instanciaSelecionada}
+            onSelecionar={onTrocarInstancia}
+            desabilitado={desabilitado}
+          />
+        </div>
+      )}
+
       {/* Hidden file inputs */}
       <input
         ref={fileInputRef}

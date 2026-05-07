@@ -55,6 +55,7 @@ export interface InstanciaWhatsappUser {
   instanciaId: string;
   apelido: string;
   telefone: string | null;
+  tipo: 'whatsapp-3c' | 'waba' | null;  // canal — usado pelo seletor na tela de conversa
   criadoEm: string;
   atualizadoEm: string;
 }

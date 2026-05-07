@@ -282,6 +282,7 @@ export function normalizarMensagem(raw: any): Mensagem3CPlus {
     templateWhatsappId: raw.templateWhatsappId ?? null,
     templateMetaId: raw.templateMetaId ?? null,
     templateMetaNome: raw.templateMetaNome ?? null,
+    instanciaTipo: raw.instanciaTipo ?? raw.instance?.type ?? null,
   };
 }
 

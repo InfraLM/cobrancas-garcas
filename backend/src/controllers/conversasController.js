@@ -155,6 +155,7 @@ async function persistirMensagemEnviada(apiResponse, chatIdFallback, tipoOverrid
         contatoImagem: null,
         instanciaId: sent.instance?.id || sent.instance_id || '',
         instanciaNome: sent.instance?.name || null,
+        instanciaTipo: sent.instance?.type || null,
         pessoaCodigo: null,
         tipo: tipoOverride || sent.type || 'chat',
         corpo: sent.body || null,

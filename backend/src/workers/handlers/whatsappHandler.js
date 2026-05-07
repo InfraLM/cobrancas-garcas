@@ -108,6 +108,7 @@ export async function onNovaMensagemWhatsapp(payload) {
         contatoImagem: chatData.contact?.image || null,
         instanciaId: chatData.instance?.id || msgData.instance_id || '',
         instanciaNome: chatData.instance?.name || null,
+        instanciaTipo: chatData.instance?.type || msgData.instance?.type || null,
         pessoaCodigo: conversa.pessoaCodigo || null,
         tipo: msgData.type || 'chat',
         corpo: msgData.body || null,

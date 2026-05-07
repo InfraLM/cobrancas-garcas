@@ -49,6 +49,7 @@ model InstanciaWhatsappUser {
   instanciaId  String
   apelido      String
   telefone     String?
+  tipo         String?  // "whatsapp-3c" | "waba" — sincronizado da 3C Plus ao adicionar
   criadoEm     DateTime @default(now())
   atualizadoEm DateTime @updatedAt
 
@@ -1757,6 +1758,7 @@ model MensagemWhatsapp {
   criadoEm            DateTime  @default(now())
   templateWhatsappId  Int?      // FK logica para template_whatsapp.id quando enviada via template
   templateMetaId      String?   // FK logica para template_meta.id quando enviada via template Meta WABA
+  instanciaTipo       String?   // "whatsapp-3c" | "waba" — denormalizado do payload 3C Plus para UI
 
   @@index([contatoNumero, timestamp])
   @@index([pessoaCodigo, timestamp])
