@@ -47,6 +47,7 @@ export default function UsuarioDrawer({ usuario, onClose, onSalvo }: UsuarioDraw
   const [editApelido, setEditApelido] = useState('');
   const [editTelefone, setEditTelefone] = useState('');
   const [editInstanciaId, setEditInstanciaId] = useState('');
+  const [editTipo, setEditTipo] = useState<'whatsapp-3c' | 'waba'>('whatsapp-3c');
   const [instanciaError, setInstanciaError] = useState<string | null>(null);
 
   const buscarAgente = useCallback(async (emailBusca: string) => {
@@ -135,6 +136,7 @@ export default function UsuarioDrawer({ usuario, onClose, onSalvo }: UsuarioDraw
     setEditInstanciaId(inst.instanciaId);
     setEditApelido(inst.apelido);
     setEditTelefone(inst.telefone || '');
+    setEditTipo(inst.tipo === 'waba' ? 'waba' : 'whatsapp-3c');
     setInstanciaError(null);
   }
 
@@ -143,6 +145,7 @@ export default function UsuarioDrawer({ usuario, onClose, onSalvo }: UsuarioDraw
     setEditInstanciaId('');
     setEditApelido('');
     setEditTelefone('');
+    setEditTipo('whatsapp-3c');
   }
 
   async function salvarEdicao() {
@@ -152,6 +155,7 @@ export default function UsuarioDrawer({ usuario, onClose, onSalvo }: UsuarioDraw
         instanciaId: editInstanciaId.trim(),
         apelido: editApelido.trim(),
         telefone: editTelefone.trim() || undefined,
+        tipo: editTipo,
       });
       setInstancias(prev => prev.map(i => (i.id === atualizada.id ? atualizada : i)));
       cancelarEdicao();
@@ -490,6 +494,14 @@ export default function UsuarioDrawer({ usuario, onClose, onSalvo }: UsuarioDraw
                     <div key={inst.id} className="px-3 py-2.5 rounded-xl border border-gray-100 bg-gray-50">
                       {instanciaEditando === inst.id ? (
                         <div className="space-y-2">
+                          <select
+                            value={editTipo}
+                            onChange={(e) => setEditTipo(e.target.value as 'whatsapp-3c' | 'waba')}
+                            className="w-full px-3 py-1.5 rounded-lg border border-gray-200 text-[0.8125rem] bg-white focus:outline-none focus:ring-1 focus:ring-primary"
+                          >
+                            <option value="whatsapp-3c">WhatsApp 3C+ (não oficial)</option>
+                            <option value="waba">WABA (oficial)</option>
+                          </select>
                           <input
                             type="text"
                             value={editApelido}
