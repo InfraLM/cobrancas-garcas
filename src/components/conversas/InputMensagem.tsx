@@ -1,4 +1,4 @@
-import { useState, useRef, useMemo, type KeyboardEvent } from 'react';
+import { useState, useRef, useMemo, useEffect, type KeyboardEvent } from 'react';
 import { Send, Paperclip, Mic, Lock, Image, FileText, Square, X, BadgeCheck, MessageSquarePlus } from 'lucide-react';
 import BotaoTemplates from './BotaoTemplates';
 import ModalSelecionarTemplate from './ModalSelecionarTemplate';
@@ -26,6 +26,10 @@ interface InputMensagemProps {
   onTemplateMetaEnviado?: () => void;
   // Quando agente seleciona uma instancia que ainda nao tem chat com o aluno.
   onIniciarConversaInstancia?: (instanciaId: string) => void;
+  // Trigger externo para abrir o modal de template Meta. Usado quando o agente
+  // clica "Iniciar via WABA" e a irma WABA acabou de ser criada — abre o modal
+  // automaticamente para nao exigir clique extra.
+  abrirModalTemplateAuto?: number;
   // Seletor de canal: agente troca entre instâncias vinculadas ao perfil
   instanciasDisponiveis?: InstanciaWhatsappUser[];
   instanciaSelecionada?: string;  // instanciaId da escolhida atualmente
@@ -46,6 +50,7 @@ export default function InputMensagem({
   aluno,
   onTemplateMetaEnviado,
   onIniciarConversaInstancia,
+  abrirModalTemplateAuto,
   instanciasDisponiveis = [],
   instanciaSelecionada,
   onTrocarInstancia,
@@ -90,6 +95,17 @@ export default function InputMensagem({
 
   // Modo template Meta so faz sentido se ja existe conversa WABA (precisa do chatId WABA).
   const podeEnviarTemplate = janelaFechada && !!irmaSelecionada;
+
+  // Abre o modal de template automaticamente quando o agente acabou de iniciar
+  // uma nova conversa via WABA e a irma correspondente acabou de aparecer.
+  // O `abrirModalTemplateAuto` e um contador externo (timestamp) que muda toda
+  // vez que o usuario clica "Iniciar via WABA" — disparando este efeito so apos
+  // a irma WABA estar disponivel.
+  useEffect(() => {
+    if (abrirModalTemplateAuto && irmaSelecionada && ehWaba) {
+      setModalTemplateMetaAberto(true);
+    }
+  }, [abrirModalTemplateAuto, irmaSelecionada, ehWaba]);
   // Tracking de template: setado quando agente seleciona um template no modal.
   // Zera apenas quando o textarea fica completamente vazio (regra acordada).
   // Mensagem enviada com este ID setado eh contabilizada como uso do template,
