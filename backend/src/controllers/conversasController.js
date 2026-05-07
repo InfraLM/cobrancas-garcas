@@ -266,24 +266,24 @@ export async function enviarTemplate(req, res, next) {
       return res.status(400).json({ error: 'Template nao tem metaTemplateId — precisa ser sincronizado com Meta' });
     }
 
-    // Resolve body com parametros: substitui {{1}}, {{2}}, ... pelos valores
+    // Identifica quantas variaveis o body tem ({{1}}, {{2}}, ...) na ordem.
+    // A 3C Plus nao aceita "body" com texto resolvido — exige body_variables
+    // (array ordenado pelos indices), e ela mesma resolve antes de mandar pra Meta.
     const bodyComp = (tpl.components || []).find(c => c.type === 'BODY' || c.type === 'body');
     if (!bodyComp || !bodyComp.text) {
       return res.status(400).json({ error: 'Template sem componente BODY' });
     }
-    let bodyResolvido = bodyComp.text;
-    for (const [k, v] of Object.entries(parametros || {})) {
-      const re = new RegExp('\\{\\{\\s*' + k + '\\s*\\}\\}', 'g');
-      bodyResolvido = bodyResolvido.replace(re, String(v));
-    }
+    const indicesNoBody = [...new Set(
+      [...bodyComp.text.matchAll(/\{\{\s*(\d+)\s*\}\}/g)].map(m => Number(m[1]))
+    )].sort((a, b) => a - b);
 
-    // Sanity check: nenhuma variavel restante
-    const variaveisRestantes = bodyResolvido.match(/\{\{\d+\}\}/g);
-    if (variaveisRestantes && variaveisRestantes.length > 0) {
-      return res.status(400).json({
-        error: 'Variaveis nao preenchidas: ' + variaveisRestantes.join(', '),
-      });
-    }
+    const body_variables = indicesNoBody.map(i => {
+      const valor = parametros?.[String(i)] ?? parametros?.[i];
+      if (valor === undefined || valor === null || valor === '') {
+        throw new Error(`Variavel {{${i}}} nao preenchida`);
+      }
+      return String(valor);
+    });
 
     // Chama 3C Plus
     // chat_id como NUMERO (postman exemplo: "chat_id": 42 sem aspas) — string falha 400.
@@ -297,8 +297,8 @@ export async function enviarTemplate(req, res, next) {
       template_id: tpl.metaTemplateId,
       template_name: tpl.name,
       template_language: tpl.language,
-      body: bodyResolvido,
-      tempTime: Math.floor(Date.now() / 1000),  // exemplo postman da 3C Plus inclui
+      body_variables,  // 3C Plus resolve internamente: substitui {{1}}, {{2}} pela ordem
+      tempTime: Math.floor(Date.now() / 1000),
     };
     console.log('[3C+ Chat API] send_template payload:', JSON.stringify(payload));
     const response = await fetch(chatUrl('/message/send_template'), {
