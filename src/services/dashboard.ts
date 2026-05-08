@@ -73,3 +73,50 @@ export async function obterRecorrentesHistorico(opts: OptsBucket): Promise<Bucke
 export async function obterAcumuladoAlunos(opts: OptsBucket): Promise<BucketResponse<BucketAcumulado>> {
   return api.get<BucketResponse<BucketAcumulado>>(`/dashboard/acumulado-alunos?${qsBucket(opts)}`);
 }
+
+// ----------------------------------------------------------------------
+// Matriz de Recuperacao: Categoria de aging x Metodo de pagamento
+// ----------------------------------------------------------------------
+export type ModoFiltroMatriz = 'negociado' | 'pago';
+export type CategoriaAging = 'Baixa' | 'Média' | 'Alta';
+
+export interface CelulaMatriz {
+  qtdAlunos: number;
+  valorBruto: number;
+  valorLiquido: number;
+}
+
+export interface LinhaCategoriaMatriz {
+  categoria: CategoriaAging;
+  metodos: Record<string, CelulaMatriz>;
+  totalCategoria: CelulaMatriz;
+}
+
+export interface MatrizRecuperacaoResponse {
+  filtros: { inicio: string; fim: string; modoFiltro: ModoFiltroMatriz; agenteIds: number[] | null };
+  matriz: LinhaCategoriaMatriz[];
+  totais: CelulaMatriz;
+}
+
+export async function obterMatrizRecuperacao(opts: {
+  inicio: string;
+  fim: string;
+  modoFiltro?: ModoFiltroMatriz;
+  agenteIds?: number[];
+}): Promise<MatrizRecuperacaoResponse> {
+  const qs = new URLSearchParams({ inicio: opts.inicio, fim: opts.fim });
+  if (opts.modoFiltro) qs.set('modoFiltro', opts.modoFiltro);
+  if (opts.agenteIds && opts.agenteIds.length > 0) qs.set('agenteIds', opts.agenteIds.join(','));
+  return api.get<MatrizRecuperacaoResponse>(`/dashboard/matriz-recuperacao?${qs}`);
+}
+
+// Ordem fixa de metodos para renderizacao da matriz (mesmo que a planilha do user)
+export const METODOS_MATRIZ = [
+  'Cartão à vista',
+  'Cartão 2-6x',
+  'Cartão 7-12x',
+  'Ficou Fácil',
+  'Outros',
+  'Boleto',
+  'Pix',
+] as const;

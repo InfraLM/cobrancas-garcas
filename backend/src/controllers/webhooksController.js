@@ -1,6 +1,7 @@
 import { prisma } from '../config/database.js';
 import { getRealtimeIo } from '../realtime.js';
 import { sincronizarPausaPorEtapa } from '../services/pausaLigacaoService.js';
+import { listarPagamentosDoInstallment } from '../services/asaasService.js';
 
 // -----------------------------------------------
 // POST /api/webhooks/clicksign
@@ -245,19 +246,61 @@ export async function asaasWebhook(req, res, next) {
     const acordoId = pagamento.acordoId;
 
     switch (event) {
-      case 'PAYMENT_CONFIRMED':
-      case 'PAYMENT_RECEIVED': {
-        // Marcar pagamento como confirmado
+      case 'PAYMENT_CONFIRMED': {
+        // Cliente pagou (cartao autorizou, boleto compensou) — competencia.
+        // Cascata para CONCLUIDO acontece aqui. PAYMENT_RECEIVED chega depois
+        // (D+1 a D+30 conforme cartao) e so popula recebidoEm — caixa real.
+        const dataConfirmacao = payment.confirmedDate
+          ? new Date(payment.confirmedDate)
+          : (payment.paymentDate ? new Date(payment.paymentDate) : new Date());
+
         await prisma.pagamentoAcordo.update({
           where: { id: pagamento.id },
           data: {
             situacao: 'CONFIRMADO',
+            confirmadoEm: dataConfirmacao,
             dataPagamento: payment.paymentDate ? new Date(payment.paymentDate) : new Date(),
             valorPago: payment.value ? Number(payment.value) : Number(pagamento.valor),
             valorLiquido: payment.netValue ? Number(payment.netValue) : null,
             taxaAsaas: payment.value && payment.netValue ? Number(payment.value) - Number(payment.netValue) : null,
           },
         });
+
+        // Cartao parcelado: marcar TODAS as parcelas do mesmo acordo como
+        // capturadas (limite Asaas autoriza tudo de uma vez na 1a parcela).
+        // Buscar netValue real das outras parcelas via API do Asaas — webhook
+        // dessas so chega mes a mes. Sem isso, valorLiquido fica NULL para
+        // 5 das 6 parcelas mesmo apos a captura, distorcendo o card "Bruto vs
+        // Liquido".
+        if (pagamento.formaPagamento === 'CREDIT_CARD' && pagamento.parcelas > 1) {
+          await prisma.pagamentoAcordo.updateMany({
+            where: { acordoId: pagamento.acordoId, creditCardCaptured: false },
+            data: { creditCardCaptured: true, creditCardCapturedAt: new Date() },
+          });
+
+          if (pagamento.asaasInstallmentId) {
+            try {
+              const paymentsAsaas = await listarPagamentosDoInstallment(pagamento.asaasInstallmentId);
+              for (const p of paymentsAsaas) {
+                // Atualiza apenas as parcelas que ainda nao tem valorLiquido (as
+                // outras serao atualizadas pelo proprio webhook delas com valor
+                // real, que pode diferir minimamente).
+                await prisma.pagamentoAcordo.updateMany({
+                  where: { asaasPaymentId: p.id, valorLiquido: null },
+                  data: {
+                    valorLiquido: Number(p.netValue),
+                    taxaAsaas: Number(p.value) - Number(p.netValue),
+                  },
+                });
+              }
+              console.log(`[Webhook Asaas] Installment ${pagamento.asaasInstallmentId} — netValue propagado para ${paymentsAsaas.length} parcelas`);
+            } catch (e) {
+              console.error('[Webhook Asaas] Falha ao buscar installment:', e.message);
+              // Nao-bloqueante. Webhook de cada parcela individual atualiza valorLiquido
+              // com valor real conforme chegam mes a mes.
+            }
+          }
+        }
 
         console.log(`[Webhook Asaas] Pagamento ${payment.id} CONFIRMADO`);
 
@@ -379,6 +422,40 @@ export async function asaasWebhook(req, res, next) {
         }
 
         // Broadcast realtime
+        try {
+          getRealtimeIo().emit('acordo:atualizado', { acordoId, evento: event });
+        } catch {}
+        break;
+      }
+
+      case 'PAYMENT_RECEIVED': {
+        // Asaas liberou o dinheiro na conta — caixa real.
+        // PAYMENT_CONFIRMED e PAYMENT_RECEIVED chegam ~juntos para boleto/PIX
+        // (D+0/D+1) mas para cartao podem ter dias/semanas de gap.
+        //
+        // Este handler so popula recebidoEm. A cascata para CONCLUIDO + ocorrencias
+        // ja aconteceu em PAYMENT_CONFIRMED. Idempotente: se o registro ainda nao
+        // foi confirmado (caso edge raro de RECEIVED chegar antes), promovemos
+        // para CONFIRMADO tambem.
+        await prisma.pagamentoAcordo.update({
+          where: { id: pagamento.id },
+          data: {
+            recebidoEm: payment.paymentDate ? new Date(payment.paymentDate) : new Date(),
+            ...(pagamento.situacao !== 'CONFIRMADO' && pagamento.situacao !== 'RECEBIDO'
+              ? {
+                  situacao: 'RECEBIDO',
+                  confirmadoEm: pagamento.confirmadoEm ?? new Date(),
+                  dataPagamento: pagamento.dataPagamento ?? (payment.paymentDate ? new Date(payment.paymentDate) : new Date()),
+                  valorPago: pagamento.valorPago ?? (payment.value ? Number(payment.value) : Number(pagamento.valor)),
+                  valorLiquido: pagamento.valorLiquido ?? (payment.netValue ? Number(payment.netValue) : null),
+                  taxaAsaas: pagamento.taxaAsaas ?? (payment.value && payment.netValue ? Number(payment.value) - Number(payment.netValue) : null),
+                }
+              : { situacao: 'RECEBIDO' }),
+          },
+        });
+
+        console.log(`[Webhook Asaas] Pagamento ${payment.id} RECEBIDO (caixa)`);
+
         try {
           getRealtimeIo().emit('acordo:atualizado', { acordoId, evento: event });
         } catch {}

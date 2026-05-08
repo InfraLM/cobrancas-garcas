@@ -188,7 +188,7 @@ async function calcularAgingHistorico() {
         s.fim,
         cr.codigo,
         cr.datavencimento::date AS vencimento,
-        COALESCE(cr.valordescontocalculadoprimeirafaixadescontos, cr.valor - COALESCE(cr.valorrecebido, 0))::numeric AS saldo,
+        (cr.valor - COALESCE(cr.valorrecebido, 0))::numeric AS saldo,
         (s.fim - cr.datavencimento::date) AS dias_atraso
       FROM cobranca.contareceber cr
       JOIN cobranca.pessoa p ON p.codigo = cr.pessoa
@@ -740,17 +740,16 @@ export async function obterFunil(req, res, next) {
     const inicioTs = `${inicio} 00:00:00`;
     const fimTs = `${fim} 23:59:59`;
 
-    // Quando o snapshot e fallback (foto desatualizada — `aviso != null`),
-    // NAO restringimos as etapas pela base do snapshot: alunos que ja pagaram
-    // e sairam da base atual continuariam invisiveis em "Recuperado", etc.
-    // Nesse caso, contamos todas as atividades reais no periodo, e o valor
-    // de cada etapa eh o "valorDevedor" atual em aluno_resumo (best-effort).
-    const restringirBase = aviso === null;
-
-    // Sub-query do filtro de base (vazia quando nao restringimos)
-    const filtroBaseSql = restringirBase
-      ? `AND "pessoaCodigo" IN (SELECT "pessoaCodigo" FROM cobranca.snapshot_inadimplencia_diario WHERE data = $1::date)`
-      : '';
+    // SEMPRE restringimos pela base do snapshot da data efetiva (`snapshotData`),
+    // mesmo quando ha fallback (`aviso !== null`). Isso preserva a coorte:
+    // alunos que pagaram continuam visiveis em Recuperado/Negociado porque
+    // estavam no snapshot da data de fallback (quando ainda deviam). Aluno
+    // que NUNCA esteve na base nao entra em nenhuma etapa.
+    //
+    // Bugfix do over-application em ccd2441 (2026-04-28): o autor justificou
+    // o skip apenas para Recuperado/Negociado, mas a implementacao soltou
+    // tambem Tentativa/Realizado, gerando Realizado > Tentativa em valor.
+    const filtroBaseSql = `AND "pessoaCodigo" IN (SELECT "pessoaCodigo" FROM cobranca.snapshot_inadimplencia_diario WHERE data = $1::date)`;
 
     // Filtro de agente: aplicado em todas as etapas EXCETO Base (universo total).
     // Param $4 = array de User.id quando ha filtro.
@@ -794,31 +793,45 @@ export async function obterFunil(req, res, next) {
         SELECT COUNT(*)::int AS qtd, COALESCE(SUM("valorDevedor"), 0)::numeric AS valor
         FROM cobranca.snapshot_inadimplencia_diario WHERE data = $1::date
       `, ...paramsBase),
-      // Tentativa: contactados em [inicio,fim]; se restringe, soma valorDevedor da base; senao, soma de aluno_resumo
+      // ---------------------------------------------------------------
+      // Funil OPERACIONAL (decisao do user em 2026-05-08):
+      //   - Base: snapshot do INICIO do periodo (foto inicial)
+      //   - Tentativa/Realizado/Negociado/Recuperado: tudo que aconteceu
+      //     no periodo, SEM restricao de coorte. Mede volume operacional.
+      //   - Recuperado: mesma regra da Matriz Pago (cartao capturado conta,
+      //     valor bruto).
+      //
+      // Antes era cohort tracking (restringe pela base inicial). Agora eh
+      // visao operacional pura. As 5 colunas respondem perguntas
+      // independentes sobre o periodo.
+      // ---------------------------------------------------------------
+
+      // Tentativa de Contato: qualquer interacao no periodo (inbound OU outbound).
+      //   - Ligacao (qualquer registro_ligacao no periodo)
+      //   - Mensagem WhatsApp em ambas direcoes (fromMe true OU false)
+      // Valor = aluno_resumo.valorDevedor atual (best-effort) dos contactados.
       prisma.$queryRawUnsafe(`
         WITH contactados AS (
           SELECT DISTINCT "pessoaCodigo" AS pessoa
           FROM cobranca.registro_ligacao
           WHERE "pessoaCodigo" IS NOT NULL
             AND "dataHoraChamada" BETWEEN $2::timestamp AND $3::timestamp
-            ${filtroBaseSql}
             ${filtroAgenteLigacaoSql}
           UNION
           SELECT DISTINCT "pessoaCodigo" AS pessoa
           FROM cobranca.mensagem_whatsapp
-          WHERE "pessoaCodigo" IS NOT NULL AND "fromMe" = true
+          WHERE "pessoaCodigo" IS NOT NULL
             AND "timestamp" BETWEEN $2::timestamp AND $3::timestamp
-            ${filtroBaseSql}
             ${filtroAgenteWhatsappSql}
         )
         SELECT COUNT(DISTINCT c.pessoa)::int AS qtd,
-          COALESCE(SUM(COALESCE(snap."valorDevedor", ar."valorDevedor")), 0)::numeric AS valor
+          COALESCE(SUM(ar."valorDevedor"), 0)::numeric AS valor
         FROM contactados c
-        LEFT JOIN cobranca.snapshot_inadimplencia_diario snap
-          ON snap.data = $1::date AND snap."pessoaCodigo" = c.pessoa
         LEFT JOIN cobranca.aluno_resumo ar ON ar.codigo = c.pessoa
       `, ...paramsEtapa),
-      // Contato Realizado
+      // Contato Realizado: interacao bilateral efetiva no periodo.
+      //   - Ligacao com tempoFalando >= 4s (humano atendeu)
+      //   - Aluno respondeu/iniciou WhatsApp (fromMe = false)
       prisma.$queryRawUnsafe(`
         WITH efetivos AS (
           SELECT DISTINCT "pessoaCodigo" AS pessoa
@@ -826,55 +839,67 @@ export async function obterFunil(req, res, next) {
           WHERE "pessoaCodigo" IS NOT NULL
             AND "dataHoraChamada" BETWEEN $2::timestamp AND $3::timestamp
             AND COALESCE("tempoFalando", 0) >= 4
-            ${filtroBaseSql}
             ${filtroAgenteLigacaoSql}
           UNION
           SELECT DISTINCT "pessoaCodigo" AS pessoa
           FROM cobranca.mensagem_whatsapp
           WHERE "pessoaCodigo" IS NOT NULL AND "fromMe" = false
             AND "timestamp" BETWEEN $2::timestamp AND $3::timestamp
-            ${filtroBaseSql}
             ${filtroAgenteWhatsappSql}
         )
         SELECT COUNT(DISTINCT e.pessoa)::int AS qtd,
-          COALESCE(SUM(COALESCE(snap."valorDevedor", ar."valorDevedor")), 0)::numeric AS valor
+          COALESCE(SUM(ar."valorDevedor"), 0)::numeric AS valor
         FROM efetivos e
-        LEFT JOIN cobranca.snapshot_inadimplencia_diario snap
-          ON snap.data = $1::date AND snap."pessoaCodigo" = e.pessoa
         LEFT JOIN cobranca.aluno_resumo ar ON ar.codigo = e.pessoa
       `, ...paramsEtapa),
-      // Negociado
+      // Negociado: acordos criados no periodo (acordo_financeiro + ficou_facil).
+      // Sem restricao de coorte. Valor = soma de valorAcordo / valorInadimplenteMJ.
       prisma.$queryRawUnsafe(`
         WITH neg AS (
           SELECT "pessoaCodigo" AS pessoa, "valorAcordo"::numeric AS valor
           FROM cobranca.acordo_financeiro
           WHERE etapa != 'CANCELADO' AND "criadoEm" BETWEEN $2::timestamp AND $3::timestamp
-            ${filtroBaseSql}
             ${filtroAgenteAcordoSql}
           UNION ALL
           SELECT "pessoaCodigo" AS pessoa, "valorInadimplenteMJ"::numeric AS valor
           FROM cobranca.ficou_facil
           WHERE etapa != 'CANCELADO' AND "criadoEm" BETWEEN $2::timestamp AND $3::timestamp
-            ${filtroBaseSql}
             ${filtroAgenteAcordoSql}
         )
         SELECT COUNT(DISTINCT pessoa)::int AS qtd,
           COALESCE(SUM(valor), 0)::numeric AS valor
         FROM neg
       `, ...paramsEtapa),
-      // Recuperado
+      // Recuperado: MESMA regra da Matriz Pago bruto.
+      //   - acordo_financeiro: pagamento_acordo com confirmadoEm OU
+      //     creditCardCapturedAt no periodo, valor bruto (cartao capturado
+      //     conta 100% mesmo se so 1 parcela confirmou)
+      //   - ficou_facil: concluidoEm no periodo
+      // Sem restricao de coorte. Sem exigencia de etapa=CONCLUIDO no acordo.
       prisma.$queryRawUnsafe(`
         WITH rec AS (
-          SELECT "pessoaCodigo" AS pessoa, "valorAcordo"::numeric AS valor
-          FROM cobranca.acordo_financeiro
-          WHERE etapa = 'CONCLUIDO' AND "concluidoEm" BETWEEN $2::timestamp AND $3::timestamp
-            ${filtroBaseSql}
-            ${filtroAgenteAcordoSql}
+          SELECT DISTINCT af."pessoaCodigo" AS pessoa,
+            CASE
+              WHEN pa."formaPagamento" = 'CREDIT_CARD' AND pa.parcelas > 1 AND pa."creditCardCaptured" = true
+                THEN pa.valor
+              WHEN pa."confirmadoEm" IS NOT NULL
+                THEN pa.valor
+              ELSE 0
+            END AS valor,
+            pa.id AS pa_id
+          FROM cobranca.acordo_financeiro af
+          JOIN cobranca.pagamento_acordo pa ON pa."acordoId" = af.id
+          WHERE af.etapa != 'CANCELADO'
+            AND (
+              pa."confirmadoEm" BETWEEN $2::timestamp AND $3::timestamp
+              OR (pa."creditCardCaptured" = true
+                  AND pa."creditCardCapturedAt" BETWEEN $2::timestamp AND $3::timestamp)
+            )
+            ${filtroAgenteAcordoSql.replace(/\$4/g, '$4')}
           UNION ALL
-          SELECT "pessoaCodigo" AS pessoa, "valorInadimplenteMJ"::numeric AS valor
+          SELECT "pessoaCodigo" AS pessoa, "valorInadimplenteMJ"::numeric AS valor, id AS pa_id
           FROM cobranca.ficou_facil
           WHERE etapa = 'CONCLUIDO' AND "concluidoEm" BETWEEN $2::timestamp AND $3::timestamp
-            ${filtroBaseSql}
             ${filtroAgenteAcordoSql}
         )
         SELECT COUNT(DISTINCT pessoa)::int AS qtd,
@@ -1055,4 +1080,248 @@ async function calcularPagoPorForma(agenteIds = null) {
     competencia: mapearComFf(competencia),
     caixa: mapearComFf(caixa),
   };
+}
+
+// -----------------------------------------------
+// Matriz Categoria de Aging x Metodo de Pagamento
+//
+// Substitui o card antigo "Pago por Faixa de Inadimplencia". Cruza:
+//   - Linhas: Baixa (0-60d) | Media (61-150d) | Alta (150+d)
+//     Aging calculado uma vez no momento da criacao do acordo, sobre a
+//     parcela MAIS ANTIGA das parcela_original_acordo. Congela a categoria.
+//   - Colunas: 7 metodos de pagamento (Cartao a vista, 2-6x, 7-12x, Ficou
+//     Facil, Boleto, Pix, Outros).
+//
+// Cada celula traz:
+//   - qtdAlunos: COUNT(DISTINCT pessoaCodigo)
+//   - valorBruto: soma respeitando regra de cartao parcelado capturado
+//     (creditCardCaptured=true -> conta valor de TODAS as parcelas, mesmo
+//     nao confirmadas individualmente)
+//   - valorLiquido: COALESCE(valorLiquido, valor) com a mesma regra
+//
+// Filtros:
+//   - inicio/fim em acordo_financeiro.criadoEm (modo "negociado") ou
+//     pagamento_acordo.confirmadoEm (modo "pago"). Default: negociado.
+//   - agenteIds em acordo_financeiro.criadoPor.
+//
+// Decisoes do user (2026-05-07):
+//   - 3 categorias (Baixa/Media/Alta) substituem 5 faixas anteriores.
+//   - Bruto+Liquido conforme netValue do Asaas em pagamento_acordo.valorLiquido.
+//   - Cartao parcelado capturado conta como pago em bruto (regra capturada
+//     em creditCardCaptured + backfill via webhook + fetch installment).
+// -----------------------------------------------
+const FAIXAS_AGING_MATRIZ = `
+  CASE
+    WHEN dias <= 60 THEN 'Baixa'
+    WHEN dias <= 150 THEN 'Média'
+    ELSE 'Alta'
+  END
+`;
+
+const METODO_PAGAMENTO_MATRIZ = `
+  CASE
+    WHEN pa."formaPagamento" = 'CREDIT_CARD' AND pa.parcelas <= 1 THEN 'Cartão à vista'
+    WHEN pa."formaPagamento" = 'CREDIT_CARD' AND pa.parcelas BETWEEN 2 AND 6 THEN 'Cartão 2-6x'
+    WHEN pa."formaPagamento" = 'CREDIT_CARD' AND pa.parcelas BETWEEN 7 AND 12 THEN 'Cartão 7-12x'
+    WHEN pa."formaPagamento" = 'BOLETO' THEN 'Boleto'
+    WHEN pa."formaPagamento" = 'PIX' THEN 'Pix'
+    ELSE 'Outros'
+  END
+`;
+
+async function calcularMatrizRecuperacao({ inicio, fim, modoFiltro = 'negociado', agenteIds = null } = {}) {
+  // Bordas de timestamp
+  const inicioTs = `${inicio} 00:00:00`;
+  const fimTs = `${fim} 23:59:59`;
+
+  // Filtro temporal: negociado (acordo.criadoEm) ou pago (confirmadoEm OU
+  // creditCardCapturedAt para cartao parcelado capturado mas com 1a parcela
+  // ainda nao individualmente CONFIRMADA — caso edge que existe quando o
+  // limite ja foi reservado no Asaas mas a primeira cobranca ainda nao
+  // compensou).
+  const filtroTempoSql = modoFiltro === 'pago'
+    ? `AND (
+         pa."confirmadoEm" BETWEEN $1::timestamp AND $2::timestamp
+         OR (pa."creditCardCaptured" = true
+             AND pa."creditCardCapturedAt" BETWEEN $1::timestamp AND $2::timestamp)
+       )`
+    : `AND af."criadoEm" BETWEEN $1::timestamp AND $2::timestamp`;
+
+  const filtroTempoFf = modoFiltro === 'pago'
+    ? `AND ff."concluidoEm" BETWEEN $1::timestamp AND $2::timestamp`
+    : `AND ff."criadoEm" BETWEEN $1::timestamp AND $2::timestamp`;
+
+  const filtroAgenteSql = agenteIds ? `AND af."criadoPor" = ANY($3::int[])` : '';
+  const filtroAgenteFf = agenteIds ? `AND ff."criadoPor" = ANY($3::int[])` : '';
+  const params = agenteIds ? [inicioTs, fimTs, agenteIds] : [inicioTs, fimTs];
+
+  // Acordos financeiros: matriz por (categoria, metodo) com bruto/liquido
+  const linhasAcordos = await prisma.$queryRawUnsafe(`
+    WITH acordos_no_periodo AS (
+      SELECT
+        af.id AS "acordoId",
+        af."pessoaCodigo",
+        COALESCE(
+          (SELECT MAX(af."criadoEm"::date - po."dataVencimento"::date)
+           FROM cobranca.parcela_original_acordo po
+           WHERE po."acordoId" = af.id),
+          0
+        ) AS dias
+      FROM cobranca.acordo_financeiro af
+      WHERE af.etapa != 'CANCELADO'
+        ${modoFiltro === 'negociado' ? `AND af."criadoEm" BETWEEN $1::timestamp AND $2::timestamp` : ''}
+        ${filtroAgenteSql}
+    ),
+    pagamentos_relevantes AS (
+      SELECT
+        a."pessoaCodigo",
+        a.dias,
+        ${METODO_PAGAMENTO_MATRIZ} AS metodo,
+        -- Bruto: pa.valor JA E o valor total do acordo (cada cartao parcelado
+        -- tem apenas 1 linha em pagamento_acordo, nao N linhas).
+        CASE
+          WHEN pa."formaPagamento" = 'CREDIT_CARD' AND pa.parcelas > 1 AND pa."creditCardCaptured" = true
+            THEN pa.valor
+          WHEN pa."confirmadoEm" IS NOT NULL
+            THEN pa.valor
+          ELSE 0
+        END AS bruto,
+        -- Liquido cartao parcelado: pa.valorLiquido reflete o liquido de UMA
+        -- parcela (Asaas envia webhook por parcela individual). Para o liquido
+        -- total do acordo capturado, multiplicamos por pa.parcelas.
+        -- Cartao a vista, boleto, pix: pa.valorLiquido ja eh do total.
+        CASE
+          WHEN pa."formaPagamento" = 'CREDIT_CARD' AND pa.parcelas > 1 AND pa."creditCardCaptured" = true
+            THEN COALESCE(NULLIF(pa."valorLiquido", 0) * pa.parcelas, pa.valor)
+          WHEN pa."confirmadoEm" IS NOT NULL
+            THEN COALESCE(NULLIF(pa."valorLiquido", 0), pa.valor)
+          ELSE 0
+        END AS liquido
+      FROM acordos_no_periodo a
+      JOIN cobranca.pagamento_acordo pa ON pa."acordoId" = a."acordoId"
+      JOIN cobranca.acordo_financeiro af ON af.id = a."acordoId"
+      WHERE 1=1
+        ${modoFiltro === 'pago' ? filtroTempoSql : ''}
+    )
+    SELECT
+      ${FAIXAS_AGING_MATRIZ} AS categoria,
+      metodo,
+      COUNT(DISTINCT "pessoaCodigo")::int AS qtd_alunos,
+      COALESCE(SUM(bruto), 0)::numeric AS valor_bruto,
+      COALESCE(SUM(liquido), 0)::numeric AS valor_liquido
+    FROM pagamentos_relevantes
+    WHERE bruto > 0 OR liquido > 0
+    GROUP BY 1, metodo
+  `, ...params);
+
+  // Ficou Facil — tabela separada, sem parcela_original_acordo. Como geralmente
+  // e refinanciamento estudantil para casos cronicos (debito alto, longo
+  // tempo de atraso), categorizamos como "Alta" por padrao. Taxa fixa de 7%
+  // (conforme tabela do print do user). Melhoria futura: olhar contareceber
+  // do aluno para calcular aging real.
+  const linhasFf = await prisma.$queryRawUnsafe(`
+    SELECT
+      'Alta' AS categoria,
+      'Ficou Fácil' AS metodo,
+      COUNT(DISTINCT "pessoaCodigo")::int AS qtd_alunos,
+      COALESCE(SUM("valorInadimplenteMJ"), 0)::numeric AS valor_bruto,
+      -- Ficou Facil tem taxa fixa de 7% (sem Asaas), liquido = bruto * 0.93
+      COALESCE(SUM("valorInadimplenteMJ" * 0.93), 0)::numeric AS valor_liquido
+    FROM cobranca.ficou_facil ff
+    WHERE ff.etapa != 'CANCELADO'
+      ${filtroTempoFf}
+      ${filtroAgenteFf}
+  `, ...params);
+
+  // Estruturar matriz
+  const categorias = ['Baixa', 'Média', 'Alta'];
+  const metodos = ['Cartão à vista', 'Cartão 2-6x', 'Cartão 7-12x', 'Ficou Fácil', 'Outros', 'Boleto', 'Pix'];
+
+  const matriz = categorias.map(cat => {
+    const linhas = [...linhasAcordos, ...linhasFf].filter(r => r.categoria === cat);
+    const cells = {};
+    let totalBrutoCat = 0, totalLiquidoCat = 0, totalAlunosCat = 0;
+    for (const m of metodos) {
+      const row = linhas.find(r => r.metodo === m);
+      const cell = {
+        qtdAlunos: row ? Number(row.qtd_alunos) : 0,
+        valorBruto: row ? Number(row.valor_bruto) : 0,
+        valorLiquido: row ? Number(row.valor_liquido) : 0,
+      };
+      cells[m] = cell;
+      totalBrutoCat += cell.valorBruto;
+      totalLiquidoCat += cell.valorLiquido;
+      totalAlunosCat += cell.qtdAlunos;
+    }
+    return {
+      categoria: cat,
+      metodos: cells,
+      totalCategoria: { qtdAlunos: totalAlunosCat, valorBruto: totalBrutoCat, valorLiquido: totalLiquidoCat },
+    };
+  });
+
+  // Total geral
+  let totalBruto = 0, totalLiquido = 0;
+  for (const r of [...linhasAcordos, ...linhasFf]) {
+    totalBruto += Number(r.valor_bruto);
+    totalLiquido += Number(r.valor_liquido);
+  }
+  // qtdAlunos total real precisa de SUM(DISTINCT) — re-contar via SQL
+  const totaisAlunos = await prisma.$queryRawUnsafe(`
+    WITH pessoas AS (
+      SELECT DISTINCT af."pessoaCodigo"
+      FROM cobranca.acordo_financeiro af
+      WHERE af.etapa != 'CANCELADO'
+        ${modoFiltro === 'negociado'
+          ? `AND af."criadoEm" BETWEEN $1::timestamp AND $2::timestamp`
+          : `AND EXISTS (
+               SELECT 1 FROM cobranca.pagamento_acordo pa
+               WHERE pa."acordoId" = af.id
+                 AND (
+                   pa."confirmadoEm" BETWEEN $1::timestamp AND $2::timestamp
+                   OR (pa."creditCardCaptured" = true
+                       AND pa."creditCardCapturedAt" BETWEEN $1::timestamp AND $2::timestamp)
+                 )
+             )`}
+        ${filtroAgenteSql}
+      UNION
+      SELECT DISTINCT ff."pessoaCodigo"
+      FROM cobranca.ficou_facil ff
+      WHERE ff.etapa != 'CANCELADO'
+        ${filtroTempoFf}
+        ${filtroAgenteFf}
+    )
+    SELECT COUNT(*)::int AS total FROM pessoas;
+  `, ...params);
+
+  return {
+    filtros: { inicio, fim, modoFiltro, agenteIds: agenteIds || null },
+    matriz,
+    totais: {
+      qtdAlunos: Number(totaisAlunos[0]?.total || 0),
+      valorBruto: totalBruto,
+      valorLiquido: totalLiquido,
+    },
+  };
+}
+
+export async function obterMatrizRecuperacao(req, res, next) {
+  try {
+    const { inicio, fim } = req.query;
+    const modoFiltro = req.query.modoFiltro === 'pago' ? 'pago' : 'negociado';
+    const agenteIds = parseAgenteIds(req.query.agenteIds);
+
+    if (!inicio || !fim) {
+      return res.status(400).json({ error: 'inicio e fim sao obrigatorios (YYYY-MM-DD)' });
+    }
+    if (inicio > fim) {
+      return res.status(400).json({ error: 'inicio nao pode ser depois de fim' });
+    }
+
+    const cacheKey = chaveDe('dashboard:matriz', { inicio, fim, modoFiltro, agenteIds: agenteIds ? agenteIds.join(',') : '' });
+    const result = await getOrSet(cacheKey, 60, () => calcularMatrizRecuperacao({ inicio, fim, modoFiltro, agenteIds }));
+    res.json(result);
+  } catch (error) {
+    next(error);
+  }
 }

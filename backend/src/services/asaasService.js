@@ -103,3 +103,16 @@ export async function obterLinhaDigitavel(paymentId) {
 export async function cancelarCobranca(paymentId) {
   return asaasRequest('DELETE', `/payments/${paymentId}`);
 }
+
+// -----------------------------------------------
+// Listar todas as parcelas (payments) de um installment.
+// Usado quando o cartao parcelado e capturado: precisamos do netValue real
+// de TODAS as parcelas de uma vez (Asaas so envia webhook de cada parcela
+// quando ela confirma mes a mes). Cada payment tem seu proprio value e
+// netValue.
+// -----------------------------------------------
+export async function listarPagamentosDoInstallment(installmentId) {
+  // Asaas paginates installment payments — limit 100 cobre o maximo de 21x.
+  const r = await asaasRequest('GET', `/installments/${installmentId}/payments?limit=100`);
+  return r?.data || [];
+}

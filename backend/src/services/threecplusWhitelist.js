@@ -29,7 +29,10 @@ async function carregarDoBanco() {
     where: { ativo: true },
     select: {
       threecplusAgentId: true,
-      instanciasWhatsapp: { select: { instanciaId: true } },
+      instanciasWhatsapp: {
+        where: { removidoEm: null },
+        select: { instanciaId: true },
+      },
     },
   });
 

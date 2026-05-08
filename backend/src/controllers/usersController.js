@@ -509,6 +509,7 @@ export async function listarInstanciasUser(req, res, next) {
     // Util para validacao geral sem precisar cadastrar manualmente.
     if (req.user?.role === 'ADMIN') {
       const todas = await prisma.instanciaWhatsappUser.findMany({
+        where: { removidoEm: null },
         orderBy: { criadoEm: 'asc' },
         distinct: ['instanciaId'],
       });
@@ -516,7 +517,7 @@ export async function listarInstanciasUser(req, res, next) {
     }
 
     const instancias = await prisma.instanciaWhatsappUser.findMany({
-      where: { userId },
+      where: { userId, removidoEm: null },
       orderBy: { criadoEm: 'asc' },
     });
     res.json(instancias);
@@ -609,7 +610,12 @@ export async function removerInstancia(req, res, next) {
       return res.status(404).json({ error: 'Instancia nao encontrada para esse usuario' });
     }
 
-    await prisma.instanciaWhatsappUser.delete({ where: { id: instanciaDbId } });
+    // Soft-delete: preserva mensagens historicas vinculadas via instanciaId
+    // (FK logica em mensagem_whatsapp e conversa_cobranca, sem constraint).
+    await prisma.instanciaWhatsappUser.update({
+      where: { id: instanciaDbId },
+      data: { removidoEm: new Date() },
+    });
     invalidarWhitelist();
     res.status(204).send();
   } catch (error) {

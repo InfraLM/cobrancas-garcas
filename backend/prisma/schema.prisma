@@ -52,11 +52,13 @@ model InstanciaWhatsappUser {
   tipo         String?  // "whatsapp-3c" | "waba" — sincronizado da 3C Plus ao adicionar
   criadoEm     DateTime @default(now())
   atualizadoEm DateTime @updatedAt
+  removidoEm   DateTime?  // soft-delete — preserva mensagens históricas vinculadas a essa instância
 
   user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, instanciaId])
   @@index([instanciaId])
+  @@index([removidoEm])
   @@map("instancia_whatsapp_user")
 }
 
@@ -2173,6 +2175,17 @@ model PagamentoAcordo {
   valorLiquido        Decimal?  @db.Decimal(12,2)
   taxaAsaas           Decimal?  @db.Decimal(12,2)
 
+  // Timestamps separados dos eventos Asaas
+  // confirmadoEm = PAYMENT_CONFIRMED (cliente pagou — competência)
+  // recebidoEm   = PAYMENT_RECEIVED (Asaas liberou na conta — caixa real)
+  confirmadoEm        DateTime?
+  recebidoEm          DateTime?
+
+  // Cartao parcelado: limite capturado de uma vez na 1a parcela
+  // (todas as parcelas devem ser tratadas como pagas em competencia)
+  creditCardCaptured  Boolean   @default(false)
+  creditCardCapturedAt DateTime?
+
   // Ultima mensagem de erro da API do Asaas (preenchido quando situacao='ERRO')
   erroMensagem        String?
 
@@ -2180,6 +2193,9 @@ model PagamentoAcordo {
 
   @@index([acordoId])
   @@index([situacao])
+  @@index([confirmadoEm])
+  @@index([recebidoEm])
+  @@index([creditCardCaptured])
   @@map("pagamento_acordo")
 }
 

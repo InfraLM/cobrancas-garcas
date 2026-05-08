@@ -7,6 +7,7 @@ import {
   type Granularidade, type BucketRecorrentes, type BucketAcumulado,
 } from '../services/dashboard';
 import FiltroAgentes from '../components/dashboard/FiltroAgentes';
+import MatrizRecuperacao from '../components/dashboard/MatrizRecuperacao';
 
 const LS_KEY_AGENTES = 'dashboard:agenteIdsFiltro';
 
@@ -120,6 +121,10 @@ export default function DashboardPage() {
   const [acumuladoAlunos, setAcumuladoAlunos] = useState<BucketAcumulado[]>([]);
   const [loadingAcum, setLoadingAcum] = useState(false);
 
+  // Matriz de Recuperacao: aging do acordo x metodo de pagamento. Periodo proprio.
+  const [inicioMatriz, setInicioMatriz] = useState(hoje30atras);
+  const [fimMatriz, setFimMatriz] = useState(hojeBrtISO());
+
   // Filtro de agente: afeta Funil + Pago por Faixa + Recuperado por Forma.
   // Vazio = todos os agentes (sem filtro). Persiste em localStorage.
   const [agenteIdsFiltro, setAgenteIdsFiltro] = useState<number[]>(carregarAgentesLS());
@@ -173,7 +178,7 @@ export default function DashboardPage() {
 
   if (loading || !data) return <div className="flex items-center justify-center h-[60vh]"><Loader2 size={32} className="animate-spin text-primary" /></div>;
 
-  const { kpis, aging, agingHistorico, ficouFacil, pagoPorAging, pagoPorForma } = data;
+  const { kpis, aging, agingHistorico, ficouFacil, pagoPorForma } = data;
 
   return (
     <div className="space-y-5 pb-8">
@@ -195,8 +200,8 @@ export default function DashboardPage() {
 
       {/* KPIs */}
       <div className="grid grid-cols-5 gap-3">
-        <KpiCard icon={Users} label="Alunos" valor={kpis.totalAlunos} sub={`${kpis.inadimplentes} inadimplentes`} cor="text-gray-800" bg="bg-white" />
-        <KpiCard icon={TrendingDown} label="Inadimplência" valor={fmtK(kpis.valorInadimplente)} sub={`${kpis.inadimplentes} alunos`} cor="text-red-600" bg="bg-red-50/50" />
+        <KpiCard icon={Users} label="Alunos" valor={kpis.totalAlunos} sub={`${kpis.inadimplentes} inadimplentes`} cor="text-gray-800" bg="bg-white" hint="Alunos com matrícula em curso de Medicina (curso=1), apenas a matrícula mais recente. Exclui funcionários (exceto pessoa 589). O filtro de turmas (1,10,14,19,22,27,29) afeta apenas o cálculo do valor devedor, não o universo." />
+        <KpiCard icon={TrendingDown} label="Inadimplência" valor={fmtK(kpis.valorInadimplente)} sub={`${kpis.inadimplentes} alunos`} cor="text-red-600" bg="bg-red-50/50" hint="Soma do saldo devedor de parcelas AR vencidas (exclui matrículas e outros cursos). Igual à soma do gráfico Aging Atual." />
         <KpiCard icon={DollarSign} label="Recuperado" valor={fmtK(kpis.valorRecuperado)} sub={`${kpis.acordosConcluidos} acordos`} cor="text-emerald-600" bg="bg-emerald-50/50" />
         <KpiCard icon={CreditCard} label="Recorrência" valor={`${kpis.taxaRecorrencia}%`} sub={`${kpis.alunosComRecorrencia} alunos`} cor="text-blue-600" bg="bg-blue-50/50" />
         <KpiCard icon={Landmark} label="Ficou Fácil" valor={ficouFacil.totalAtivos + ficouFacil.totalConcluidos} sub={`${ficouFacil.totalConcluidos} concluídos`} cor="text-violet-600" bg="bg-violet-50/50" />
@@ -239,8 +244,13 @@ export default function DashboardPage() {
         ) : (
           <div className="grid grid-cols-5 gap-3">
             {funil.map((f, i) => {
-              const pctAluno = funil[0].qtd > 0 ? (f.qtd / funil[0].qtd * 100) : 0;
-              const pctValor = funil[0].valor > 0 ? (f.valor / funil[0].valor * 100) : 0;
+              const pctAlunoReal = funil[0].qtd > 0 ? (f.qtd / funil[0].qtd * 100) : 0;
+              const pctValorReal = funil[0].valor > 0 ? (f.valor / funil[0].valor * 100) : 0;
+              // Cap em 100% para a visualizacao (defensivo: aluno fora da base
+              // poderia gerar overflow, mas Tier 1.2 ja restringe pela coorte).
+              const pctAluno = Math.min(100, pctAlunoReal);
+              const pctValor = Math.min(100, pctValorReal);
+              const excedeBase = pctValorReal > 100 || pctAlunoReal > 100;
               // Base (vermelho) → Tentativa (âmbar) → Contato Realizado (laranja) → Negociado (azul) → Recuperado (verde)
               const cores = ['#ef4444', '#f59e0b', '#f97316', '#3b82f6', '#10b981'];
               return (
@@ -252,7 +262,9 @@ export default function DashboardPage() {
                     <p className="text-[0.875rem] font-bold mt-2" style={{ color: cores[i] }}>{fmtK(f.valor)}</p>
                     <div className="flex gap-3 mt-2 text-[0.625rem] text-on-surface-variant">
                       <span>{pctAluno.toFixed(0)}% CPFs</span>
-                      <span>{pctValor.toFixed(0)}% Valor</span>
+                      <span title={excedeBase ? `Valor real: ${pctValorReal.toFixed(0)}% — fora da base inadimplente do snapshot` : undefined}>
+                        {pctValor.toFixed(0)}% Valor{excedeBase ? '+' : ''}
+                      </span>
                     </div>
                     {/* Barra de progresso */}
                     <div className="mt-2 h-1.5 bg-gray-100 rounded-full overflow-hidden">
@@ -272,7 +284,7 @@ export default function DashboardPage() {
       {/* Aging Atual + Aging Historico */}
       <div className="grid grid-cols-3 gap-4">
         <div className="bg-white rounded-2xl p-5 shadow-sm">
-          <h3 className="text-[0.8125rem] font-bold mb-4">Aging Atual</h3>
+          <h3 className="text-[0.8125rem] font-bold mb-4" title="Saldo devedor de parcelas AR vencidas hoje, agrupado por dias de atraso. Conta parcelas (não alunos) — um aluno pode ter várias parcelas em diferentes faixas. Exclui matrículas, outros cursos e funcionários.">Aging Atual</h3>
           <div className="space-y-3">
             {aging.map((a: any, i: number) => {
               const total = aging.reduce((s: number, x: any) => s + x.valor, 0);
@@ -318,42 +330,20 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* Pago por Aging + Pago por Forma */}
-      <div className="grid grid-cols-2 gap-4">
-        <div className="bg-white rounded-2xl p-5 shadow-sm">
-          <h3 className="text-[0.8125rem] font-bold mb-1">Pago por Faixa de Inadimplência</h3>
-          <p className="text-[0.6875rem] text-on-surface-variant mb-3">Qtd parcelas, valor recebido e negociado</p>
-          {pagoPorAging.length > 0 ? (
-            <div className="space-y-2">
-              {pagoPorAging.map((r: any) => (
-                <div key={r.faixa} className="flex items-center gap-3 text-[0.8125rem]">
-                  <span className="w-16 font-medium text-on-surface-variant shrink-0">{r.faixa}</span>
-                  <span className="w-8 text-center font-bold text-on-surface">{r.qtdParcelas}</span>
-                  <div className="flex-1">
-                    <div className="flex gap-1 h-5">
-                      <div className="bg-emerald-400 rounded-sm h-full transition-all" style={{ width: `${r.valorRecebido > 0 ? Math.max(20, r.valorRecebido / Math.max(...pagoPorAging.map((x: any) => x.valorNegociado || 1)) * 100) : 0}%` }} title={`Recebido: ${fmt(r.valorRecebido)}`} />
-                      <div className="bg-blue-300 rounded-sm h-full transition-all" style={{ width: `${r.valorNegociado > 0 ? Math.max(20, r.valorNegociado / Math.max(...pagoPorAging.map((x: any) => x.valorNegociado || 1)) * 100) : 0}%` }} title={`Negociado: ${fmt(r.valorNegociado)}`} />
-                    </div>
-                  </div>
-                  <div className="text-right w-28 shrink-0">
-                    <p className="text-[0.6875rem] text-emerald-600 font-medium">{fmtK(r.valorRecebido)}</p>
-                    <p className="text-[0.5625rem] text-blue-500">{fmtK(r.valorNegociado)}</p>
-                  </div>
-                </div>
-              ))}
-              <div className="flex items-center gap-3 border-t border-gray-100 pt-2 mt-2 text-[0.75rem]">
-                <div className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded-sm bg-emerald-400" /><span className="text-on-surface-variant">Recebido</span></div>
-                <div className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded-sm bg-blue-300" /><span className="text-on-surface-variant">Negociado</span></div>
-              </div>
-            </div>
-          ) : (
-            <p className="text-[0.8125rem] text-on-surface-variant py-8 text-center">Nenhum pagamento registrado</p>
-          )}
-        </div>
+      {/* Matriz de Recuperacao: substitui o card antigo "Pago por Faixa de Inadimplencia" */}
+      <MatrizRecuperacao
+        agenteIds={agenteIdsFiltro}
+        inicio={inicioMatriz}
+        fim={fimMatriz}
+        onChangeInicio={setInicioMatriz}
+        onChangeFim={setFimMatriz}
+      />
 
+      {/* Recuperado por Forma de Pagamento */}
+      <div className="grid grid-cols-1 gap-4">
         <div className="bg-white rounded-2xl p-5 shadow-sm">
           <div className="flex items-center justify-between mb-1">
-            <h3 className="text-[0.8125rem] font-bold">Recuperado por Forma de Pagamento</h3>
+            <h3 className="text-[0.8125rem] font-bold" title="Competência = quando o cliente pagou (PAYMENT_CONFIRMED do Asaas). Caixa = quando o dinheiro entrou na conta Asaas (PAYMENT_RECEIVED) — pode demorar de D+1 a D+30 conforme cartão.">Recuperado por Forma de Pagamento</h3>
             <div className="inline-flex rounded-lg bg-gray-100 p-0.5 text-[0.6875rem]">
               <button
                 onClick={() => setVisaoForma('competencia')}
@@ -409,7 +399,7 @@ export default function DashboardPage() {
       <div className="grid grid-cols-2 gap-4">
         <div className="bg-white rounded-2xl p-5 shadow-sm">
           <div className="flex items-start justify-between gap-3 mb-1">
-            <h3 className="text-[0.8125rem] font-bold">Composição: Recorrentes vs Outros</h3>
+            <h3 className="text-[0.8125rem] font-bold" title="Cohort: turmas ativas de medicina (2, 4, 8, 11, 21, 28). Diferente da blacklist usada nos outros gráficos — aqui é whitelist intencional para medir recorrência apenas no público de medicina ativa.">Composição: Recorrentes vs Outros</h3>
             <ControlesGrafico
               loading={loadingRec}
               granularidade={granRec} setGranularidade={setGranRec}
@@ -434,7 +424,7 @@ export default function DashboardPage() {
 
         <div className="bg-white rounded-2xl p-5 shadow-sm">
           <div className="flex items-start justify-between gap-3 mb-1">
-            <h3 className="text-[0.8125rem] font-bold">Novos Alunos Acumulados + % com Recorrência</h3>
+            <h3 className="text-[0.8125rem] font-bold" title="Cohort: turmas ativas de medicina (2, 4, 8, 11, 21, 28).">Novos Alunos Acumulados + % com Recorrência</h3>
             <ControlesGrafico
               loading={loadingAcum}
               granularidade={granAcum} setGranularidade={setGranAcum}
@@ -493,9 +483,9 @@ export default function DashboardPage() {
   );
 }
 
-function KpiCard({ icon: Icon, label, valor, sub, cor, bg }: { icon: any; label: string; valor: any; sub: string; cor: string; bg: string }) {
+function KpiCard({ icon: Icon, label, valor, sub, cor, bg, hint }: { icon: any; label: string; valor: any; sub: string; cor: string; bg: string; hint?: string }) {
   return (
-    <div className={`${bg} rounded-xl p-4 shadow-sm`}>
+    <div className={`${bg} rounded-xl p-4 shadow-sm`} title={hint}>
       <div className={`flex items-center gap-2 ${cor} mb-1.5`}>
         <Icon size={14} />
         <span className="text-[0.625rem] font-bold uppercase tracking-wider opacity-70">{label}</span>

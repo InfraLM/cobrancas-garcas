@@ -49,13 +49,18 @@ export async function refreshAlunoResumo(codigos = []) {
     FROM cobranca.pessoa p
     INNER JOIN matricula_recente mr ON mr.aluno = p.codigo
     LEFT JOIN (
+      -- Calculo de inadimplencia operacional. Filtra tipoorigem MAT/OUT
+      -- (matricula e outros cursos) para alinhar com a query do Aging Atual
+      -- do dashboard. Decisao do user: KPI "Inadimplencia" deve ser igual a
+      -- soma do Aging Atual (Q2 = "Devem ser iguais", 2026-05-07).
       SELECT cr.pessoa,
         COALESCE(SUM(CASE WHEN cr.situacao='AR' AND cr.datavencimento < CURRENT_DATE AND cr.valor > COALESCE(cr.valorrecebido,0)
           THEN cr.valor - COALESCE(cr.valorrecebido,0) ELSE 0 END), 0) AS valor_devedor,
         COUNT(*) FILTER (WHERE cr.situacao='AR' AND cr.datavencimento < CURRENT_DATE AND cr.valor > COALESCE(cr.valorrecebido,0)) AS parcelas_atraso,
         COALESCE(SUM(CASE WHEN cr.situacao='RE' THEN COALESCE(cr.valorrecebido,0) ELSE 0 END), 0) AS valor_pago
       FROM cobranca.contareceber cr
-      WHERE cr.turma IS NULL OR cr.turma NOT IN (${TURMAS_EXCLUIDAS})
+      WHERE (cr.turma IS NULL OR cr.turma NOT IN (${TURMAS_EXCLUIDAS}))
+        AND COALESCE(cr.tipoorigem, '') NOT IN ('MAT', 'OUT')
       GROUP BY cr.pessoa
     ) fin ON fin.pessoa = p.codigo
     LEFT JOIN LATERAL (
