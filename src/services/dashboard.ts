@@ -116,7 +116,6 @@ export const METODOS_MATRIZ = [
   'Cartão 2-6x',
   'Cartão 7-12x',
   'Ficou Fácil',
-  'Outros',
   'Boleto',
   'Pix',
 ] as const;

@@ -38,6 +38,13 @@ const CATEGORIA_COR: Record<string, string> = {
   'Alta': '#ef4444',  // vermelho
 };
 
+const CATEGORIA_HINT: Record<string, string> = {
+  'Baixa': 'Aluno cuja parcela mais antiga do acordo tinha 0–60 dias de atraso (até ~2 parcelas vencidas).',
+  'Média': 'Aluno cuja parcela mais antiga do acordo tinha 61–150 dias de atraso (3–5 parcelas vencidas).',
+  'Alta': 'Aluno cuja parcela mais antiga do acordo tinha mais de 150 dias de atraso (6+ parcelas vencidas).',
+};
+
+
 export default function MatrizRecuperacao({
   agenteIds,
   inicio,
@@ -68,12 +75,12 @@ export default function MatrizRecuperacao({
         <div>
           <h3
             className="text-[0.8125rem] font-bold"
-            title="Matriz cruzando categoria de inadimplência (Baixa/Média/Alta) com método de pagamento. Bruto = valor reconhecido. Líquido = valor após taxas Asaas (vem do payment.netValue)."
+            title="Matriz cruzando categoria de inadimplência (Baixa: 0–60 dias / Média: 61–150 / Alta: 150+) com método de pagamento. Bruto = valor reconhecido. Líquido = valor após taxas Asaas (vem do payment.netValue). Categorização usa a parcela MAIS ANTIGA do acordo."
           >
             Recuperação por Categoria de Inadimplência
           </h3>
           <p className="text-[0.6875rem] text-on-surface-variant">
-            Aging do acordo × método de pagamento — valor recuperado bruto e líquido
+            Aging do acordo × método de pagamento — passe o mouse sobre as categorias para ver detalhes
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -201,7 +208,9 @@ export default function MatrizRecuperacao({
                       style={{
                         color: CATEGORIA_COR[linha.categoria],
                         backgroundColor: `${CATEGORIA_COR[linha.categoria]}15`,
+                        cursor: 'help',
                       }}
+                      title={CATEGORIA_HINT[linha.categoria]}
                     >
                       {linha.categoria}
                     </span>

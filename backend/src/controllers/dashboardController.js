@@ -1169,6 +1169,9 @@ const FAIXAS_AGING_MATRIZ = `
   END
 `;
 
+// Mapeamento explicito: pagamentos com formaPagamento fora desses 5 buckets
+// (ex: NULL, TRANSFERENCIA, DINHEIRO) sao excluidos da matriz via NULL +
+// filtro WHERE metodo IS NOT NULL na CTE pagamentos_relevantes.
 const METODO_PAGAMENTO_MATRIZ = `
   CASE
     WHEN pa."formaPagamento" = 'CREDIT_CARD' AND pa.parcelas <= 1 THEN 'Cartão à vista'
@@ -1176,7 +1179,6 @@ const METODO_PAGAMENTO_MATRIZ = `
     WHEN pa."formaPagamento" = 'CREDIT_CARD' AND pa.parcelas BETWEEN 7 AND 12 THEN 'Cartão 7-12x'
     WHEN pa."formaPagamento" = 'BOLETO' THEN 'Boleto'
     WHEN pa."formaPagamento" = 'PIX' THEN 'Pix'
-    ELSE 'Outros'
   END
 `;
 
@@ -1261,7 +1263,8 @@ async function calcularMatrizRecuperacao({ inicio, fim, modoFiltro = 'negociado'
       COALESCE(SUM(bruto), 0)::numeric AS valor_bruto,
       COALESCE(SUM(liquido), 0)::numeric AS valor_liquido
     FROM pagamentos_relevantes
-    WHERE bruto > 0 OR liquido > 0
+    WHERE (bruto > 0 OR liquido > 0)
+      AND metodo IS NOT NULL  -- exclui pagamentos sem forma mapeada (sem coluna "Outros")
     GROUP BY 1, metodo
   `, ...params);
 
