@@ -200,7 +200,7 @@ export default function DashboardPage() {
 
       {/* KPIs */}
       <div className="grid grid-cols-5 gap-3">
-        <KpiCard icon={Users} label="Alunos" valor={kpis.totalAlunos} sub={`${kpis.inadimplentes} inadimplentes`} cor="text-gray-800" bg="bg-white" hint="Alunos com matrícula em curso de Medicina (curso=1), apenas a matrícula mais recente. Exclui funcionários (exceto pessoa 589). O filtro de turmas (1,10,14,19,22,27,29) afeta apenas o cálculo do valor devedor, não o universo." />
+        <KpiCard icon={Users} label="Alunos" valor={kpis.totalAlunos} sub={`${kpis.inadimplentes} inadimplentes`} cor="text-gray-800" bg="bg-white" hint="Alunos ATIVOS ou TRANCADOS (não conta CANCELADOS) de Medicina (curso=1), com turma fora da blacklist (1, 10, 14, 19, 22, 27, 29) e que assinaram o contrato no SEI — OU alunos da Turma 3, que assinam pela ClickSign (exceção). O nº de inadimplentes segue os mesmos filtros." />
         <KpiCard icon={TrendingDown} label="Inadimplência" valor={fmtK(kpis.valorInadimplente)} sub={`${kpis.inadimplentes} alunos`} cor="text-red-600" bg="bg-red-50/50" hint="Soma do saldo devedor de parcelas AR vencidas (exclui matrículas e outros cursos). Igual à soma do gráfico Aging Atual." />
         <KpiCard icon={DollarSign} label="Recuperado" valor={fmtK(kpis.valorRecuperado)} sub={`${kpis.acordosConcluidos} acordos`} cor="text-emerald-600" bg="bg-emerald-50/50" />
         <KpiCard icon={CreditCard} label="Recorrência" valor={`${kpis.taxaRecorrencia}%`} sub={`${kpis.alunosComRecorrencia} alunos`} cor="text-blue-600" bg="bg-blue-50/50" />
@@ -485,10 +485,22 @@ export default function DashboardPage() {
 
 function KpiCard({ icon: Icon, label, valor, sub, cor, bg, hint }: { icon: any; label: string; valor: any; sub: string; cor: string; bg: string; hint?: string }) {
   return (
-    <div className={`${bg} rounded-xl p-4 shadow-sm`} title={hint}>
-      <div className={`flex items-center gap-2 ${cor} mb-1.5`}>
-        <Icon size={14} />
-        <span className="text-[0.625rem] font-bold uppercase tracking-wider opacity-70">{label}</span>
+    <div className={`${bg} rounded-xl p-4 shadow-sm relative`}>
+      <div className={`flex items-center justify-between gap-2 ${cor} mb-1.5`}>
+        <div className="flex items-center gap-2">
+          <Icon size={14} />
+          <span className="text-[0.625rem] font-bold uppercase tracking-wider opacity-70">{label}</span>
+        </div>
+        {hint && (
+          <button
+            type="button"
+            title={hint}
+            className="opacity-40 hover:opacity-100 transition-opacity cursor-help"
+            aria-label="Como é calculado"
+          >
+            <Info size={12} />
+          </button>
+        )}
       </div>
       <p className={`text-xl font-bold ${cor}`}>{valor}</p>
       <p className="text-[0.6875rem] text-on-surface-variant mt-0.5">{sub}</p>

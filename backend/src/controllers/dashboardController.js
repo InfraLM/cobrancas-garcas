@@ -72,14 +72,47 @@ export async function obterDashboard(req, res, next) {
 // KPIs principais
 // -----------------------------------------------
 async function calcularKPIs(recorrentesHistorico) {
+  // Universo do KPI "Alunos" (decisao do user 2026-05-08):
+  //   - aluno_resumo (matricula em medicina + nao funcionario etc — ja filtrados)
+  //   - situacao != 'CANCELADO' (TRANCADO eh aceito)
+  //   - turma != null (exclui alunos cuja unica matricula caiu em turma da blacklist 1,10,14,19,22,27,29)
+  //   - assinou contrato (mesma logica do drawer em alunosController.obter):
+  //     * documentoassinadopessoa.dataassinatura preenchida
+  //       (com documentoassinado.documentoassinadoinvalido = false)
+  //     OU
+  //     * aluno na turma 3 (matriculaperiodo.turma = 2 no SEI) — assinaram
+  //       contrato externamente via ClickSign
+  //
+  // Inadimplentes seguem o mesmo universo (consistencia entre KPI Alunos e
+  // KPI Inadimplencia).
   const rows = await prisma.$queryRawUnsafe(`
+    WITH alunos_validos AS (
+      SELECT ar.codigo, ar."situacaoFinanceira", ar."valorDevedor", ar."valorPago"
+      FROM cobranca.aluno_resumo ar
+      WHERE ar.situacao <> 'CANCELADO'
+        AND ar.turma IS NOT NULL
+        AND (
+          EXISTS (
+            SELECT 1 FROM cobranca.documentoassinadopessoa dap
+            JOIN cobranca.documentoassinado da ON da.codigo = dap.documentoassinado
+            WHERE dap.pessoa = ar.codigo
+              AND dap.dataassinatura IS NOT NULL
+              AND COALESCE(da.documentoassinadoinvalido, false) = false
+          )
+          OR EXISTS (
+            SELECT 1 FROM cobranca.matricula m
+            JOIN cobranca.matriculaperiodo mp ON mp.matricula = m.matricula
+            WHERE m.aluno = ar.codigo AND mp.turma = 2
+          )
+        )
+    )
     SELECT
       COUNT(*)::int AS total_alunos,
       COUNT(*) FILTER (WHERE "situacaoFinanceira" = 'INADIMPLENTE')::int AS inadimplentes,
       COUNT(*) FILTER (WHERE "situacaoFinanceira" = 'ADIMPLENTE')::int AS adimplentes,
       COALESCE(SUM("valorDevedor"), 0) AS valor_inadimplente,
       COALESCE(SUM("valorPago"), 0) AS valor_pago
-    FROM cobranca.aluno_resumo
+    FROM alunos_validos
   `);
 
   const r = rows[0];
@@ -134,6 +167,11 @@ async function calcularKPIs(recorrentesHistorico) {
 // Aging atual (distribuicao de inadimplencia)
 // -----------------------------------------------
 async function calcularAging() {
+  // Aging Atual segue o mesmo universo do KPI Alunos (decisao do user 2026-05-08):
+  //   - Alunos ATIVOS ou TRANCADOS (nao CANCELADOS)
+  //   - Com matricula em medicina (curso=1)
+  //   - Com turma valida (NOT IN blacklist 1,10,14,19,22,27,29)
+  //   - Que assinaram contrato no SEI OU sao da turma 3 (ClickSign)
   const rows = await prisma.$queryRawUnsafe(`
     SELECT
       COUNT(*) FILTER (WHERE dias BETWEEN 0 AND 5)::int AS f_0_5,
@@ -149,14 +187,28 @@ async function calcularAging() {
         (CURRENT_DATE - cr.datavencimento::date) AS dias,
         (cr.valor - COALESCE(cr.valorrecebido, 0)) AS saldo
       FROM cobranca.contareceber cr
-      JOIN cobranca.pessoa p ON p.codigo = cr.pessoa
+      JOIN cobranca.aluno_resumo ar ON ar.codigo = cr.pessoa
       WHERE cr.situacao = 'AR'
         AND cr.datavencimento < CURRENT_DATE
         AND cr.valor > COALESCE(cr.valorrecebido, 0)
         AND (cr.turma IS NULL OR cr.turma NOT IN (${TURMAS_EXCLUIDAS}))
         AND COALESCE(cr.tipoorigem, '') NOT IN ('MAT', 'OUT')
-        AND p.aluno = true
-        AND (COALESCE(p.funcionario, false) = false OR p.codigo = 589)
+        AND ar.situacao <> 'CANCELADO'
+        AND ar.turma IS NOT NULL
+        AND (
+          EXISTS (
+            SELECT 1 FROM cobranca.documentoassinadopessoa dap
+            JOIN cobranca.documentoassinado da ON da.codigo = dap.documentoassinado
+            WHERE dap.pessoa = ar.codigo
+              AND dap.dataassinatura IS NOT NULL
+              AND COALESCE(da.documentoassinadoinvalido, false) = false
+          )
+          OR EXISTS (
+            SELECT 1 FROM cobranca.matricula m
+            JOIN cobranca.matriculaperiodo mp ON mp.matricula = m.matricula
+            WHERE m.aluno = ar.codigo AND mp.turma = 2
+          )
+        )
     ) sub
   `);
 
@@ -740,16 +792,9 @@ export async function obterFunil(req, res, next) {
     const inicioTs = `${inicio} 00:00:00`;
     const fimTs = `${fim} 23:59:59`;
 
-    // SEMPRE restringimos pela base do snapshot da data efetiva (`snapshotData`),
-    // mesmo quando ha fallback (`aviso !== null`). Isso preserva a coorte:
-    // alunos que pagaram continuam visiveis em Recuperado/Negociado porque
-    // estavam no snapshot da data de fallback (quando ainda deviam). Aluno
-    // que NUNCA esteve na base nao entra em nenhuma etapa.
-    //
-    // Bugfix do over-application em ccd2441 (2026-04-28): o autor justificou
-    // o skip apenas para Recuperado/Negociado, mas a implementacao soltou
-    // tambem Tentativa/Realizado, gerando Realizado > Tentativa em valor.
-    const filtroBaseSql = `AND "pessoaCodigo" IN (SELECT "pessoaCodigo" FROM cobranca.snapshot_inadimplencia_diario WHERE data = $1::date)`;
+    // Funil OPERACIONAL (decisao do user 2026-05-08): nao ha mais restricao de
+    // coorte nas etapas downstream. Cada coluna conta o que aconteceu no periodo
+    // de forma independente. So a Base usa o snapshot.
 
     // Filtro de agente: aplicado em todas as etapas EXCETO Base (universo total).
     // Param $4 = array de User.id quando ha filtro.
