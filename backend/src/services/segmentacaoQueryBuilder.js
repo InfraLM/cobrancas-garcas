@@ -172,16 +172,17 @@ const CTE_DEFS = {
       GROUP BY cr.pessoa
     )`,
 
-  // Assinou contrato: TRUE se aluno tem matricula na Turma 3 (cod 2 — assinou via ClickSign)
-  // OU tem dataassinatura preenchida em algum documento valido no SEI.
+  // Assinou contrato: TRUE se aluno tem dataassinatura preenchida em algum
+  // documento valido no SEI OU tem cobranca da Turma 3 (cod 2 — assinou via
+  // ClickSign, fora do SEI). Usa contareceber.turma porque matriculaperiodo
+  // esta incompleta para 38% das matriculas no SEI.
   contrato_assinado: `
     contrato_assinado AS (
       SELECT p.codigo AS pessoa,
         (
           EXISTS (
-            SELECT 1 FROM cobranca.matricula m
-            JOIN cobranca.matriculaperiodo mp ON mp.matricula = m.matricula
-            WHERE m.aluno = p.codigo AND mp.turma = 2
+            SELECT 1 FROM cobranca.contareceber cr
+            WHERE cr.pessoa = p.codigo AND cr.turma = 2
           )
           OR EXISTS (
             SELECT 1 FROM cobranca.documentoassinadopessoa dap

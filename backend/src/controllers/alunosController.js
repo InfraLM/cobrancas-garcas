@@ -127,10 +127,12 @@ export async function obter(req, res, next) {
         LIMIT 1
       ) contrato ON true
       LEFT JOIN LATERAL (
+        -- Turma 3 (codigo=2): assinaram contrato pela ClickSign, fora do SEI.
+        -- Usamos contareceber.turma (nao matriculaperiodo.turma) porque a
+        -- matriculaperiodo esta incompleta para 38% das matriculas no SEI.
         SELECT EXISTS (
-          SELECT 1 FROM cobranca.matricula m2
-          JOIN cobranca.matriculaperiodo mp2 ON mp2.matricula = m2.matricula
-          WHERE m2.aluno = p.codigo AND mp2.turma = 2
+          SELECT 1 FROM cobranca.contareceber cr2
+          WHERE cr2.pessoa = p.codigo AND cr2.turma = 2
         ) AS na_turma_3
       ) turma_check ON true
       WHERE p.codigo = $1

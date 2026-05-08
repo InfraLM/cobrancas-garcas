@@ -100,9 +100,12 @@ async function calcularKPIs(recorrentesHistorico) {
               AND COALESCE(da.documentoassinadoinvalido, false) = false
           )
           OR EXISTS (
-            SELECT 1 FROM cobranca.matricula m
-            JOIN cobranca.matriculaperiodo mp ON mp.matricula = m.matricula
-            WHERE m.aluno = ar.codigo AND mp.turma = 2
+            -- Turma 3 (codigo=2): assinaram contrato pela ClickSign, fora do SEI.
+            -- Usamos contareceber.turma (nao matriculaperiodo.turma) porque 38%
+            -- das matriculas no SEI nao tem registro em matriculaperiodo —
+            -- ai esses alunos sumiriam erroneamente.
+            SELECT 1 FROM cobranca.contareceber cr
+            WHERE cr.pessoa = ar.codigo AND cr.turma = 2
           )
         )
     )
@@ -204,9 +207,12 @@ async function calcularAging() {
               AND COALESCE(da.documentoassinadoinvalido, false) = false
           )
           OR EXISTS (
-            SELECT 1 FROM cobranca.matricula m
-            JOIN cobranca.matriculaperiodo mp ON mp.matricula = m.matricula
-            WHERE m.aluno = ar.codigo AND mp.turma = 2
+            -- Turma 3 (codigo=2): assinaram contrato pela ClickSign, fora do SEI.
+            -- Usamos contareceber.turma (nao matriculaperiodo.turma) porque 38%
+            -- das matriculas no SEI nao tem registro em matriculaperiodo —
+            -- ai esses alunos sumiriam erroneamente.
+            SELECT 1 FROM cobranca.contareceber cr
+            WHERE cr.pessoa = ar.codigo AND cr.turma = 2
           )
         )
     ) sub
