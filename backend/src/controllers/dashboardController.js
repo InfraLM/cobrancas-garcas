@@ -91,7 +91,7 @@ async function calcularKPIs(recorrentesHistorico) {
     WITH alunos_validos AS (
       SELECT ar.codigo, ar."situacaoFinanceira", ar."valorDevedor", ar."valorPago"
       FROM cobranca.aluno_resumo ar
-      WHERE ar.situacao <> 'CANCELADO'
+      WHERE ar.situacao = 'ATIVO'  -- exclui CANCELADO E TRANCADO (decisao 2026-05-09)
         AND ar.turma IS NOT NULL
         AND (
           EXISTS (
@@ -198,7 +198,7 @@ async function calcularAging() {
         AND cr.valor > COALESCE(cr.valorrecebido, 0)
         AND (cr.turma IS NULL OR cr.turma NOT IN (${TURMAS_EXCLUIDAS}))
         AND COALESCE(cr.tipoorigem, '') NOT IN ('MAT', 'OUT')
-        AND ar.situacao <> 'CANCELADO'
+        AND ar.situacao = 'ATIVO'  -- exclui CANCELADO E TRANCADO (decisao 2026-05-09)
         AND ar.turma IS NOT NULL
         AND (
           EXISTS (

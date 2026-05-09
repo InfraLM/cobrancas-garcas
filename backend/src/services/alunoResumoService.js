@@ -14,7 +14,19 @@ export async function refreshAlunoResumo(codigos = []) {
 
   const startTime = Date.now();
 
-  // Buscar dados calculados para as pessoas afetadas
+  // Buscar dados calculados para as pessoas afetadas.
+  //
+  // CANCELADO e TRANCADO usam o MESMO PADRAO da query de Recorrentes
+  // (dashboard/query-acumulado-alunos-recorrencia.txt) — decisao do user
+  // em 2026-05-09 para alinhar KPI Alunos com Composicao Recorrentes:
+  //   - CANCELADO: cr.datacancelamento IS NOT NULL (com override 2025-02-04
+  //     para alunos com matricula formal AT — bug de massa daquela data).
+  //   - TRANCADO:  trancamento via negociacaocontareceber (justificativa
+  //     ILIKE TRANCAMENTO) OU via "gap" de 5+ meses entre cobrancas
+  //     consecutivas, com regra de retorno.
+  //   - ATIVO:     ainda tem cobrancas E nao esta CANCELADO nem TRANCADO.
+  //
+  // Filtros de turma seguem blacklist do KPI (NOT IN (${TURMAS_EXCLUIDAS})).
   const rows = await prisma.$queryRawUnsafe(`
     WITH matricula_recente AS (
       SELECT DISTINCT ON (m.aluno) m.aluno, m.matricula, m.curso, m.situacao AS mat_situacao,
@@ -22,23 +34,89 @@ export async function refreshAlunoResumo(codigos = []) {
       FROM cobranca.matricula m
       WHERE m.curso = 1
       ORDER BY m.aluno, m.data DESC NULLS LAST
+    ),
+    mp_ultimo AS (
+      -- Situacao do periodo atual da matricula (usada para o override
+      -- de cancelamento de 2025-02-04: bug de massa onde matriculas com
+      -- mp.situacao='AT' foram canceladas erroneamente naquela data).
+      SELECT DISTINCT ON (mp.matricula) mp.matricula,
+        mp.situacaomatriculaperiodo AS situacao_aluno
+      FROM cobranca.matriculaperiodo mp
+      ORDER BY mp.matricula, mp.databasegeracaoparcelas DESC NULLS LAST
+    ),
+    cancelamento AS (
+      SELECT cr.matriculaaluno AS matricula, MIN(cr.datacancelamento::date) AS data_cancelamento
+      FROM cobranca.contareceber cr
+      WHERE (cr.turma IS NULL OR cr.turma NOT IN (${TURMAS_EXCLUIDAS}))
+        AND cr.datacancelamento IS NOT NULL
+        AND COALESCE(cr.tipoorigem, '') <> 'OUT'
+      GROUP BY cr.matriculaaluno
+    ),
+    trancamento AS (
+      SELECT DISTINCT ON (nc.matriculaaluno) nc.matriculaaluno AS matricula,
+        nc.codigo AS codigo_trancamento, nc."data"::date AS data_trancamento
+      FROM cobranca.negociacaocontareceber nc
+      WHERE nc.justificativa ILIKE '%TRANCAMENTO%'
+      ORDER BY nc.matriculaaluno, nc."data" DESC NULLS LAST, nc.codigo DESC
+    ),
+    retorno_trancamento AS (
+      SELECT t.matricula, MIN(cr.datavencimento::date) AS data_retorno_trancamento
+      FROM trancamento t
+      JOIN cobranca.contareceber cr ON cr.matriculaaluno = t.matricula
+        AND cr.tipoorigem = 'NCR' AND TRIM(cr.codorigem) = t.codigo_trancamento::text
+      WHERE (cr.turma IS NULL OR cr.turma NOT IN (${TURMAS_EXCLUIDAS}))
+        AND COALESCE(cr.tipoorigem, '') <> 'OUT'
+      GROUP BY t.matricula
+    ),
+    trancamento_gap_base AS (
+      SELECT cr.matriculaaluno AS matricula,
+        LAG(cr.datavencimento::date) OVER (
+          PARTITION BY cr.matriculaaluno ORDER BY cr.datavencimento::date, cr.codigo
+        ) AS data_trancamento,
+        cr.datavencimento::date AS data_retorno_trancamento
+      FROM cobranca.contareceber cr
+      WHERE (cr.turma IS NULL OR cr.turma NOT IN (${TURMAS_EXCLUIDAS}))
+        AND cr.situacao IN ('AR','RE','CF')
+        AND COALESCE(cr.tipoorigem, '') NOT IN ('MAT','OUT')
+    ),
+    trancamento_gap AS (
+      SELECT DISTINCT ON (tgb.matricula) tgb.matricula,
+        tgb.data_trancamento, tgb.data_retorno_trancamento
+      FROM trancamento_gap_base tgb
+      WHERE tgb.data_trancamento IS NOT NULL
+        AND tgb.data_retorno_trancamento >= (tgb.data_trancamento + INTERVAL '5 months')
+      ORDER BY tgb.matricula, tgb.data_retorno_trancamento DESC NULLS LAST,
+               tgb.data_trancamento DESC NULLS LAST
+    ),
+    base_situacao AS (
+      SELECT mr.aluno AS pessoa,
+        -- Cancelamento com override de 2025-02-04
+        CASE
+          WHEN mu.situacao_aluno = 'AT' AND ca.data_cancelamento = DATE '2025-02-04'
+            THEN NULL
+          ELSE ca.data_cancelamento
+        END AS data_cancelamento_efetiva,
+        -- Trancamento: prioriza negociacao explicita, fallback para gap
+        COALESCE(t.data_trancamento, tg.data_trancamento) AS data_trancamento,
+        COALESCE(rt.data_retorno_trancamento, tg.data_retorno_trancamento) AS data_retorno_trancamento
+      FROM matricula_recente mr
+      LEFT JOIN mp_ultimo mu ON mu.matricula = mr.matricula
+      LEFT JOIN cancelamento ca ON ca.matricula = mr.matricula
+      LEFT JOIN trancamento t ON t.matricula = mr.matricula
+      LEFT JOIN retorno_trancamento rt ON rt.matricula = mr.matricula
+      LEFT JOIN trancamento_gap tg ON tg.matricula = mr.matricula
     )
     SELECT p.codigo, p.nome, p.cpf, p.celular,
       mr.matricula, mr.mat_situacao,
       COALESCE(mr.naoenviarmensagemcobranca, false) AS nao_enviar_msg,
       CASE
-        WHEN mr.mat_situacao IN ('IN','CA') THEN 'CANCELADO'
-        WHEN EXISTS (
-          SELECT 1 FROM cobranca.negociacaocontareceber nc
-          WHERE nc.matriculaaluno = mr.matricula AND nc.justificativa ILIKE '%TRANCAMENTO%'
-            AND nc.data <= CURRENT_TIMESTAMP
-            AND NOT EXISTS (
-              SELECT 1 FROM cobranca.contareceber cr3
-              WHERE cr3.matriculaaluno = mr.matricula AND cr3.tipoorigem = 'NCR'
-                AND TRIM(cr3.codorigem) = nc.codigo::text
-                AND cr3.datavencimento <= CURRENT_TIMESTAMP
-            )
-        ) THEN 'TRANCADO'
+        WHEN bs.data_cancelamento_efetiva IS NOT NULL
+          AND bs.data_cancelamento_efetiva <= CURRENT_DATE
+          THEN 'CANCELADO'
+        WHEN bs.data_trancamento IS NOT NULL
+          AND bs.data_trancamento <= CURRENT_DATE
+          AND (bs.data_retorno_trancamento IS NULL OR bs.data_retorno_trancamento > CURRENT_DATE)
+          THEN 'TRANCADO'
         ELSE 'ATIVO'
       END AS situacao,
       COALESCE(fin.valor_devedor, 0) AS valor_devedor,
@@ -48,11 +126,10 @@ export async function refreshAlunoResumo(codigos = []) {
       turma_info.identificadorturma AS turma
     FROM cobranca.pessoa p
     INNER JOIN matricula_recente mr ON mr.aluno = p.codigo
+    LEFT JOIN base_situacao bs ON bs.pessoa = p.codigo
     LEFT JOIN (
       -- Calculo de inadimplencia operacional. Filtra tipoorigem MAT/OUT
-      -- (matricula e outros cursos) para alinhar com a query do Aging Atual
-      -- do dashboard. Decisao do user: KPI "Inadimplencia" deve ser igual a
-      -- soma do Aging Atual (Q2 = "Devem ser iguais", 2026-05-07).
+      -- (matricula e outros cursos) para alinhar com a query do Aging Atual.
       SELECT cr.pessoa,
         COALESCE(SUM(CASE WHEN cr.situacao='AR' AND cr.datavencimento < CURRENT_DATE AND cr.valor > COALESCE(cr.valorrecebido,0)
           THEN cr.valor - COALESCE(cr.valorrecebido,0) ELSE 0 END), 0) AS valor_devedor,
