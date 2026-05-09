@@ -38,11 +38,13 @@ export async function obterDashboard(req, res, next) {
     // expandindo desde 2026-02-08, pra calcular a taxaRecorrencia do KPI
     // (mesmo universo do grafico "Composicao"). O grafico em si vem do
     // endpoint /dashboard/recorrentes-historico (parametrizado).
-    // Filtro de agenteIds afeta SO pagoPorAging e pagoPorForma — KPIs/aging/etc
-    // sao numeros globais (visao gerencial) e nao mudam por agente.
-    const [aging, agingHistorico, recorrentesHistorico, ficouFacil, pagoPorAging, pagoPorForma] = await Promise.all([
-      calcularAging(),
-      calcularAgingHistorico(),
+    //
+    // Filtro de agenteIds afeta SO pagoPorAging e pagoPorForma — KPIs sao
+    // numeros globais. Aging Atual e Aging Historico vem por endpoints
+    // proprios (/dashboard/aging e /dashboard/aging-historico), pra evitar
+    // re-renderizar quando o user muda o filtro de agente (esses 2 cards
+    // sao globais e nunca mudam por agente).
+    const [recorrentesHistorico, ficouFacil, pagoPorAging, pagoPorForma] = await Promise.all([
       calcularRecorrentesHistorico(),
       calcularFicouFacil(),
       calcularPagoPorAging(agenteIds),
@@ -50,9 +52,9 @@ export async function obterDashboard(req, res, next) {
     ]);
     const kpis = await calcularKPIs(recorrentesHistorico);
 
-    // recorrentesHistorico e acumuladoAlunos NAO vao no payload — endpoints
-    // proprios os servem com filtros dinamicos (granularidade + periodo).
-    const data = { kpis, aging, agingHistorico, ficouFacil, pagoPorAging, pagoPorForma, atualizadoEm: new Date().toISOString() };
+    // recorrentesHistorico, acumuladoAlunos, aging e agingHistorico NAO
+    // vao no payload — endpoints proprios.
+    const data = { kpis, ficouFacil, pagoPorAging, pagoPorForma, atualizadoEm: new Date().toISOString() };
 
     // So salva cache global no caminho sem filtro
     if (!agenteIds) {
@@ -999,6 +1001,28 @@ export async function obterAcumuladoAlunos(req, res, next) {
     const cacheKey = chaveDe('dashboard:acumulado', opts);
     const data = await getOrSet(cacheKey, 60, () => calcularAcumuladoAlunos(opts));
     res.json({ ...opts, data });
+  } catch (error) {
+    next(error);
+  }
+}
+
+// Aging Atual e Aging Historico — endpoints proprios (sem filtro de agente).
+// Sao numeros globais da carteira de cobranca; ficar fora do /dashboard
+// evita re-renderizar quando o user muda o filtro de agente nos outros cards.
+// Cache 5min.
+export async function obterAging(req, res, next) {
+  try {
+    const data = await getOrSet('dashboard:aging-atual', 5 * 60, () => calcularAging());
+    res.json({ data });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function obterAgingHistorico(req, res, next) {
+  try {
+    const data = await getOrSet('dashboard:aging-historico', 5 * 60, () => calcularAgingHistorico());
+    res.json({ data });
   } catch (error) {
     next(error);
   }

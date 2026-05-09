@@ -3,8 +3,10 @@ import { api } from '../services/api';
 import {
   obterFunilDashboard,
   obterRecorrentesHistorico, obterAcumuladoAlunos,
+  obterAging, obterAgingHistorico,
   type FunilEtapa,
   type Granularidade, type BucketRecorrentes, type BucketAcumulado,
+  type AgingFaixa, type AgingHistoricoSemana,
 } from '../services/dashboard';
 import FiltroAgentes from '../components/dashboard/FiltroAgentes';
 import MatrizRecuperacao from '../components/dashboard/MatrizRecuperacao';
@@ -37,7 +39,7 @@ import {
 
 interface FormaPagamento { forma: string; qtd: number; valor: number }
 interface DashboardData {
-  kpis: any; aging: any[]; agingHistorico: any[];
+  kpis: any;
   ficouFacil: any; pagoPorAging: any[];
   pagoPorForma: { competencia: FormaPagamento[]; caixa: FormaPagamento[] };
   atualizadoEm: string;
@@ -125,6 +127,11 @@ export default function DashboardPage() {
   const [inicioMatriz, setInicioMatriz] = useState(hoje30atras);
   const [fimMatriz, setFimMatriz] = useState(hojeBrtISO());
 
+  // Aging Atual e Aging Historico: globais (NAO dependem de filtro de agente).
+  // Endpoints proprios pra evitar re-renderizar quando muda agente.
+  const [aging, setAging] = useState<AgingFaixa[]>([]);
+  const [agingHistorico, setAgingHistorico] = useState<AgingHistoricoSemana[]>([]);
+
   // Filtro de agente: afeta Funil + Pago por Faixa + Recuperado por Forma.
   // Vazio = todos os agentes (sem filtro). Persiste em localStorage.
   const [agenteIdsFiltro, setAgenteIdsFiltro] = useState<number[]>(carregarAgentesLS());
@@ -159,6 +166,13 @@ export default function DashboardPage() {
   useEffect(() => { carregar(); }, [carregar]);
   useEffect(() => { carregarFunil(inicioFunil, fimFunil, agenteIdsFiltro); }, [inicioFunil, fimFunil, agenteIdsFiltro, carregarFunil]);
 
+  // Aging Atual e Aging Historico — globais, NAO dependem de agenteIdsFiltro.
+  // Carregam 1x no mount e quando user clica "Atualizar" (carregar(true)).
+  useEffect(() => {
+    obterAging().then(r => setAging(r.data)).catch(e => console.error('Erro aging:', e));
+    obterAgingHistorico().then(r => setAgingHistorico(r.data)).catch(e => console.error('Erro aging-historico:', e));
+  }, [refreshing]);
+
   // Fetchs dos graficos de recorrencia
   useEffect(() => {
     setLoadingRec(true);
@@ -178,7 +192,7 @@ export default function DashboardPage() {
 
   if (loading || !data) return <div className="flex items-center justify-center h-[60vh]"><Loader2 size={32} className="animate-spin text-primary" /></div>;
 
-  const { kpis, aging, agingHistorico, ficouFacil, pagoPorForma } = data;
+  const { kpis, ficouFacil, pagoPorForma } = data;
 
   return (
     <div className="space-y-5 pb-8">

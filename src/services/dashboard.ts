@@ -75,6 +75,34 @@ export async function obterAcumuladoAlunos(opts: OptsBucket): Promise<BucketResp
 }
 
 // ----------------------------------------------------------------------
+// Aging Atual e Aging Historico — endpoints globais (sem filtro de agente)
+// ----------------------------------------------------------------------
+export interface AgingFaixa {
+  faixa: string;
+  qtd: number;
+  valor: number;
+}
+
+export interface AgingHistoricoSemana {
+  semana: number;
+  inicio: string;
+  fim: string;
+  label: string;
+  faixa_0_5: number;
+  faixa_6_30: number;
+  faixa_31_90: number;
+  faixa_90_mais: number;
+}
+
+export async function obterAging(): Promise<{ data: AgingFaixa[] }> {
+  return api.get<{ data: AgingFaixa[] }>('/dashboard/aging');
+}
+
+export async function obterAgingHistorico(): Promise<{ data: AgingHistoricoSemana[] }> {
+  return api.get<{ data: AgingHistoricoSemana[] }>('/dashboard/aging-historico');
+}
+
+// ----------------------------------------------------------------------
 // Matriz de Recuperacao: Categoria de aging x Metodo de pagamento
 // ----------------------------------------------------------------------
 export type ModoFiltroMatriz = 'negociado' | 'pago';
