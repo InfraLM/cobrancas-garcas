@@ -132,6 +132,15 @@ export default function DashboardPage() {
   const [aging, setAging] = useState<AgingFaixa[]>([]);
   const [agingHistorico, setAgingHistorico] = useState<AgingHistoricoSemana[]>([]);
 
+  // Aging Historico: granularidade (semana/mes) + periodo customizavel.
+  // Default: hoje - 12 semanas → hoje (preserva visual do card antes da feature).
+  const [granAging, setGranAging] = useState<Granularidade>('semana');
+  const [inicioAging, setInicioAging] = useState(() =>
+    new Date(Date.now() - (12 * 7 * 24 * 60 * 60 * 1000) - 3 * 60 * 60 * 1000).toISOString().slice(0, 10)
+  );
+  const [fimAging, setFimAging] = useState(hojeBrtISO());
+  const [loadingAging, setLoadingAging] = useState(false);
+
   // Cohort de matricula no card "Inadimplencia por Semana": Total / Antes 2026 / 2026.
   // Filtro client-side: dados crus ja vem com 12 colunas (4 faixas x 3 cohorts) do backend.
   const [cohortFilter, setCohortFilter] = useState<CohortMatricula>('total');
@@ -188,12 +197,20 @@ export default function DashboardPage() {
   useEffect(() => { carregar(); }, [carregar]);
   useEffect(() => { carregarFunil(inicioFunil, fimFunil, agenteIdsFiltro); }, [inicioFunil, fimFunil, agenteIdsFiltro, carregarFunil]);
 
-  // Aging Atual e Aging Historico — globais, NAO dependem de agenteIdsFiltro.
-  // Carregam 1x no mount e quando user clica "Atualizar" (carregar(true)).
+  // Aging Atual — global, NAO depende de agenteIdsFiltro nem de granularidade/periodo.
+  // Carrega 1x no mount e quando user clica "Atualizar" (carregar(true)).
   useEffect(() => {
     obterAging().then(r => setAging(r.data)).catch(e => console.error('Erro aging:', e));
-    obterAgingHistorico().then(r => setAgingHistorico(r.data)).catch(e => console.error('Erro aging-historico:', e));
   }, [refreshing]);
+
+  // Aging Historico — re-fetch quando granularidade ou periodo mudam.
+  useEffect(() => {
+    setLoadingAging(true);
+    obterAgingHistorico({ granularidade: granAging, inicio: inicioAging, fim: fimAging })
+      .then(r => setAgingHistorico(r.data))
+      .catch(e => console.error('Erro aging-historico:', e))
+      .finally(() => setLoadingAging(false));
+  }, [granAging, inicioAging, fimAging, refreshing]);
 
   // Fetchs dos graficos de recorrencia
   useEffect(() => {
@@ -349,16 +366,16 @@ export default function DashboardPage() {
         </div>
 
         <div className="col-span-2 bg-white rounded-2xl p-5 shadow-sm">
-          <div className="flex items-start justify-between mb-3 gap-3">
+          <div className="flex items-start justify-between mb-3 gap-3 flex-wrap">
             <div>
               <h3 className="text-[0.8125rem] font-bold mb-1 flex items-center gap-1.5">
-                Inadimplência por Semana
+                Inadimplência por {granAging === 'mes' ? 'Mês' : 'Semana'}
                 <span title="Cohort = ano da matrícula vinculada ao título (turmas 2, 4, 8, 11, 21, 28 — pós-graduação medicina presencial). Cada cobrança nasce de uma matrícula específica — um aluno que renovou pode ter cobranças em cohorts diferentes.">
                   <Info size={11} className="text-gray-400 cursor-help" />
                 </span>
               </h3>
               <p className="text-[0.6875rem] text-on-surface-variant">
-                Distribuição do aging em R$ — últimas 12 semanas{' '}
+                Distribuição do aging em R$ — {granAging === 'mes' ? 'mensal' : 'semanal'}{' '}
                 {cohortFilter === 'total'
                   ? '(todos os alunos)'
                   : cohortFilter === '2026'
@@ -366,20 +383,31 @@ export default function DashboardPage() {
                   : '(matriculados antes de 2026)'}
               </p>
             </div>
-            <div className="inline-flex rounded-lg bg-gray-100 p-0.5 text-[0.6875rem] shrink-0">
-              {(['total', 'antes2026', '2026'] as const).map(opt => (
-                <button
-                  key={opt}
-                  onClick={() => setCohortFilter(opt)}
-                  className={`px-2.5 py-1 rounded-md transition-colors ${
-                    cohortFilter === opt
-                      ? 'bg-white shadow-sm font-semibold text-on-surface'
-                      : 'text-on-surface-variant hover:text-on-surface'
-                  }`}
-                >
-                  {opt === 'total' ? 'Total' : opt === 'antes2026' ? 'Antes 2026' : '2026'}
-                </button>
-              ))}
+            <div className="flex items-center gap-2 flex-wrap">
+              <ControlesGrafico
+                loading={loadingAging}
+                granularidade={granAging}
+                setGranularidade={setGranAging}
+                inicio={inicioAging}
+                setInicio={setInicioAging}
+                fim={fimAging}
+                setFim={setFimAging}
+              />
+              <div className="inline-flex rounded-lg bg-gray-100 p-0.5 text-[0.6875rem] shrink-0">
+                {(['total', 'antes2026', '2026'] as const).map(opt => (
+                  <button
+                    key={opt}
+                    onClick={() => setCohortFilter(opt)}
+                    className={`px-2.5 py-1 rounded-md transition-colors ${
+                      cohortFilter === opt
+                        ? 'bg-white shadow-sm font-semibold text-on-surface'
+                        : 'text-on-surface-variant hover:text-on-surface'
+                    }`}
+                  >
+                    {opt === 'total' ? 'Total' : opt === 'antes2026' ? 'Antes 2026' : '2026'}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
           <ResponsiveContainer width="100%" height={250}>

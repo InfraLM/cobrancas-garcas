@@ -111,8 +111,9 @@ export async function obterAging(): Promise<{ data: AgingFaixa[] }> {
   return api.get<{ data: AgingFaixa[] }>('/dashboard/aging');
 }
 
-export async function obterAgingHistorico(): Promise<{ data: AgingHistoricoSemana[] }> {
-  return api.get<{ data: AgingHistoricoSemana[] }>('/dashboard/aging-historico');
+export async function obterAgingHistorico(opts?: OptsBucket): Promise<BucketResponse<AgingHistoricoSemana>> {
+  const url = opts ? `/dashboard/aging-historico?${qsBucket(opts)}` : '/dashboard/aging-historico';
+  return api.get<BucketResponse<AgingHistoricoSemana>>(url);
 }
 
 // ----------------------------------------------------------------------

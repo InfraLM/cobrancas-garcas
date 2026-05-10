@@ -232,18 +232,21 @@ async function calcularAging() {
 // -----------------------------------------------
 // Aging historico por semana (barras empilhadas)
 // -----------------------------------------------
-async function calcularAgingHistorico() {
-  // Gerar ultimas 12 semanas dinamicamente
+async function calcularAgingHistorico(opts = {}) {
+  // Granularidade (semana/mes) + periodo customizavel via gerarCteBuckets (helper
+  // ja usado por calcularRecorrentesHistorico e calcularAcumuladoAlunos).
+  // Default usado pelo frontend: hoje - 12 semanas → hoje (preserva visual atual).
+  const granularidade = opts.granularidade === 'mes' ? 'mes' : 'semana';
+  const hojeBrt = new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const inicio = opts.inicio || '2026-02-08';
+  const fim = opts.fim || hojeBrt;
+  const cteBuckets = gerarCteBuckets(granularidade, inicio, fim);
+
   const rows = await prisma.$queryRawUnsafe(`
-    WITH semanas AS (
-      SELECT
-        generate_series(0, 11) AS idx,
-        (date_trunc('week', CURRENT_DATE) - (generate_series(0, 11) * INTERVAL '1 week'))::date AS inicio,
-        (date_trunc('week', CURRENT_DATE) - (generate_series(0, 11) * INTERVAL '1 week') + INTERVAL '6 days')::date AS fim
-    ),
+    WITH ${cteBuckets},
     base AS (
       SELECT
-        s.idx,
+        s.semana,
         s.inicio,
         s.fim,
         cr.codigo,
@@ -268,17 +271,17 @@ async function calcularAgingHistorico() {
         AND cr.turma IN (2, 4, 8, 11, 21, 28)
         AND p.aluno = true
         AND (COALESCE(p.funcionario, false) = false OR p.codigo = 589)
-        -- Nao havia sido pago ate o fim da semana
+        -- Nao havia sido pago ate o fim do bucket
         AND NOT EXISTS (
           SELECT 1 FROM cobranca.contarecebernegociacaorecebimento crnr
           JOIN cobranca.negociacaorecebimento nr ON nr.codigo = crnr.negociacaorecebimento
           WHERE crnr.contareceber = cr.codigo AND nr.data::date <= s.fim
         )
-        -- Nao havia sido cancelado ate o fim da semana
+        -- Nao havia sido cancelado ate o fim do bucket
         AND (cr.datacancelamento IS NULL OR cr.datacancelamento::date > s.fim)
     )
     SELECT
-      12 - idx AS semana,
+      semana,
       inicio,
       fim,
       -- TOTAL (alias legado preservado)
@@ -297,15 +300,15 @@ async function calcularAgingHistorico() {
       COALESCE(SUM(saldo) FILTER (WHERE dias_atraso BETWEEN 31 AND 90 AND cohort_2026), 0)::numeric AS faixa_31_90_2026,
       COALESCE(SUM(saldo) FILTER (WHERE dias_atraso > 90 AND cohort_2026), 0)::numeric AS faixa_90_mais_2026
     FROM base
-    GROUP BY idx, inicio, fim
-    ORDER BY inicio
+    GROUP BY semana, inicio, fim
+    ORDER BY semana
   `);
 
   return rows.map(r => ({
     semana: Number(r.semana),
     inicio: r.inicio,
     fim: r.fim,
-    label: `${new Date(r.inicio).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}`,
+    label: formatarLabelBucket(granularidade, r.inicio, r.fim),
     faixa_0_5: Number(r.faixa_0_5),
     faixa_6_30: Number(r.faixa_6_30),
     faixa_31_90: Number(r.faixa_31_90),
@@ -1049,8 +1052,15 @@ export async function obterAging(req, res, next) {
 
 export async function obterAgingHistorico(req, res, next) {
   try {
-    const data = await getOrSet('dashboard:aging-historico:v3', 5 * 60, () => calcularAgingHistorico());
-    res.json({ data });
+    const opts = parsearOptsBucket(req);
+    // Limite de 24 meses pra evitar CROSS JOIN explodir (Cloud SQL timeout >5s)
+    const diffDias = (new Date(opts.fim).getTime() - new Date(opts.inicio).getTime()) / (1000 * 60 * 60 * 24);
+    if (diffDias < 0) return res.status(400).json({ error: 'fim deve ser >= inicio' });
+    if (diffDias > 730) return res.status(400).json({ error: 'periodo maximo: 24 meses' });
+
+    const cacheKey = chaveDe('dashboard:aging-historico:v4', opts);
+    const data = await getOrSet(cacheKey, 60, () => calcularAgingHistorico(opts));
+    res.json({ ...opts, data });
   } catch (error) {
     next(error);
   }
