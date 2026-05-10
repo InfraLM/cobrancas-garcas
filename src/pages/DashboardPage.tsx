@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { api } from '../services/api';
 import {
   obterFunilDashboard,
@@ -6,7 +6,7 @@ import {
   obterAging, obterAgingHistorico,
   type FunilEtapa,
   type Granularidade, type BucketRecorrentes, type BucketAcumulado,
-  type AgingFaixa, type AgingHistoricoSemana,
+  type AgingFaixa, type AgingHistoricoSemana, type CohortMatricula,
 } from '../services/dashboard';
 import FiltroAgentes from '../components/dashboard/FiltroAgentes';
 import MatrizRecuperacao from '../components/dashboard/MatrizRecuperacao';
@@ -131,6 +131,28 @@ export default function DashboardPage() {
   // Endpoints proprios pra evitar re-renderizar quando muda agente.
   const [aging, setAging] = useState<AgingFaixa[]>([]);
   const [agingHistorico, setAgingHistorico] = useState<AgingHistoricoSemana[]>([]);
+
+  // Cohort de matricula no card "Inadimplencia por Semana": Total / Antes 2026 / 2026.
+  // Filtro client-side: dados crus ja vem com 12 colunas (4 faixas x 3 cohorts) do backend.
+  const [cohortFilter, setCohortFilter] = useState<CohortMatricula>('total');
+  const agingHistoricoView = useMemo(() => {
+    const sufixo = cohortFilter === 'total' ? '' : `_${cohortFilter}`;
+    return agingHistorico.map(s => ({
+      ...s,
+      faixa_0_5: s[`faixa_0_5${sufixo}` as keyof AgingHistoricoSemana] as number,
+      faixa_6_30: s[`faixa_6_30${sufixo}` as keyof AgingHistoricoSemana] as number,
+      faixa_31_90: s[`faixa_31_90${sufixo}` as keyof AgingHistoricoSemana] as number,
+      faixa_90_mais: s[`faixa_90_mais${sufixo}` as keyof AgingHistoricoSemana] as number,
+    }));
+  }, [agingHistorico, cohortFilter]);
+  // YAxis fixo no maior total entre as 12 semanas — evita "ilusao de magnitude"
+  // ao trocar entre Total / Antes 2026 / 2026 (cohort 2026 e ~8% do passivo).
+  // 5% de headroom para nao colar a barra no topo.
+  const agingHistoricoYMax = useMemo(() => {
+    if (agingHistorico.length === 0) return undefined;
+    const totais = agingHistorico.map(s => s.faixa_0_5 + s.faixa_6_30 + s.faixa_31_90 + s.faixa_90_mais);
+    return Math.max(...totais, 0) * 1.05;
+  }, [agingHistorico]);
 
   // Filtro de agente: afeta Funil + Pago por Faixa + Recuperado por Forma.
   // Vazio = todos os agentes (sem filtro). Persiste em localStorage.
@@ -327,12 +349,51 @@ export default function DashboardPage() {
         </div>
 
         <div className="col-span-2 bg-white rounded-2xl p-5 shadow-sm">
-          <h3 className="text-[0.8125rem] font-bold mb-1">Inadimplência por Semana</h3>
-          <p className="text-[0.6875rem] text-on-surface-variant mb-3">Distribuição do aging em R$ — últimas 12 semanas</p>
+          <div className="flex items-start justify-between mb-3 gap-3">
+            <div>
+              <h3 className="text-[0.8125rem] font-bold mb-1 flex items-center gap-1.5">
+                Inadimplência por Semana
+                <span title="Cohort = ano da matrícula vinculada ao título (curso=1, pós-graduação). Cada cobrança nasce de uma matrícula específica — um aluno que renovou pode ter cobranças em cohorts diferentes. Títulos sem matrícula em curso=1 vão para 'Antes 2026'.">
+                  <Info size={11} className="text-gray-400 cursor-help" />
+                </span>
+              </h3>
+              <p className="text-[0.6875rem] text-on-surface-variant">
+                Distribuição do aging em R$ — últimas 12 semanas{' '}
+                {cohortFilter === 'total'
+                  ? '(todos os alunos)'
+                  : cohortFilter === '2026'
+                  ? '(matriculados em 2026)'
+                  : '(matriculados antes de 2026)'}
+              </p>
+            </div>
+            <div className="inline-flex rounded-lg bg-gray-100 p-0.5 text-[0.6875rem] shrink-0">
+              {(['total', 'antes2026', '2026'] as const).map(opt => (
+                <button
+                  key={opt}
+                  onClick={() => setCohortFilter(opt)}
+                  className={`px-2.5 py-1 rounded-md transition-colors ${
+                    cohortFilter === opt
+                      ? 'bg-white shadow-sm font-semibold text-on-surface'
+                      : 'text-on-surface-variant hover:text-on-surface'
+                  }`}
+                >
+                  {opt === 'total' ? 'Total' : opt === 'antes2026' ? 'Antes 2026' : '2026'}
+                </button>
+              ))}
+            </div>
+          </div>
           <ResponsiveContainer width="100%" height={250}>
-            <BarChart data={agingHistorico} margin={{ top: 5, right: 5, left: 5, bottom: 5 }}>
+            <BarChart data={agingHistoricoView} margin={{ top: 5, right: 5, left: 5, bottom: 5 }}>
               <XAxis dataKey="label" tick={{ fontSize: 10, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fontSize: 10, fill: '#94a3b8' }} tickFormatter={fmtK} width={65} axisLine={false} tickLine={false} />
+              <YAxis
+                tick={{ fontSize: 10, fill: '#94a3b8' }}
+                tickFormatter={fmtK}
+                width={65}
+                axisLine={false}
+                tickLine={false}
+                domain={agingHistoricoYMax ? [0, agingHistoricoYMax] : undefined}
+                allowDataOverflow={false}
+              />
               <Tooltip content={<CustomTooltip />} />
               <Legend wrapperStyle={{ fontSize: 10, paddingTop: 8 }} iconType="square" iconSize={8} />
               <Bar dataKey="faixa_0_5" name="0-5 dias" stackId="a" fill={AGING_COLORS['0-5']} />

@@ -249,9 +249,16 @@ async function calcularAgingHistorico() {
         cr.codigo,
         cr.datavencimento::date AS vencimento,
         (cr.valor - COALESCE(cr.valorrecebido, 0))::numeric AS saldo,
-        (s.fim - cr.datavencimento::date) AS dias_atraso
+        (s.fim - cr.datavencimento::date) AS dias_atraso,
+        -- Cohort de matricula: classificado por TITULO (matricula vinculada ao proprio
+        -- contareceber). NULL via cr.matriculaaluno ausente, matricula com curso != 1
+        -- ou m.data NULL cai em 'antes2026' (false).
+        (m.data IS NOT NULL AND m.data >= DATE '2026-01-01') AS cohort_2026
       FROM cobranca.contareceber cr
       JOIN cobranca.pessoa p ON p.codigo = cr.pessoa
+      LEFT JOIN cobranca.matricula m
+        ON m.matricula = cr.matriculaaluno
+       AND m.curso = 1
       CROSS JOIN semanas s
       WHERE cr.datavencimento::date <= s.fim
         AND cr.situacao IN ('AR', 'RE', 'CF')
@@ -272,10 +279,21 @@ async function calcularAgingHistorico() {
       12 - idx AS semana,
       inicio,
       fim,
+      -- TOTAL (alias legado preservado)
       COALESCE(SUM(saldo) FILTER (WHERE dias_atraso BETWEEN 0 AND 5), 0)::numeric AS faixa_0_5,
       COALESCE(SUM(saldo) FILTER (WHERE dias_atraso BETWEEN 6 AND 30), 0)::numeric AS faixa_6_30,
       COALESCE(SUM(saldo) FILTER (WHERE dias_atraso BETWEEN 31 AND 90), 0)::numeric AS faixa_31_90,
-      COALESCE(SUM(saldo) FILTER (WHERE dias_atraso > 90), 0)::numeric AS faixa_90_mais
+      COALESCE(SUM(saldo) FILTER (WHERE dias_atraso > 90), 0)::numeric AS faixa_90_mais,
+      -- ANTES 2026
+      COALESCE(SUM(saldo) FILTER (WHERE dias_atraso BETWEEN 0 AND 5 AND NOT cohort_2026), 0)::numeric AS faixa_0_5_antes2026,
+      COALESCE(SUM(saldo) FILTER (WHERE dias_atraso BETWEEN 6 AND 30 AND NOT cohort_2026), 0)::numeric AS faixa_6_30_antes2026,
+      COALESCE(SUM(saldo) FILTER (WHERE dias_atraso BETWEEN 31 AND 90 AND NOT cohort_2026), 0)::numeric AS faixa_31_90_antes2026,
+      COALESCE(SUM(saldo) FILTER (WHERE dias_atraso > 90 AND NOT cohort_2026), 0)::numeric AS faixa_90_mais_antes2026,
+      -- 2026
+      COALESCE(SUM(saldo) FILTER (WHERE dias_atraso BETWEEN 0 AND 5 AND cohort_2026), 0)::numeric AS faixa_0_5_2026,
+      COALESCE(SUM(saldo) FILTER (WHERE dias_atraso BETWEEN 6 AND 30 AND cohort_2026), 0)::numeric AS faixa_6_30_2026,
+      COALESCE(SUM(saldo) FILTER (WHERE dias_atraso BETWEEN 31 AND 90 AND cohort_2026), 0)::numeric AS faixa_31_90_2026,
+      COALESCE(SUM(saldo) FILTER (WHERE dias_atraso > 90 AND cohort_2026), 0)::numeric AS faixa_90_mais_2026
     FROM base
     GROUP BY idx, inicio, fim
     ORDER BY inicio
@@ -290,6 +308,14 @@ async function calcularAgingHistorico() {
     faixa_6_30: Number(r.faixa_6_30),
     faixa_31_90: Number(r.faixa_31_90),
     faixa_90_mais: Number(r.faixa_90_mais),
+    faixa_0_5_antes2026: Number(r.faixa_0_5_antes2026),
+    faixa_6_30_antes2026: Number(r.faixa_6_30_antes2026),
+    faixa_31_90_antes2026: Number(r.faixa_31_90_antes2026),
+    faixa_90_mais_antes2026: Number(r.faixa_90_mais_antes2026),
+    faixa_0_5_2026: Number(r.faixa_0_5_2026),
+    faixa_6_30_2026: Number(r.faixa_6_30_2026),
+    faixa_31_90_2026: Number(r.faixa_31_90_2026),
+    faixa_90_mais_2026: Number(r.faixa_90_mais_2026),
   }));
 }
 
@@ -1021,7 +1047,7 @@ export async function obterAging(req, res, next) {
 
 export async function obterAgingHistorico(req, res, next) {
   try {
-    const data = await getOrSet('dashboard:aging-historico', 5 * 60, () => calcularAgingHistorico());
+    const data = await getOrSet('dashboard:aging-historico:v2', 5 * 60, () => calcularAgingHistorico());
     res.json({ data });
   } catch (error) {
     next(error);

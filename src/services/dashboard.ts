@@ -83,15 +83,28 @@ export interface AgingFaixa {
   valor: number;
 }
 
+export type CohortMatricula = 'total' | 'antes2026' | '2026';
+
 export interface AgingHistoricoSemana {
   semana: number;
   inicio: string;
   fim: string;
   label: string;
+  // Total (legado — soma de antes2026 + 2026)
   faixa_0_5: number;
   faixa_6_30: number;
   faixa_31_90: number;
   faixa_90_mais: number;
+  // Cohort: matricula vinculada ao titulo data < 2026-01-01 (ou ausente / curso != 1)
+  faixa_0_5_antes2026: number;
+  faixa_6_30_antes2026: number;
+  faixa_31_90_antes2026: number;
+  faixa_90_mais_antes2026: number;
+  // Cohort: matricula vinculada ao titulo data >= 2026-01-01
+  faixa_0_5_2026: number;
+  faixa_6_30_2026: number;
+  faixa_31_90_2026: number;
+  faixa_90_mais_2026: number;
 }
 
 export async function obterAging(): Promise<{ data: AgingFaixa[] }> {
