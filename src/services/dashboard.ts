@@ -117,6 +117,32 @@ export async function obterAgingHistorico(opts?: OptsBucket): Promise<BucketResp
 }
 
 // ----------------------------------------------------------------------
+// Pago por Forma de Pagamento — endpoint proprio com periodo customizavel
+// ----------------------------------------------------------------------
+export interface FormaPagamento {
+  forma: string;
+  qtd: number;
+  valor: number;
+}
+
+export interface PagoPorFormaResponse {
+  inicio: string;
+  fim: string;
+  competencia: FormaPagamento[];
+  caixa: FormaPagamento[];
+}
+
+export async function obterPagoPorForma(opts: {
+  inicio: string;
+  fim: string;
+  agenteIds?: number[];
+}): Promise<PagoPorFormaResponse> {
+  const qs = new URLSearchParams({ inicio: opts.inicio, fim: opts.fim });
+  if (opts.agenteIds && opts.agenteIds.length > 0) qs.set('agenteIds', opts.agenteIds.join(','));
+  return api.get<PagoPorFormaResponse>(`/dashboard/pago-por-forma?${qs}`);
+}
+
+// ----------------------------------------------------------------------
 // Matriz de Recuperacao: Categoria de aging x Metodo de pagamento
 // ----------------------------------------------------------------------
 export type ModoFiltroMatriz = 'negociado' | 'pago';

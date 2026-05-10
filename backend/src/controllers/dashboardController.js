@@ -39,22 +39,20 @@ export async function obterDashboard(req, res, next) {
     // (mesmo universo do grafico "Composicao"). O grafico em si vem do
     // endpoint /dashboard/recorrentes-historico (parametrizado).
     //
-    // Filtro de agenteIds afeta SO pagoPorAging e pagoPorForma — KPIs sao
-    // numeros globais. Aging Atual e Aging Historico vem por endpoints
-    // proprios (/dashboard/aging e /dashboard/aging-historico), pra evitar
-    // re-renderizar quando o user muda o filtro de agente (esses 2 cards
-    // sao globais e nunca mudam por agente).
-    const [recorrentesHistorico, ficouFacil, pagoPorAging, pagoPorForma] = await Promise.all([
+    // Filtro de agenteIds afeta SO pagoPorAging — KPIs sao numeros globais.
+    // Aging Atual, Aging Historico e Pago Por Forma vem por endpoints proprios
+    // (/dashboard/aging, /dashboard/aging-historico, /dashboard/pago-por-forma)
+    // pra evitar re-renderizar quando o user muda o filtro de agente ou periodo.
+    const [recorrentesHistorico, ficouFacil, pagoPorAging] = await Promise.all([
       calcularRecorrentesHistorico(),
       calcularFicouFacil(),
       calcularPagoPorAging(agenteIds),
-      calcularPagoPorForma(agenteIds),
     ]);
     const kpis = await calcularKPIs(recorrentesHistorico);
 
-    // recorrentesHistorico, acumuladoAlunos, aging e agingHistorico NAO
-    // vao no payload — endpoints proprios.
-    const data = { kpis, ficouFacil, pagoPorAging, pagoPorForma, atualizadoEm: new Date().toISOString() };
+    // recorrentesHistorico, acumuladoAlunos, aging, agingHistorico e pagoPorForma
+    // NAO vao no payload — endpoints proprios.
+    const data = { kpis, ficouFacil, pagoPorAging, atualizadoEm: new Date().toISOString() };
 
     // So salva cache global no caminho sem filtro
     if (!agenteIds) {
@@ -1066,6 +1064,31 @@ export async function obterAgingHistorico(req, res, next) {
   }
 }
 
+export async function obterPagoPorForma(req, res, next) {
+  try {
+    const re = /^\d{4}-\d{2}-\d{2}$/;
+    const inicio = re.test(String(req.query.inicio || '')) ? String(req.query.inicio) : null;
+    const fim = re.test(String(req.query.fim || '')) ? String(req.query.fim) : null;
+    if (!inicio || !fim) return res.status(400).json({ error: 'inicio e fim obrigatorios (YYYY-MM-DD)' });
+
+    const diffDias = (new Date(fim).getTime() - new Date(inicio).getTime()) / (1000 * 60 * 60 * 24);
+    if (diffDias < 0) return res.status(400).json({ error: 'fim deve ser >= inicio' });
+    if (diffDias > 730) return res.status(400).json({ error: 'periodo maximo: 24 meses' });
+
+    const agenteIds = req.query.agenteIds
+      ? String(req.query.agenteIds).split(',').map(Number).filter(Boolean)
+      : null;
+
+    const cacheKey = chaveDe('dashboard:pago-por-forma:v1', {
+      inicio, fim, agenteIds: agenteIds ? agenteIds.join(',') : ''
+    });
+    const data = await getOrSet(cacheKey, 60, () => calcularPagoPorForma({ inicio, fim, agenteIds }));
+    res.json({ inicio, fim, ...data });
+  } catch (error) {
+    next(error);
+  }
+}
+
 // -----------------------------------------------
 // Pago por aging (faixa de inadimplencia)
 // -----------------------------------------------
@@ -1143,55 +1166,64 @@ function caseFormaPagamento() {
   `;
 }
 
-async function calcularPagoPorForma(agenteIds = null) {
-  const filtroAgenteAcordo = agenteIds ? `AND af."criadoPor" = ANY($1::int[])` : '';
-  const filtroAgenteFf = agenteIds ? `AND "criadoPor" = ANY($1::int[])` : '';
-  const params = agenteIds ? [agenteIds] : [];
+async function calcularPagoPorForma({ inicio, fim, agenteIds = null } = {}) {
+  const inicioTs = `${inicio} 00:00:00`;
+  const fimTs = `${fim} 23:59:59`;
+  const filtroAgenteAcordo = agenteIds ? `AND af."criadoPor" = ANY($3::int[])` : '';
+  const filtroAgenteFf = agenteIds ? `AND "criadoPor" = ANY($3::int[])` : '';
+  const params = agenteIds ? [inicioTs, fimTs, agenteIds] : [inicioTs, fimTs];
 
-  // Competencia: 1 row por pagamento_acordo CONFIRMADO, somando o valor nominal
-  // do acordo (o cartao em 6x conta o total mesmo que so 1 parcela tenha caido).
+  // Competencia: cliente pagou — filtra por pa.confirmadoEm, soma pa.valor (bruto).
+  // Cartao parcelado: pa.valor JA E o total do acordo (1 linha por acordo, nao N).
   const competencia = await prisma.$queryRawUnsafe(`
     SELECT ${caseFormaPagamento()} AS forma,
       COUNT(*)::int AS qtd,
       COALESCE(SUM(pa.valor), 0)::numeric AS valor
     FROM cobranca.pagamento_acordo pa
     JOIN cobranca.acordo_financeiro af ON af.id = pa."acordoId"
-    WHERE af.etapa != 'CANCELADO' AND pa.situacao = 'CONFIRMADO'
+    WHERE af.etapa != 'CANCELADO'
+      AND pa."confirmadoEm" BETWEEN $1::timestamp AND $2::timestamp
       ${filtroAgenteAcordo}
     GROUP BY forma
     ORDER BY valor DESC
   `, ...params);
 
-  // Caixa: o que de fato entrou (valorPago, com fallback no nominal apenas
-  // quando valorPago nao foi gravado pelo Asaas).
+  // Caixa: entrou na conta Asaas — filtra por pa.recebidoEm, soma valorLiquido.
+  // Fallback no bruto quando valorLiquido nao foi gravado (raro).
   const caixa = await prisma.$queryRawUnsafe(`
     SELECT ${caseFormaPagamento()} AS forma,
       COUNT(*)::int AS qtd,
-      COALESCE(SUM(COALESCE(pa."valorPago", pa.valor)), 0)::numeric AS valor
+      COALESCE(SUM(COALESCE(NULLIF(pa."valorLiquido", 0), pa.valor)), 0)::numeric AS valor
     FROM cobranca.pagamento_acordo pa
     JOIN cobranca.acordo_financeiro af ON af.id = pa."acordoId"
-    WHERE af.etapa != 'CANCELADO' AND pa.situacao = 'CONFIRMADO'
+    WHERE af.etapa != 'CANCELADO'
+      AND pa."recebidoEm" BETWEEN $1::timestamp AND $2::timestamp
       ${filtroAgenteAcordo}
     GROUP BY forma
     ORDER BY valor DESC
   `, ...params);
 
-  // Ficou Facil concluidos — valor recuperado entra nas duas visoes
+  // Ficou Facil concluido no periodo — concluidoEm e a data unica
+  // (caixa+competencia juntas, sem split). Liquido = bruto * 0.93 (taxa fixa 7%).
   const ff = await prisma.$queryRawUnsafe(`
-    SELECT COUNT(*)::int AS qtd, COALESCE(SUM("valorInadimplenteMJ"), 0)::numeric AS valor
-    FROM cobranca.ficou_facil WHERE etapa = 'CONCLUIDO'
+    SELECT COUNT(*)::int AS qtd,
+      COALESCE(SUM("valorInadimplenteMJ"), 0)::numeric AS valor_bruto,
+      COALESCE(SUM("valorInadimplenteMJ" * 0.93), 0)::numeric AS valor_liquido
+    FROM cobranca.ficou_facil
+    WHERE etapa = 'CONCLUIDO'
+      AND "concluidoEm" BETWEEN $1::timestamp AND $2::timestamp
       ${filtroAgenteFf}
   `, ...params);
 
-  const mapearComFf = (rows) => {
+  const adicionarFf = (rows, valorFf) => {
     const out = rows.map(r => ({ forma: r.forma, qtd: r.qtd, valor: Number(r.valor) }));
-    if (ff[0]?.qtd > 0) out.push({ forma: 'Ficou Fácil', qtd: ff[0].qtd, valor: Number(ff[0].valor) });
+    if (ff[0]?.qtd > 0) out.push({ forma: 'Ficou Fácil', qtd: ff[0].qtd, valor: valorFf });
     return out;
   };
 
   return {
-    competencia: mapearComFf(competencia),
-    caixa: mapearComFf(caixa),
+    competencia: adicionarFf(competencia, Number(ff[0].valor_bruto)),
+    caixa: adicionarFf(caixa, Number(ff[0].valor_liquido)),
   };
 }
 

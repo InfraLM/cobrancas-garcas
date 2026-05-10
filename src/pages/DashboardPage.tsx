@@ -3,10 +3,11 @@ import { api } from '../services/api';
 import {
   obterFunilDashboard,
   obterRecorrentesHistorico, obterAcumuladoAlunos,
-  obterAging, obterAgingHistorico,
+  obterAging, obterAgingHistorico, obterPagoPorForma,
   type FunilEtapa,
   type Granularidade, type BucketRecorrentes, type BucketAcumulado,
   type AgingFaixa, type AgingHistoricoSemana, type CohortMatricula,
+  type FormaPagamento,
 } from '../services/dashboard';
 import FiltroAgentes from '../components/dashboard/FiltroAgentes';
 import MatrizRecuperacao from '../components/dashboard/MatrizRecuperacao';
@@ -37,11 +38,9 @@ import {
   CreditCard, Landmark, Info
 } from 'lucide-react';
 
-interface FormaPagamento { forma: string; qtd: number; valor: number }
 interface DashboardData {
   kpis: any;
   ficouFacil: any; pagoPorAging: any[];
-  pagoPorForma: { competencia: FormaPagamento[]; caixa: FormaPagamento[] };
   atualizadoEm: string;
 }
 
@@ -106,9 +105,16 @@ export default function DashboardPage() {
   const [avisoFunil, setAvisoFunil] = useState<string | null>(null);
   const [loadingFunil, setLoadingFunil] = useState(false);
 
-  // "Recuperado por Forma de Pagamento": competencia (todo valor confirmado)
-  // ou caixa (so o que entrou). Toggle local.
+  // "Recuperado por Forma de Pagamento": competencia (cliente pagou) ou caixa
+  // (entrou na conta Asaas). Toggle local + filtros de periodo proprios.
+  // Default: ultimos 30 dias (hoje30atras já definido acima pro funil).
   const [visaoForma, setVisaoForma] = useState<'competencia' | 'caixa'>('competencia');
+  const [inicioForma, setInicioForma] = useState(hoje30atras);
+  const [fimForma, setFimForma] = useState(hojeBrtISO());
+  const [pagoPorForma, setPagoPorForma] = useState<{ competencia: FormaPagamento[]; caixa: FormaPagamento[] }>({
+    competencia: [], caixa: [],
+  });
+  const [loadingForma, setLoadingForma] = useState(false);
 
   // Graficos de recorrencia: granularidade + periodo independentes pra cada
   const [granRec, setGranRec] = useState<Granularidade>('semana');
@@ -229,9 +235,18 @@ export default function DashboardPage() {
       .finally(() => setLoadingAcum(false));
   }, [granAcum, inicioAcum, fimAcum]);
 
+  // Pago por Forma — endpoint proprio, com filtro de periodo + agente.
+  useEffect(() => {
+    setLoadingForma(true);
+    obterPagoPorForma({ inicio: inicioForma, fim: fimForma, agenteIds: agenteIdsFiltro })
+      .then(r => setPagoPorForma({ competencia: r.competencia, caixa: r.caixa }))
+      .catch(e => console.error('Erro pago-por-forma:', e))
+      .finally(() => setLoadingForma(false));
+  }, [inicioForma, fimForma, agenteIdsFiltro]);
+
   if (loading || !data) return <div className="flex items-center justify-center h-[60vh]"><Loader2 size={32} className="animate-spin text-primary" /></div>;
 
-  const { kpis, ficouFacil, pagoPorForma } = data;
+  const { kpis, ficouFacil } = data;
 
   return (
     <div className="space-y-5 pb-8">
@@ -445,28 +460,49 @@ export default function DashboardPage() {
       {/* Recuperado por Forma de Pagamento */}
       <div className="grid grid-cols-1 gap-4">
         <div className="bg-white rounded-2xl p-5 shadow-sm">
-          <div className="flex items-center justify-between mb-1">
-            <h3 className="text-[0.8125rem] font-bold" title="Competência = quando o cliente pagou (PAYMENT_CONFIRMED do Asaas). Caixa = quando o dinheiro entrou na conta Asaas (PAYMENT_RECEIVED) — pode demorar de D+1 a D+30 conforme cartão.">Recuperado por Forma de Pagamento</h3>
-            <div className="inline-flex rounded-lg bg-gray-100 p-0.5 text-[0.6875rem]">
-              <button
-                onClick={() => setVisaoForma('competencia')}
-                className={`px-2.5 py-1 rounded-md transition-colors ${visaoForma === 'competencia' ? 'bg-white shadow-sm font-semibold text-on-surface' : 'text-on-surface-variant hover:text-on-surface'}`}
-              >
-                Competência
-              </button>
-              <button
-                onClick={() => setVisaoForma('caixa')}
-                className={`px-2.5 py-1 rounded-md transition-colors ${visaoForma === 'caixa' ? 'bg-white shadow-sm font-semibold text-on-surface' : 'text-on-surface-variant hover:text-on-surface'}`}
-              >
-                Caixa
-              </button>
+          <div className="flex items-start justify-between mb-1 gap-3 flex-wrap">
+            <div>
+              <h3 className="text-[0.8125rem] font-bold" title="Competência = quando o cliente pagou (PAYMENT_CONFIRMED do Asaas). Caixa = quando o dinheiro entrou na conta Asaas (PAYMENT_RECEIVED) — pode demorar de D+1 a D+30 conforme cartão.">Recuperado por Forma de Pagamento</h3>
+              <p className="text-[0.6875rem] text-on-surface-variant">
+                {visaoForma === 'competencia'
+                  ? 'Todo valor confirmado, mesmo que parcelado'
+                  : 'Apenas o valor que efetivamente entrou'}
+              </p>
+            </div>
+            <div className="flex items-center gap-2 flex-wrap">
+              {loadingForma && <Loader2 size={12} className="animate-spin text-gray-400" />}
+              <input
+                type="date"
+                value={inicioForma}
+                onChange={(e) => setInicioForma(e.target.value)}
+                className="h-7 px-2 rounded-md border border-gray-200 text-[0.6875rem] bg-white outline-none focus:ring-1 focus:ring-primary/30"
+                title="Início"
+              />
+              <span className="text-[0.625rem] text-gray-400">→</span>
+              <input
+                type="date"
+                value={fimForma}
+                onChange={(e) => setFimForma(e.target.value)}
+                className="h-7 px-2 rounded-md border border-gray-200 text-[0.6875rem] bg-white outline-none focus:ring-1 focus:ring-primary/30"
+                title="Fim"
+              />
+              <div className="inline-flex rounded-lg bg-gray-100 p-0.5 text-[0.6875rem]">
+                <button
+                  onClick={() => setVisaoForma('competencia')}
+                  className={`px-2.5 py-1 rounded-md transition-colors ${visaoForma === 'competencia' ? 'bg-white shadow-sm font-semibold text-on-surface' : 'text-on-surface-variant hover:text-on-surface'}`}
+                >
+                  Competência
+                </button>
+                <button
+                  onClick={() => setVisaoForma('caixa')}
+                  className={`px-2.5 py-1 rounded-md transition-colors ${visaoForma === 'caixa' ? 'bg-white shadow-sm font-semibold text-on-surface' : 'text-on-surface-variant hover:text-on-surface'}`}
+                >
+                  Caixa
+                </button>
+              </div>
             </div>
           </div>
-          <p className="text-[0.6875rem] text-on-surface-variant mb-3">
-            {visaoForma === 'competencia'
-              ? 'Todo valor confirmado, mesmo que parcelado'
-              : 'Apenas o valor que efetivamente entrou'}
-          </p>
+          <div className="mb-3" />
           {(() => {
             const formas = pagoPorForma[visaoForma] || [];
             if (formas.length === 0) {
