@@ -1294,24 +1294,40 @@ async function calcularMatrizRecuperacao({ inicio, fim, modoFiltro = 'negociado'
         ${METODO_PAGAMENTO_MATRIZ} AS metodo,
         -- Bruto: pa.valor JA E o valor total do acordo (cada cartao parcelado
         -- tem apenas 1 linha em pagamento_acordo, nao N linhas).
-        CASE
+        --
+        -- Modo Negociado: conta o valor cheio independente de pagamento (alinha
+        -- com o funil etapa "Negociado", que soma acordo_financeiro.valorAcordo
+        -- direto sem filtrar por confirmacao).
+        --
+        -- Modo Pago: filtra por cartao parcelado capturado OU pa.confirmadoEm.
+        ${modoFiltro === 'negociado' ? `pa.valor AS bruto,` : `CASE
           WHEN pa."formaPagamento" = 'CREDIT_CARD' AND pa.parcelas > 1 AND pa."creditCardCaptured" = true
             THEN pa.valor
           WHEN pa."confirmadoEm" IS NOT NULL
             THEN pa.valor
           ELSE 0
-        END AS bruto,
+        END AS bruto,`}
         -- Liquido cartao parcelado: pa.valorLiquido reflete o liquido de UMA
         -- parcela (Asaas envia webhook por parcela individual). Para o liquido
         -- total do acordo capturado, multiplicamos por pa.parcelas.
         -- Cartao a vista, boleto, pix: pa.valorLiquido ja eh do total.
-        CASE
+        --
+        -- Modo Negociado: usa valorLiquido se ja temos (acordo capturado ou
+        -- pago), senao projeta liquido = bruto (sem desconto, projecao otimista
+        -- ate o pagamento confirmar).
+        ${modoFiltro === 'negociado' ? `CASE
+          WHEN pa."formaPagamento" = 'CREDIT_CARD' AND pa.parcelas > 1 AND pa."creditCardCaptured" = true
+            THEN COALESCE(NULLIF(pa."valorLiquido", 0) * pa.parcelas, pa.valor)
+          WHEN pa."confirmadoEm" IS NOT NULL
+            THEN COALESCE(NULLIF(pa."valorLiquido", 0), pa.valor)
+          ELSE pa.valor
+        END AS liquido` : `CASE
           WHEN pa."formaPagamento" = 'CREDIT_CARD' AND pa.parcelas > 1 AND pa."creditCardCaptured" = true
             THEN COALESCE(NULLIF(pa."valorLiquido", 0) * pa.parcelas, pa.valor)
           WHEN pa."confirmadoEm" IS NOT NULL
             THEN COALESCE(NULLIF(pa."valorLiquido", 0), pa.valor)
           ELSE 0
-        END AS liquido
+        END AS liquido`}
       FROM acordos_no_periodo a
       JOIN cobranca.pagamento_acordo pa ON pa."acordoId" = a."acordoId"
       JOIN cobranca.acordo_financeiro af ON af.id = a."acordoId"
@@ -1434,7 +1450,7 @@ export async function obterMatrizRecuperacao(req, res, next) {
       return res.status(400).json({ error: 'inicio nao pode ser depois de fim' });
     }
 
-    const cacheKey = chaveDe('dashboard:matriz', { inicio, fim, modoFiltro, agenteIds: agenteIds ? agenteIds.join(',') : '' });
+    const cacheKey = chaveDe('dashboard:matriz:v2', { inicio, fim, modoFiltro, agenteIds: agenteIds ? agenteIds.join(',') : '' });
     const result = await getOrSet(cacheKey, 60, () => calcularMatrizRecuperacao({ inicio, fim, modoFiltro, agenteIds }));
     res.json(result);
   } catch (error) {
