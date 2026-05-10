@@ -251,8 +251,9 @@ async function calcularAgingHistorico() {
         (cr.valor - COALESCE(cr.valorrecebido, 0))::numeric AS saldo,
         (s.fim - cr.datavencimento::date) AS dias_atraso,
         -- Cohort de matricula: classificado por TITULO (matricula vinculada ao proprio
-        -- contareceber). NULL via cr.matriculaaluno ausente, matricula com curso != 1
-        -- ou m.data NULL cai em 'antes2026' (false).
+        -- contareceber). m.curso=1 e redundancia de seguranca pois a whitelist de turmas
+        -- (2,4,8,11,21,28) ja garante que sao todas turmas de curso=1. NULL em m.data
+        -- (raro) cai em 'antes2026' (false).
         (m.data IS NOT NULL AND m.data >= DATE '2026-01-01') AS cohort_2026
       FROM cobranca.contareceber cr
       JOIN cobranca.pessoa p ON p.codigo = cr.pessoa
@@ -263,7 +264,8 @@ async function calcularAgingHistorico() {
       WHERE cr.datavencimento::date <= s.fim
         AND cr.situacao IN ('AR', 'RE', 'CF')
         AND COALESCE(cr.tipoorigem, '') NOT IN ('MAT', 'OUT')
-        AND (cr.turma IS NULL OR cr.turma NOT IN (${TURMAS_EXCLUIDAS}))
+        -- Whitelist alinhada com a query original do "aging empilhado" (curso=1 garantido)
+        AND cr.turma IN (2, 4, 8, 11, 21, 28)
         AND p.aluno = true
         AND (COALESCE(p.funcionario, false) = false OR p.codigo = 589)
         -- Nao havia sido pago ate o fim da semana
@@ -1047,7 +1049,7 @@ export async function obterAging(req, res, next) {
 
 export async function obterAgingHistorico(req, res, next) {
   try {
-    const data = await getOrSet('dashboard:aging-historico:v2', 5 * 60, () => calcularAgingHistorico());
+    const data = await getOrSet('dashboard:aging-historico:v3', 5 * 60, () => calcularAgingHistorico());
     res.json({ data });
   } catch (error) {
     next(error);

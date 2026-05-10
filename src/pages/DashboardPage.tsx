@@ -353,7 +353,7 @@ export default function DashboardPage() {
             <div>
               <h3 className="text-[0.8125rem] font-bold mb-1 flex items-center gap-1.5">
                 Inadimplência por Semana
-                <span title="Cohort = ano da matrícula vinculada ao título (curso=1, pós-graduação). Cada cobrança nasce de uma matrícula específica — um aluno que renovou pode ter cobranças em cohorts diferentes. Títulos sem matrícula em curso=1 vão para 'Antes 2026'.">
+                <span title="Cohort = ano da matrícula vinculada ao título (turmas 2, 4, 8, 11, 21, 28 — pós-graduação medicina presencial). Cada cobrança nasce de uma matrícula específica — um aluno que renovou pode ter cobranças em cohorts diferentes.">
                   <Info size={11} className="text-gray-400 cursor-help" />
                 </span>
               </h3>
