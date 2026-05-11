@@ -7,20 +7,42 @@ import { sincronizarPausaPorEtapa } from '../services/pausaLigacaoService.js';
 import { buildBuscaClauses } from '../utils/buscaNomeHelper.js';
 
 // -----------------------------------------------
-// GET /api/acordos — Listar acordos
+// GET /api/acordos — Listar acordos (filtros expandidos + enriquecimento)
+//
+// Filtros suportados:
+//   search             — busca nome/CPF/matricula
+//   etapa              — multi (CSV: "SELECAO,CONCLUIDO")
+//   criadoPor          — multi (CSV de IDs)
+//   formaPagamento     — multi (CSV: "PIX,BOLETO,CREDIT_CARD,FICOU_FACIL")
+//   incluirFicouFacil  — "true" inclui FicouFacil unificado na listagem
+//   inicio, fim        — filtro de criadoEm
+//   inicioConcluido, fimConcluido — filtro de concluidoEm
+//   temDesconto        — "true"|"false"
+//   temTermoAssinado   — "true"|"false"
+//   valorMin, valorMax — range valorAcordo
+//   pctPagoMin, pctPagoMax — 0-100
+//   aging              — multi (CSV: "baixa,media,alta") — categoria de aging do acordo
+//   canalPrecedente    — multi (CSV: "ligacao,waba,3cplus,sem_contato")
+//   page, limit        — paginacao (default 50)
+//
+// Cada linha eh enriquecida com:
+//   _percentualPago, _valorPago, _agingCategoria, _canalPrecedente, _diasAteConcluir
 // -----------------------------------------------
 export async function listar(req, res, next) {
   try {
-    const { etapa, criadoPor, search, page = 1, limit = 50 } = req.query;
+    const {
+      etapa, criadoPor, formaPagamento, search,
+      inicio, fim, inicioConcluido, fimConcluido,
+      temDesconto, temTermoAssinado,
+      valorMin, valorMax, pctPagoMin, pctPagoMax,
+      aging, canalPrecedente, incluirFicouFacil,
+      page = 1, limit = 50,
+    } = req.query;
+
     const termo = String(search || '').trim();
     const pageNum = Number(page) || 1;
     const limitNum = Number(limit) || 50;
     const offset = (pageNum - 1) * limitNum;
-
-    // Antes: 5 round-trips Prisma (acordo + pagamentos + parcelas + documento + count)
-    // levavam 500ms-3.5s no Cloud SQL. Agora: 1 round-trip com json_agg/row_to_json
-    // — em ~500ms cold, ~450ms warm para a base atual.
-    // Os 2 fluxos (com/sem busca) compartilham a mesma SQL; so muda WHERE + ORDER BY.
 
     const whereClauses = [];
     const params = [];
@@ -41,8 +63,86 @@ export async function listar(req, res, next) {
         orderClause = busca.orderClause;
       }
     }
-    if (etapa) { whereClauses.push(`etapa = $${idx++}`); params.push(etapa); }
-    if (criadoPor) { whereClauses.push(`"criadoPor" = $${idx++}`); params.push(Number(criadoPor)); }
+    // Multi-select via CSV
+    const csvParam = (v) => String(v || '').split(',').map(x => x.trim()).filter(Boolean);
+    if (etapa) {
+      const etapas = csvParam(etapa);
+      if (etapas.length) {
+        whereClauses.push(`etapa = ANY($${idx++}::text[])`);
+        params.push(etapas);
+      }
+    }
+    if (criadoPor) {
+      const ids = csvParam(criadoPor).map(Number).filter(Boolean);
+      if (ids.length) {
+        whereClauses.push(`"criadoPor" = ANY($${idx++}::int[])`);
+        params.push(ids);
+      }
+    }
+    if (inicio) { whereClauses.push(`"criadoEm" >= $${idx++}::timestamp`); params.push(`${inicio} 00:00:00`); }
+    if (fim) { whereClauses.push(`"criadoEm" <= $${idx++}::timestamp`); params.push(`${fim} 23:59:59`); }
+    if (inicioConcluido) { whereClauses.push(`"concluidoEm" >= $${idx++}::timestamp`); params.push(`${inicioConcluido} 00:00:00`); }
+    if (fimConcluido) { whereClauses.push(`"concluidoEm" <= $${idx++}::timestamp`); params.push(`${fimConcluido} 23:59:59`); }
+    if (temDesconto === 'true') whereClauses.push(`"descontoAcordo" > 0`);
+    if (temDesconto === 'false') whereClauses.push(`("descontoAcordo" IS NULL OR "descontoAcordo" = 0)`);
+    if (valorMin) { whereClauses.push(`"valorAcordo" >= $${idx++}::numeric`); params.push(Number(valorMin)); }
+    if (valorMax) { whereClauses.push(`"valorAcordo" <= $${idx++}::numeric`); params.push(Number(valorMax)); }
+
+    // Filtros que dependem de joins ou agregacoes serao aplicados via HAVING/EXISTS
+
+    // formaPagamento: filtra acordos com ao menos 1 pagamento da forma
+    if (formaPagamento) {
+      const formas = csvParam(formaPagamento);
+      if (formas.length) {
+        whereClauses.push(`EXISTS (SELECT 1 FROM cobranca.pagamento_acordo pa WHERE pa."acordoId" = a.id AND pa."formaPagamento" = ANY($${idx++}::text[]))`);
+        params.push(formas);
+      }
+    }
+    // temTermoAssinado
+    if (temTermoAssinado === 'true') {
+      whereClauses.push(`EXISTS (SELECT 1 FROM cobranca.documento d WHERE d."acordoId" = a.id AND d."assinadoEm" IS NOT NULL)`);
+    } else if (temTermoAssinado === 'false') {
+      whereClauses.push(`NOT EXISTS (SELECT 1 FROM cobranca.documento d WHERE d."acordoId" = a.id AND d."assinadoEm" IS NOT NULL)`);
+    }
+    // aging categoria (Baixa 0-60, Media 61-150, Alta 150+): calcula dias atraso da parcela
+    // mais antiga em relacao a criadoEm do acordo
+    if (aging) {
+      const cats = csvParam(aging).map(x => x.toLowerCase());
+      if (cats.length) {
+        const condicoes = cats.map(c => {
+          if (c === 'baixa') return `(SELECT COALESCE(MAX(a."criadoEm"::date - po."dataVencimento"::date), 0) FROM cobranca.parcela_original_acordo po WHERE po."acordoId" = a.id) BETWEEN 0 AND 60`;
+          if (c === 'media' || c === 'média') return `(SELECT COALESCE(MAX(a."criadoEm"::date - po."dataVencimento"::date), 0) FROM cobranca.parcela_original_acordo po WHERE po."acordoId" = a.id) BETWEEN 61 AND 150`;
+          if (c === 'alta') return `(SELECT COALESCE(MAX(a."criadoEm"::date - po."dataVencimento"::date), 0) FROM cobranca.parcela_original_acordo po WHERE po."acordoId" = a.id) > 150`;
+          return null;
+        }).filter(Boolean);
+        if (condicoes.length) whereClauses.push(`(${condicoes.join(' OR ')})`);
+      }
+    }
+    // canal precedente (heuristica: ligacao>4s OU msg fromMe nos 7d antes do criadoEm)
+    if (canalPrecedente) {
+      const canais = csvParam(canalPrecedente).map(x => x.toLowerCase());
+      if (canais.length) {
+        const condicoes = canais.map(c => {
+          if (c === 'ligacao' || c === 'ligação') return `EXISTS (SELECT 1 FROM cobranca.registro_ligacao rl WHERE rl."pessoaCodigo" = a."pessoaCodigo" AND rl."dataHoraChamada" BETWEEN a."criadoEm" - INTERVAL '7 days' AND a."criadoEm" AND rl."tempoFalando" >= 4)`;
+          if (c === 'waba') return `EXISTS (SELECT 1 FROM cobranca.mensagem_whatsapp mw WHERE mw."pessoaCodigo" = a."pessoaCodigo" AND mw.timestamp BETWEEN a."criadoEm" - INTERVAL '7 days' AND a."criadoEm" AND mw."fromMe" = true AND mw."instanciaTipo" = 'waba')`;
+          if (c === '3cplus' || c === '3c+') return `EXISTS (SELECT 1 FROM cobranca.mensagem_whatsapp mw WHERE mw."pessoaCodigo" = a."pessoaCodigo" AND mw.timestamp BETWEEN a."criadoEm" - INTERVAL '7 days' AND a."criadoEm" AND mw."fromMe" = true AND mw."instanciaTipo" = 'whatsapp-3c')`;
+          if (c === 'sem_contato') return `NOT EXISTS (SELECT 1 FROM cobranca.registro_ligacao rl WHERE rl."pessoaCodigo" = a."pessoaCodigo" AND rl."dataHoraChamada" BETWEEN a."criadoEm" - INTERVAL '7 days' AND a."criadoEm" AND rl."tempoFalando" >= 4) AND NOT EXISTS (SELECT 1 FROM cobranca.mensagem_whatsapp mw WHERE mw."pessoaCodigo" = a."pessoaCodigo" AND mw.timestamp BETWEEN a."criadoEm" - INTERVAL '7 days' AND a."criadoEm" AND mw."fromMe" = true)`;
+          return null;
+        }).filter(Boolean);
+        if (condicoes.length) whereClauses.push(`(${condicoes.join(' OR ')})`);
+      }
+    }
+    // pctPago — filtro pos agregacao (vai via HAVING simulada com subquery)
+    if (pctPagoMin || pctPagoMax) {
+      const min = pctPagoMin ? Number(pctPagoMin) : 0;
+      const max = pctPagoMax ? Number(pctPagoMax) : 100;
+      whereClauses.push(`
+        CASE WHEN a."valorAcordo" > 0 THEN
+          (COALESCE((SELECT SUM(pa."valor") FROM cobranca.pagamento_acordo pa WHERE pa."acordoId" = a.id AND pa.situacao = 'CONFIRMADO'), 0) / a."valorAcordo") * 100
+        ELSE 0 END BETWEEN $${idx++} AND $${idx++}
+      `);
+      params.push(min, max);
+    }
 
     params.push(limitNum, offset);
     const limitIdx = idx++;
@@ -52,6 +152,8 @@ export async function listar(req, res, next) {
 
     // Documento: excluimos pdfAssinado (Bytes pesados, nao usados no kanban) via json_build_object.
     // pagamentos/parcelas: json_agg traz tudo dos respectivos models.
+    // Campos enriquecidos: agingCategoria, canalPrecedente, percentualPago, valorPago,
+    // diasAteConcluir — calculados via subqueries pra cada linha.
     const sql = `
       SELECT
         a.*,
@@ -81,6 +183,40 @@ export async function listar(req, res, next) {
           FROM cobranca.documento d
           WHERE d."acordoId" = a.id
           LIMIT 1) AS documento,
+        -- Aging categoria do acordo (criadoEm - dataVencimento da parcela mais antiga)
+        CASE
+          WHEN (SELECT COALESCE(MAX(a."criadoEm"::date - po."dataVencimento"::date), 0)
+                FROM cobranca.parcela_original_acordo po WHERE po."acordoId" = a.id) <= 60
+            THEN 'baixa'
+          WHEN (SELECT COALESCE(MAX(a."criadoEm"::date - po."dataVencimento"::date), 0)
+                FROM cobranca.parcela_original_acordo po WHERE po."acordoId" = a.id) <= 150
+            THEN 'media'
+          ELSE 'alta'
+        END AS "_agingCategoria",
+        -- Valor pago (soma de pagamento_acordo CONFIRMADO)
+        COALESCE((SELECT SUM(pa.valor) FROM cobranca.pagamento_acordo pa
+                  WHERE pa."acordoId" = a.id AND pa.situacao = 'CONFIRMADO'), 0)::numeric AS "_valorPago",
+        -- Canal precedente (heuristica nos 7d antes do criadoEm — prioridade: ligacao > waba > 3cplus > sem)
+        CASE
+          WHEN EXISTS (SELECT 1 FROM cobranca.registro_ligacao rl
+            WHERE rl."pessoaCodigo" = a."pessoaCodigo"
+              AND rl."dataHoraChamada" BETWEEN a."criadoEm" - INTERVAL '7 days' AND a."criadoEm"
+              AND rl."tempoFalando" >= 4) THEN 'ligacao'
+          WHEN EXISTS (SELECT 1 FROM cobranca.mensagem_whatsapp mw
+            WHERE mw."pessoaCodigo" = a."pessoaCodigo"
+              AND mw.timestamp BETWEEN a."criadoEm" - INTERVAL '7 days' AND a."criadoEm"
+              AND mw."fromMe" = true AND mw."instanciaTipo" = 'waba') THEN 'waba'
+          WHEN EXISTS (SELECT 1 FROM cobranca.mensagem_whatsapp mw
+            WHERE mw."pessoaCodigo" = a."pessoaCodigo"
+              AND mw.timestamp BETWEEN a."criadoEm" - INTERVAL '7 days' AND a."criadoEm"
+              AND mw."fromMe" = true AND mw."instanciaTipo" = 'whatsapp-3c') THEN '3cplus'
+          ELSE 'sem_contato'
+        END AS "_canalPrecedente",
+        -- Dias entre criadoEm e concluidoEm (NULL se nao concluido)
+        CASE WHEN a."concluidoEm" IS NOT NULL
+          THEN EXTRACT(EPOCH FROM (a."concluidoEm" - a."criadoEm")) / 86400.0
+          ELSE NULL
+        END AS "_diasAteConcluir",
         COUNT(*) OVER()::int AS _total
       FROM cobranca.acordo_financeiro a
       ${where}
@@ -94,7 +230,7 @@ export async function listar(req, res, next) {
     // Normaliza paridade com o output do Prisma (Date objects nos campos de data dentro dos
     // arrays). PostgreSQL retorna timestamp sem TZ via json_agg como string "YYYY-MM-DDTHH:MM:SS";
     // convertemos para Date para que JSON.stringify produza ISO 'Z' UTC, igual ao caminho Prisma.
-    const acordos = rows.map(r => {
+    let acordos = rows.map(r => {
       const { _total, ...acordo } = r;
       if (Array.isArray(acordo.pagamentos)) {
         for (const p of acordo.pagamentos) {
@@ -111,10 +247,73 @@ export async function listar(req, res, next) {
         if (typeof acordo.documento.enviadoEm === 'string') acordo.documento.enviadoEm = parseTimestampUtc(acordo.documento.enviadoEm);
         if (typeof acordo.documento.assinadoEm === 'string') acordo.documento.assinadoEm = parseTimestampUtc(acordo.documento.assinadoEm);
       }
+      // Calcula percentual pago no client (mais simples que SQL)
+      const valorAcordo = Number(acordo.valorAcordo) || 0;
+      const valorPago = Number(acordo._valorPago) || 0;
+      acordo._percentualPago = valorAcordo > 0 ? (valorPago / valorAcordo) * 100 : 0;
+      acordo._valorPago = valorPago;
+      acordo._diasAteConcluir = acordo._diasAteConcluir != null ? Number(acordo._diasAteConcluir) : null;
+      acordo._tipo = 'acordo';
       return acordo;
     });
 
-    res.json({ acordos, total });
+    // Se solicitado, mescla FicouFacil na listagem (volume baixo, pode ordenar in-memory)
+    if (incluirFicouFacil === 'true') {
+      const ffSql = `
+        SELECT
+          ff.id, ff."pessoaCodigo", ff."pessoaNome", ff."pessoaCpf",
+          ff.matricula, ff.turma AS "turmaIdentificador",
+          ff.etapa, ff."valorInadimplenteMJ" AS "valorAcordo",
+          ff."valorInadimplenteMJ" AS "valorSaldoDevedor",
+          ff."criadoPor", ff."criadoPorNome", ff.observacao,
+          ff."criadoEm", ff."concluidoEm", ff."canceladoEm",
+          (CASE WHEN ff."concluidoEm" IS NOT NULL
+            THEN EXTRACT(EPOCH FROM (ff."concluidoEm" - ff."criadoEm")) / 86400.0
+            ELSE NULL END) AS "_diasAteConcluir"
+        FROM cobranca.ficou_facil ff
+        WHERE 1=1
+          ${termo ? `AND (LOWER(ff."pessoaNome") LIKE LOWER('%${termo.replace(/'/g, "''")}%') OR ff."pessoaCpf" LIKE '%${termo.replace(/'/g, "''")}%')` : ''}
+        ORDER BY ff."criadoEm" DESC
+        LIMIT 100
+      `;
+      const ffRows = await prisma.$queryRawUnsafe(ffSql);
+      const ffAcordos = ffRows.map(ff => ({
+        id: ff.id,
+        pessoaCodigo: ff.pessoaCodigo,
+        pessoaNome: ff.pessoaNome,
+        pessoaCpf: ff.pessoaCpf,
+        matricula: ff.matricula,
+        turmaIdentificador: ff.turmaIdentificador,
+        etapa: ff.etapa,
+        valorOriginal: Number(ff.valorAcordo),
+        valorMultaJuros: 0,
+        valorDescontos: 0,
+        valorRecebidoPrevio: 0,
+        valorSaldoDevedor: Number(ff.valorSaldoDevedor),
+        descontoAcordo: 0,
+        valorAcordo: Number(ff.valorAcordo),
+        criadoPor: ff.criadoPor,
+        criadoPorNome: ff.criadoPorNome,
+        observacao: ff.observacao,
+        criadoEm: ff.criadoEm,
+        concluidoEm: ff.concluidoEm,
+        canceladoEm: ff.canceladoEm,
+        parcelasOriginais: [],
+        pagamentos: [],
+        documento: null,
+        _agingCategoria: 'alta', // FF e cronico, sempre Alta
+        _valorPago: ff.etapa === 'CONCLUIDO' ? Number(ff.valorAcordo) : 0,
+        _percentualPago: ff.etapa === 'CONCLUIDO' ? 100 : 0,
+        _canalPrecedente: 'ficou_facil',
+        _diasAteConcluir: ff._diasAteConcluir != null ? Number(ff._diasAteConcluir) : null,
+        _tipo: 'ficou_facil',
+      }));
+      acordos = [...acordos, ...ffAcordos].sort((a, b) =>
+        new Date(b.criadoEm).getTime() - new Date(a.criadoEm).getTime()
+      );
+    }
+
+    res.json({ acordos, total: acordos.length > 0 ? Math.max(total, acordos.length) : 0 });
   } catch (error) {
     next(error);
   }
@@ -143,6 +342,224 @@ export async function obter(req, res, next) {
 
     if (!acordo) return res.status(404).json({ error: 'Acordo nao encontrado' });
     res.json(acordo);
+  } catch (error) {
+    next(error);
+  }
+}
+
+// -----------------------------------------------
+// GET /api/acordos/:id/detalhado — Detalhe completo (drawer)
+// Retorna: acordo + parcelas + pagamentos + doc + canal precedente + templates + ligacoes + timeline + outros acordos do aluno
+// -----------------------------------------------
+export async function detalhado(req, res, next) {
+  try {
+    const { id } = req.params;
+    const acordo = await prisma.acordoFinanceiro.findUnique({
+      where: { id },
+      include: {
+        pagamentos: { orderBy: { numeroPagamento: 'asc' } },
+        parcelasOriginais: { orderBy: { dataVencimento: 'asc' } },
+        documento: true,
+      },
+    });
+    if (!acordo) return res.status(404).json({ error: 'Acordo nao encontrado' });
+
+    const criadoEm = acordo.criadoEm;
+    const pessoaCodigo = acordo.pessoaCodigo;
+
+    // Canal precedente — busca os 4 sinais nos 7d antes do criadoEm
+    const [ultimaLigacao, ultimaMsgWaba, ultimaMsg3cplus, disparosRegua, templatesEnviados, ligacoesHistorico, outrosAcordos, ocorrencias] = await Promise.all([
+      // Ligacao atendida >4s nos 7d antes
+      prisma.$queryRawUnsafe(`
+        SELECT id, "dataHoraChamada", "dataHoraAtendida", "tempoFalando", "agenteNome",
+               "qualificacaoNome", "qualificacaoPositiva", "gravacaoUrl", direcao, status
+        FROM cobranca.registro_ligacao
+        WHERE "pessoaCodigo" = $1
+          AND "dataHoraChamada" BETWEEN $2::timestamp - INTERVAL '7 days' AND $2::timestamp
+          AND "tempoFalando" >= 4
+        ORDER BY "dataHoraChamada" DESC LIMIT 1
+      `, pessoaCodigo, criadoEm),
+      // Ultima msg WABA fromMe nos 7d
+      prisma.$queryRawUnsafe(`
+        SELECT id, timestamp, corpo, "templateMetaNome"
+        FROM cobranca.mensagem_whatsapp
+        WHERE "pessoaCodigo" = $1
+          AND timestamp BETWEEN $2::timestamp - INTERVAL '7 days' AND $2::timestamp
+          AND "fromMe" = true AND "instanciaTipo" = 'waba'
+        ORDER BY timestamp DESC LIMIT 1
+      `, pessoaCodigo, criadoEm),
+      // Ultima msg 3C+ fromMe nos 7d
+      prisma.$queryRawUnsafe(`
+        SELECT id, timestamp, corpo, "templateMetaNome"
+        FROM cobranca.mensagem_whatsapp
+        WHERE "pessoaCodigo" = $1
+          AND timestamp BETWEEN $2::timestamp - INTERVAL '7 days' AND $2::timestamp
+          AND "fromMe" = true AND "instanciaTipo" = 'whatsapp-3c'
+        ORDER BY timestamp DESC LIMIT 1
+      `, pessoaCodigo, criadoEm),
+      // Disparos da regua nos 14d antes
+      prisma.$queryRawUnsafe(`
+        SELECT id, "disparadoEm", "templateNomeBlip", status
+        FROM cobranca.disparo_mensagem
+        WHERE "pessoaCodigo" = $1
+          AND "disparadoEm" BETWEEN $2::timestamp - INTERVAL '14 days' AND $2::timestamp
+          AND status = 'ENVIADO'
+        ORDER BY "disparadoEm" DESC LIMIT 20
+      `, pessoaCodigo, criadoEm),
+      // Templates enviados ao aluno nos 14d
+      prisma.$queryRawUnsafe(`
+        SELECT timestamp, "templateMetaNome", "instanciaTipo", "fromMe", corpo
+        FROM cobranca.mensagem_whatsapp
+        WHERE "pessoaCodigo" = $1
+          AND timestamp BETWEEN $2::timestamp - INTERVAL '14 days' AND $2::timestamp
+          AND "fromMe" = true
+          AND "templateMetaNome" IS NOT NULL
+        ORDER BY timestamp DESC LIMIT 30
+      `, pessoaCodigo, criadoEm),
+      // Historico de ligacoes do aluno nos 30d antes ate hoje
+      prisma.$queryRawUnsafe(`
+        SELECT id, "dataHoraChamada", "tempoFalando", "agenteNome", "qualificacaoNome",
+               "qualificacaoPositiva", direcao, status, "statusTexto"
+        FROM cobranca.registro_ligacao
+        WHERE "pessoaCodigo" = $1
+          AND "dataHoraChamada" >= $2::timestamp - INTERVAL '30 days'
+        ORDER BY "dataHoraChamada" DESC LIMIT 30
+      `, pessoaCodigo, criadoEm),
+      // Outros acordos do mesmo aluno
+      prisma.$queryRawUnsafe(`
+        SELECT id, etapa, "valorAcordo", "criadoEm", "concluidoEm", "canceladoEm", "criadoPorNome"
+        FROM cobranca.acordo_financeiro
+        WHERE "pessoaCodigo" = $1 AND id != $2
+        ORDER BY "criadoEm" DESC LIMIT 20
+      `, pessoaCodigo, id),
+      // Timeline de ocorrencias do acordo ou do aluno proximo ao acordo
+      prisma.$queryRawUnsafe(`
+        SELECT id, tipo, origem, descricao, "agenteNome", "criadoEm", metadados
+        FROM cobranca.ocorrencia
+        WHERE "acordoId" = $1
+          OR ("pessoaCodigo" = $2 AND "criadoEm" BETWEEN $3::timestamp - INTERVAL '30 days' AND $3::timestamp + INTERVAL '30 days')
+        ORDER BY "criadoEm" DESC LIMIT 50
+      `, id, pessoaCodigo, criadoEm),
+    ]);
+
+    // Determina canal atribuido pelo precedente (mesma heuristica da listagem)
+    let canalAtribuido = 'sem_contato';
+    let canalDetalhe = null;
+    if (ultimaLigacao[0]) {
+      canalAtribuido = 'ligacao';
+      canalDetalhe = ultimaLigacao[0];
+    } else if (ultimaMsgWaba[0]) {
+      canalAtribuido = 'waba';
+      canalDetalhe = ultimaMsgWaba[0];
+    } else if (ultimaMsg3cplus[0]) {
+      canalAtribuido = '3cplus';
+      canalDetalhe = ultimaMsg3cplus[0];
+    }
+
+    res.json({
+      acordo,
+      canal: {
+        atribuido: canalAtribuido,
+        detalhe: canalDetalhe,
+      },
+      templatesEnviados: templatesEnviados,
+      disparosRegua: disparosRegua,
+      ligacoesHistorico: ligacoesHistorico,
+      outrosAcordos: outrosAcordos,
+      ocorrencias: ocorrencias,
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
+// -----------------------------------------------
+// GET /api/acordos/resumo — Cards de resumo (header da tela)
+// Mesmos filtros que listar, mas retorna agregados ao inves da listagem.
+// -----------------------------------------------
+export async function resumo(req, res, next) {
+  try {
+    const { etapa, criadoPor, inicio, fim } = req.query;
+    const where = [];
+    const params = [];
+    let idx = 1;
+    const csv = (v) => String(v || '').split(',').map(x => x.trim()).filter(Boolean);
+    if (etapa) {
+      const e = csv(etapa);
+      if (e.length) { where.push(`etapa = ANY($${idx++}::text[])`); params.push(e); }
+    }
+    if (criadoPor) {
+      const ids = csv(criadoPor).map(Number).filter(Boolean);
+      if (ids.length) { where.push(`"criadoPor" = ANY($${idx++}::int[])`); params.push(ids); }
+    }
+    if (inicio) { where.push(`"criadoEm" >= $${idx++}::timestamp`); params.push(`${inicio} 00:00:00`); }
+    if (fim) { where.push(`"criadoEm" <= $${idx++}::timestamp`); params.push(`${fim} 23:59:59`); }
+    const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
+
+    const sql = `
+      WITH stats AS (
+        SELECT
+          COUNT(*)::int AS total,
+          COUNT(*) FILTER (WHERE etapa = 'CONCLUIDO')::int AS concluidos,
+          COUNT(*) FILTER (WHERE etapa = 'CANCELADO')::int AS cancelados,
+          COUNT(*) FILTER (WHERE etapa NOT IN ('CONCLUIDO','CANCELADO'))::int AS abertos,
+          ROUND(COALESCE(SUM("valorAcordo"), 0)::numeric, 2) AS valor_acordo_total,
+          ROUND(COALESCE(SUM("descontoAcordo"), 0)::numeric, 2) AS desconto_total,
+          ROUND(AVG(CASE WHEN "concluidoEm" IS NOT NULL
+            THEN EXTRACT(EPOCH FROM ("concluidoEm" - "criadoEm")) / 86400.0 END)::numeric, 1) AS dias_medio_concluir
+        FROM cobranca.acordo_financeiro a
+        ${whereSql}
+      ),
+      pagos AS (
+        SELECT ROUND(COALESCE(SUM(pa.valor), 0)::numeric, 2) AS valor_pago
+        FROM cobranca.pagamento_acordo pa
+        JOIN cobranca.acordo_financeiro a ON a.id = pa."acordoId"
+        WHERE pa.situacao = 'CONFIRMADO' ${whereSql ? `AND ${where.join(' AND ')}` : ''}
+      ),
+      por_agente AS (
+        SELECT "criadoPorNome" AS agente, COUNT(*)::int AS qtd,
+               ROUND(SUM("valorAcordo")::numeric, 2) AS valor
+        FROM cobranca.acordo_financeiro a
+        ${whereSql}
+        GROUP BY "criadoPorNome" ORDER BY qtd DESC LIMIT 5
+      )
+      SELECT
+        (SELECT row_to_json(s) FROM stats s) AS stats,
+        (SELECT row_to_json(p) FROM pagos p) AS pagos,
+        (SELECT json_agg(pa) FROM por_agente pa) AS "porAgente"
+    `;
+    const rows = await prisma.$queryRawUnsafe(sql, ...params, ...params);
+    const r = rows[0] || {};
+    res.json({
+      total: r.stats?.total || 0,
+      concluidos: r.stats?.concluidos || 0,
+      cancelados: r.stats?.cancelados || 0,
+      abertos: r.stats?.abertos || 0,
+      valorAcordoTotal: Number(r.stats?.valor_acordo_total || 0),
+      descontoTotal: Number(r.stats?.desconto_total || 0),
+      valorPago: Number(r.pagos?.valor_pago || 0),
+      diasMedioConcluir: r.stats?.dias_medio_concluir != null ? Number(r.stats.dias_medio_concluir) : null,
+      porAgente: r.porAgente || [],
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
+// -----------------------------------------------
+// GET /api/acordos/agentes — Lista de agentes que ja criaram acordo
+// (alimenta o dropdown de filtro)
+// -----------------------------------------------
+export async function listarAgentes(req, res, next) {
+  try {
+    const agentes = await prisma.$queryRawUnsafe(`
+      SELECT DISTINCT "criadoPor" AS id, "criadoPorNome" AS nome, COUNT(*)::int AS total
+      FROM cobranca.acordo_financeiro
+      WHERE "criadoPorNome" IS NOT NULL
+      GROUP BY "criadoPor", "criadoPorNome"
+      ORDER BY total DESC
+    `);
+    res.json({ agentes });
   } catch (error) {
     next(error);
   }

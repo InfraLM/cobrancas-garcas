@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Loader2 } from 'lucide-react';
 import {
   obterMatrizRecuperacao,
@@ -6,6 +7,26 @@ import {
   type MatrizRecuperacaoResponse,
   type ModoFiltroMatriz,
 } from '../../services/dashboard';
+
+// Mapeia metodo (label da matriz) para os filtros do endpoint /acordos
+function filtrosNegociacaoDoMetodo(metodo: string): Record<string, string> {
+  switch (metodo) {
+    case 'Cartão à vista': return { formaPagamento: 'CREDIT_CARD' };
+    case 'Cartão 2-6x':    return { formaPagamento: 'CREDIT_CARD' };
+    case 'Cartão 7-12x':   return { formaPagamento: 'CREDIT_CARD' };
+    case 'Boleto':         return { formaPagamento: 'BOLETO' };
+    case 'Pix':            return { formaPagamento: 'PIX' };
+    case 'Ficou Fácil':    return { incluirFicouFacil: 'true' };
+    default:               return {};
+  }
+}
+
+function agingDaCategoria(cat: string): string {
+  if (cat === 'Baixa') return 'baixa';
+  if (cat === 'Média') return 'media';
+  if (cat === 'Alta')  return 'alta';
+  return '';
+}
 
 type ValorMostrado = 'bruto' | 'liquido';
 type FormatoValor = 'compacto' | 'completo';
@@ -52,11 +73,34 @@ export default function MatrizRecuperacao({
   onChangeInicio,
   onChangeFim,
 }: Props) {
+  const navigate = useNavigate();
   const [matriz, setMatriz] = useState<MatrizRecuperacaoResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [modoFiltro, setModoFiltro] = useState<ModoFiltroMatriz>('negociado');
   const [valorMostrado, setValorMostrado] = useState<ValorMostrado>('bruto');
   const [formatoValor, setFormatoValor] = useState<FormatoValor>('compacto');
+
+  // Drill-down: clique em celula da matriz navega para /negociacoes com filtros aplicados
+  function irParaNegociacoes(categoria: string, metodo?: string) {
+    const sp = new URLSearchParams();
+    // Em modo "pago" usa filtro de concluidoEm; em "negociado" usa criadoEm
+    if (modoFiltro === 'pago') {
+      sp.set('inicioConcluido', inicio);
+      sp.set('fimConcluido', fim);
+      sp.set('etapa', 'CONCLUIDO');
+    } else {
+      sp.set('inicio', inicio);
+      sp.set('fim', fim);
+    }
+    const aging = agingDaCategoria(categoria);
+    if (aging) sp.set('aging', aging);
+    if (metodo) {
+      const filtrosMet = filtrosNegociacaoDoMetodo(metodo);
+      for (const [k, v] of Object.entries(filtrosMet)) sp.set(k, v);
+    }
+    if (agenteIds.length > 0) sp.set('criadoPor', agenteIds.join(','));
+    navigate(`/negociacoes?${sp.toString()}`);
+  }
 
   useEffect(() => {
     setLoading(true);
@@ -218,13 +262,15 @@ export default function MatrizRecuperacao({
                   {METODOS_MATRIZ.map(m => {
                     const c = linha.metodos[m];
                     const valor = c?.[valorChave] ?? 0;
+                    const clicavel = valor > 0;
                     return (
                       <td
                         key={m}
-                        className="text-right py-2 px-2 tabular-nums"
+                        onClick={clicavel ? () => irParaNegociacoes(linha.categoria, m) : undefined}
+                        className={`text-right py-2 px-2 tabular-nums ${clicavel ? 'cursor-pointer hover:bg-primary/5 transition-colors' : ''}`}
                         title={
                           c && c.qtdAlunos > 0
-                            ? `${c.qtdAlunos} aluno${c.qtdAlunos > 1 ? 's' : ''} • Bruto ${fmt(c.valorBruto)} • Líquido ${fmt(c.valorLiquido)}`
+                            ? `Clique para ver os ${c.qtdAlunos} aluno${c.qtdAlunos > 1 ? 's' : ''}\nBruto ${fmt(c.valorBruto)} • Líquido ${fmt(c.valorLiquido)}`
                             : undefined
                         }
                       >
@@ -241,7 +287,11 @@ export default function MatrizRecuperacao({
                       </td>
                     );
                   })}
-                  <td className="text-right py-2 px-2 tabular-nums border-l border-gray-200 font-semibold">
+                  <td
+                    onClick={linha.totalCategoria.qtdAlunos > 0 ? () => irParaNegociacoes(linha.categoria) : undefined}
+                    className={`text-right py-2 px-2 tabular-nums border-l border-gray-200 font-semibold ${linha.totalCategoria.qtdAlunos > 0 ? 'cursor-pointer hover:bg-primary/5 transition-colors' : ''}`}
+                    title={linha.totalCategoria.qtdAlunos > 0 ? `Clique para ver os ${linha.totalCategoria.qtdAlunos} aluno${linha.totalCategoria.qtdAlunos > 1 ? 's' : ''} da categoria ${linha.categoria}` : undefined}
+                  >
                     <div>{fmtSwitch(linha.totalCategoria[valorChave], formatoValor)}</div>
                     <div className="text-[0.5625rem] text-on-surface-variant font-normal">
                       {linha.totalCategoria.qtdAlunos} aluno{linha.totalCategoria.qtdAlunos !== 1 ? 's' : ''}

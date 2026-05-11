@@ -1,29 +1,143 @@
 import { api } from './api';
 import type { AcordoFinanceiro, PagamentoAcordo } from '../types/acordo';
 
-interface ListarAcordosParams {
-  etapa?: string;
-  criadoPor?: string;
+export type AgingCategoria = 'baixa' | 'media' | 'alta';
+export type CanalPrecedente = 'ligacao' | 'waba' | '3cplus' | 'sem_contato' | 'ficou_facil';
+export type TipoNegociacao = 'acordo' | 'ficou_facil';
+
+export interface AcordoEnriquecido extends AcordoFinanceiro {
+  _agingCategoria: AgingCategoria;
+  _canalPrecedente: CanalPrecedente;
+  _valorPago: number;
+  _percentualPago: number;
+  _diasAteConcluir: number | null;
+  _tipo: TipoNegociacao;
+}
+
+export interface ListarAcordosParams {
   search?: string;
+  etapa?: string;             // CSV
+  criadoPor?: string;         // CSV de IDs
+  formaPagamento?: string;    // CSV: PIX,BOLETO,CREDIT_CARD
+  inicio?: string;            // YYYY-MM-DD
+  fim?: string;
+  inicioConcluido?: string;
+  fimConcluido?: string;
+  temDesconto?: 'true' | 'false';
+  temTermoAssinado?: 'true' | 'false';
+  valorMin?: number;
+  valorMax?: number;
+  pctPagoMin?: number;
+  pctPagoMax?: number;
+  aging?: string;             // CSV: baixa,media,alta
+  canalPrecedente?: string;   // CSV: ligacao,waba,3cplus,sem_contato
+  incluirFicouFacil?: 'true' | 'false';
   page?: number;
   limit?: number;
 }
 
 interface ListarAcordosResponse {
-  acordos: AcordoFinanceiro[];
+  acordos: AcordoEnriquecido[];
   total: number;
 }
 
 export async function listarAcordos(params: ListarAcordosParams = {}): Promise<ListarAcordosResponse> {
-  const searchParams = new URLSearchParams();
-  if (params.etapa) searchParams.set('etapa', params.etapa);
-  if (params.criadoPor) searchParams.set('criadoPor', params.criadoPor);
-  if (params.search) searchParams.set('search', params.search);
-  if (params.page) searchParams.set('page', String(params.page));
-  if (params.limit) searchParams.set('limit', String(params.limit));
+  const qs = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) {
+    if (v !== undefined && v !== null && v !== '') qs.set(k, String(v));
+  }
+  const q = qs.toString();
+  return api.get<ListarAcordosResponse>(`/acordos${q ? `?${q}` : ''}`);
+}
 
-  const qs = searchParams.toString();
-  return api.get<ListarAcordosResponse>(`/acordos${qs ? `?${qs}` : ''}`);
+// Resumo agregado (cards header)
+export interface ResumoAcordos {
+  total: number;
+  concluidos: number;
+  cancelados: number;
+  abertos: number;
+  valorAcordoTotal: number;
+  descontoTotal: number;
+  valorPago: number;
+  diasMedioConcluir: number | null;
+  porAgente: Array<{ agente: string; qtd: number; valor: number }>;
+}
+
+export async function obterResumoAcordos(params: Partial<ListarAcordosParams> = {}): Promise<ResumoAcordos> {
+  const qs = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) {
+    if (v !== undefined && v !== null && v !== '') qs.set(k, String(v));
+  }
+  const q = qs.toString();
+  return api.get<ResumoAcordos>(`/acordos/resumo${q ? `?${q}` : ''}`);
+}
+
+// Lista de agentes que ja criaram acordo (alimenta dropdown de filtro)
+export interface AgenteAcordo {
+  id: number;
+  nome: string;
+  total: number;
+}
+
+export async function listarAgentesAcordos(): Promise<{ agentes: AgenteAcordo[] }> {
+  return api.get<{ agentes: AgenteAcordo[] }>('/acordos/agentes');
+}
+
+// Detalhe completo do acordo (drawer)
+export interface CanalAtribuido {
+  atribuido: CanalPrecedente;
+  detalhe: Record<string, unknown> | null;
+}
+
+export interface AcordoDetalhado {
+  acordo: AcordoFinanceiro;
+  canal: CanalAtribuido;
+  templatesEnviados: Array<{
+    timestamp: string;
+    templateMetaNome: string | null;
+    instanciaTipo: string;
+    fromMe: boolean;
+    corpo: string | null;
+  }>;
+  disparosRegua: Array<{
+    id: string;
+    disparadoEm: string;
+    templateNomeBlip: string;
+    status: string;
+  }>;
+  ligacoesHistorico: Array<{
+    id: string;
+    dataHoraChamada: string;
+    tempoFalando: number;
+    agenteNome: string | null;
+    qualificacaoNome: string | null;
+    qualificacaoPositiva: boolean | null;
+    direcao: string | null;
+    status: number | null;
+    statusTexto: string | null;
+  }>;
+  outrosAcordos: Array<{
+    id: string;
+    etapa: string;
+    valorAcordo: number;
+    criadoEm: string;
+    concluidoEm: string | null;
+    canceladoEm: string | null;
+    criadoPorNome: string | null;
+  }>;
+  ocorrencias: Array<{
+    id: string;
+    tipo: string;
+    origem: string;
+    descricao: string;
+    agenteNome: string | null;
+    criadoEm: string;
+    metadados: Record<string, unknown> | null;
+  }>;
+}
+
+export async function obterAcordoDetalhado(id: string): Promise<AcordoDetalhado> {
+  return api.get<AcordoDetalhado>(`/acordos/${id}/detalhado`);
 }
 
 export async function obterAcordo(id: string): Promise<AcordoFinanceiro> {
