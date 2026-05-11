@@ -5,6 +5,7 @@ import { startSocketWorker } from './workers/socket3cplusWorker.js';
 import { runDeltaSync } from './sync/deltaSync.js';
 import { startReguaScheduler } from './services/reguaSchedulerService.js';
 import { startReguaWorker } from './services/reguaWorkerService.js';
+import { startReguaReconciliacaoWorker } from './services/reguaReconciliacaoService.js';
 import { startSnapshotScheduler } from './services/snapshotService.js';
 import { sincronizarStatus as sincronizarTemplatesMeta } from './services/metaTemplatesService.js';
 
@@ -34,6 +35,11 @@ httpServer.listen(PORT, () => {
   // Scheduler de reguas (1x/dia no horario configurado) + worker de disparo continuo
   startReguaScheduler();
   startReguaWorker();
+
+  // Worker de reconciliacao de conversoes (boot + diario 00:30 BRT)
+  // Popula DisparoMensagem.convertido / convertidoEm / diasAteConversao
+  // baseado em contareceber.updated > disparadoEm AND situacao = 'RE'.
+  startReguaReconciliacaoWorker();
 
   // Snapshot diario da inadimplencia (foto historica da base do funil)
   startSnapshotScheduler().catch(err => console.error('[Snapshot] Erro no start:', err.message));
