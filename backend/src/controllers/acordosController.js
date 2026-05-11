@@ -372,7 +372,7 @@ export async function detalhado(req, res, next) {
       // Ligacao atendida >4s nos 7d antes
       prisma.$queryRawUnsafe(`
         SELECT id, "dataHoraChamada", "dataHoraAtendida", "tempoFalando", "agenteNome",
-               "qualificacaoNome", "qualificacaoPositiva", "gravacaoUrl", direcao, status
+               "qualificacaoNome", "qualificacaoPositiva", "gravacaoUrl", modo, status
         FROM cobranca.registro_ligacao
         WHERE "pessoaCodigo" = $1
           AND "dataHoraChamada" BETWEEN $2::timestamp - INTERVAL '7 days' AND $2::timestamp
@@ -419,7 +419,7 @@ export async function detalhado(req, res, next) {
       // Historico de ligacoes do aluno nos 30d antes ate hoje
       prisma.$queryRawUnsafe(`
         SELECT id, "dataHoraChamada", "tempoFalando", "agenteNome", "qualificacaoNome",
-               "qualificacaoPositiva", direcao, status, "statusTexto"
+               "qualificacaoPositiva", modo, status, "statusTexto"
         FROM cobranca.registro_ligacao
         WHERE "pessoaCodigo" = $1
           AND "dataHoraChamada" >= $2::timestamp - INTERVAL '30 days'

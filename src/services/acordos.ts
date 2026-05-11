@@ -112,7 +112,7 @@ export interface AcordoDetalhado {
     agenteNome: string | null;
     qualificacaoNome: string | null;
     qualificacaoPositiva: boolean | null;
-    direcao: string | null;
+    modo: string | null;
     status: number | null;
     statusTexto: string | null;
   }>;
