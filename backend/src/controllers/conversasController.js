@@ -496,9 +496,15 @@ export async function enviarDocumento(req, res, next) {
 
     console.log('[3C+ Upload] Enviando documento:', req.file.originalname, req.file.mimetype, req.file.size, 'bytes');
 
+    // User-Agent realista: o Cloudflare WAF da 3C+ bloqueava uploads de PDF
+    // com UA padrao do Node ("node" / undici) por combinacao MIME application/pdf
+    // + IP datacenter + UA nao-browser. Imagem/audio passam mesmo sem header.
     const response = await fetch(chatUrl('/message/send_document'), {
       method: 'POST',
-      headers: { 'Authorization': `Bearer ${getToken()}` },
+      headers: {
+        'Authorization': `Bearer ${getToken()}`,
+        'User-Agent': 'Mozilla/5.0 (compatible; cobranca-lmedu/1.0; +https://cobranca.lmedu.com.br)',
+      },
       body: formData,
     });
     const text = await response.text();
