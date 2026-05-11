@@ -29,6 +29,8 @@ export interface AcordoFinanceiro {
   matricula?: string;
   turmaIdentificador?: string;
   cursoNome?: string;
+  celularAluno?: string;
+  emailAluno?: string;
 
   etapa: EtapaAcordo;
 
@@ -60,6 +62,7 @@ export interface AcordoFinanceiro {
   termoAssinadoEm?: string;
   seiVinculadoEm?: string;
   canceladoEm?: string;
+  concluidoEm?: string;
 
   // Relações
   parcelasOriginais: ParcelaOriginal[];

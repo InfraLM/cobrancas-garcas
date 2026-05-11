@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { X, FileDown, ExternalLink, Phone, MessageCircle, Smartphone, AlertCircle, CheckCircle2, Clock, FileSignature, ListChecks, Activity, History, Sparkles } from 'lucide-react';
+import { X, FileDown, ExternalLink, Phone, MessageCircle, CheckCircle2, Clock, FileSignature, ListChecks, Activity, History, Sparkles } from 'lucide-react';
 import { obterAcordoDetalhado, baixarDocumentoAssinado, type AcordoDetalhado } from '../../services/acordos';
 import { etapaLabel, etapaCor, formaPagamentoLabel, situacaoPagamentoLabel } from '../../types/acordo';
 
@@ -10,6 +10,13 @@ function fmtBRL(v: number | string | undefined | null) {
 function fmtData(iso: string | null | undefined) {
   if (!iso) return '—';
   return new Date(iso).toLocaleDateString('pt-BR');
+}
+// Para datas "do dia" sem hora real (Asaas paymentDate, dataVencimento de parcela):
+// o backend grava como midnight UTC → JS converte pra BRT mostrando dia anterior.
+// Forcamos UTC para preservar o dia civil.
+function fmtDataDia(iso: string | null | undefined) {
+  if (!iso) return '—';
+  return new Date(iso).toLocaleDateString('pt-BR', { timeZone: 'UTC' });
 }
 function fmtDataHora(iso: string | null | undefined) {
   if (!iso) return '—';
@@ -138,9 +145,13 @@ export default function DrawerNegociacao({ acordoId, onClose }: Props) {
     const pendentes = a.pagamentos?.filter(p => p.situacao === 'PENDENTE' || p.situacao === 'VENCIDO') || [];
     const valorPago = pagos.reduce((s, p) => s + Number(p.valorPago || p.valor || 0), 0);
     const pct = Number(a.valorAcordo) > 0 ? (valorPago / Number(a.valorAcordo)) * 100 : 0;
-    const diasConcluir = a.criadoEm && a.concluidoEm
-      ? Math.floor((new Date(a.concluidoEm).getTime() - new Date(a.criadoEm).getTime()) / (1000 * 60 * 60 * 24))
+    // Clamp em 0: alguns acordos antigos tem concluidoEm setado como UTC midnight da
+    // dataPagamento (que vem do Asaas como "data do dia"), produzindo diff negativo.
+    // Tratamos como "concluido no mesmo dia".
+    const diasConcluirRaw = a.criadoEm && a.concluidoEm
+      ? (new Date(a.concluidoEm).getTime() - new Date(a.criadoEm).getTime()) / (1000 * 60 * 60 * 24)
       : null;
+    const diasConcluir = diasConcluirRaw == null ? null : Math.max(0, Math.floor(diasConcluirRaw));
 
     const marcos = [
       { label: 'Criado', data: a.criadoEm, ok: !!a.criadoEm },
@@ -242,7 +253,7 @@ export default function DrawerNegociacao({ acordoId, onClose }: Props) {
                       <td className="py-1.5">#{po.contaReceberCodigo}</td>
                       <td className="py-1.5 text-right">{fmtBRL(po.valor)}</td>
                       <td className="py-1.5 text-right font-semibold">{fmtBRL(po.saldoDevedor)}</td>
-                      <td className="py-1.5 text-right">{fmtData(po.dataVencimento)}</td>
+                      <td className="py-1.5 text-right">{fmtDataDia(po.dataVencimento)}</td>
                       <td className={`py-1.5 text-right ${atraso != null && atraso > 0 ? 'text-red-600 font-semibold' : 'text-on-surface-variant'}`}>
                         {atraso != null ? `${atraso}d` : '—'}
                       </td>
@@ -286,8 +297,8 @@ export default function DrawerNegociacao({ acordoId, onClose }: Props) {
                       </td>
                       <td className="py-1.5 text-right">{fmtBRL(p.valor)}</td>
                       <td className="py-1.5 text-right text-on-surface-variant">{p.valorLiquido ? fmtBRL(p.valorLiquido) : '—'}</td>
-                      <td className="py-1.5 text-right">{fmtData(p.dataVencimento)}</td>
-                      <td className="py-1.5 text-right">{fmtData(p.dataPagamento)}</td>
+                      <td className="py-1.5 text-right">{fmtDataDia(p.dataVencimento)}</td>
+                      <td className="py-1.5 text-right">{fmtDataDia(p.dataPagamento)}</td>
                       <td className={`py-1.5 text-right text-[0.6875rem] font-semibold ${corStatus}`}>
                         {situacaoPagamentoLabel[p.situacao] || p.situacao}
                       </td>
