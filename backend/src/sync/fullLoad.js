@@ -51,6 +51,10 @@ function getFieldTypes(modelName) {
 // -----------------------------------------------
 
 // Datas: SEI envia "DD-MM-YYYY HH:mm:ss.SSS"
+// IMPORTANTE: o SEI envia em horario de Brasilia (BRT, UTC-3). Forcamos o offset
+// -03:00 no ISO para que a interpretacao independa do timezone do servidor.
+// Antes (sem offset): em servidor UTC virava 00:00 UTC (= 21:00 BRT do dia anterior),
+// causando bug de "dia anterior" em datas exibidas no frontend.
 function parseDate(value) {
   if (value === null || value === undefined || value === '') return null;
   if (typeof value !== 'string') {
@@ -61,7 +65,7 @@ function parseDate(value) {
   const match = value.match(/^(\d{2})-(\d{2})-(\d{4})\s+(\d{2}):(\d{2}):(\d{2})(?:\.(\d+))?$/);
   if (match) {
     const [, day, month, year, hours, minutes, seconds, ms] = match;
-    const iso = `${year}-${month}-${day}T${hours}:${minutes}:${seconds}.${(ms || '0').padEnd(3, '0')}`;
+    const iso = `${year}-${month}-${day}T${hours}:${minutes}:${seconds}.${(ms || '0').padEnd(3, '0')}-03:00`;
     const d = new Date(iso);
     return isNaN(d.getTime()) ? null : d;
   }
