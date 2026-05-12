@@ -35,6 +35,34 @@ function bearerHeaders(contentType = 'application/json') {
   return h;
 }
 
+/**
+ * Parse defensivo de response da 3C Plus. Quando a 3C/Cloudflare retorna HTML
+ * (erro de gateway, manutencao, rate limit), `response.json()` quebra com
+ * "Unexpected token '<', '<!DOCTYPE'...". Lemos como texto, logamos contexto
+ * e retornamos `{ data, parseError }` para o caller decidir.
+ *
+ * Retorna sempre { ok, status, data, raw, contentType, parseError }.
+ *   - data: objeto JSON parseado (ou null se falhou)
+ *   - raw: corpo bruto (truncado em 500 chars) — util para logar/responder
+ *   - parseError: Error se o JSON.parse falhou (response veio HTML/texto)
+ */
+async function lerRespostaChat(response, contexto = '3C+ Chat API') {
+  const contentType = response.headers.get('content-type') || '';
+  const raw = await response.text().catch(() => '');
+  let data = null;
+  let parseError = null;
+  if (raw) {
+    try { data = JSON.parse(raw); }
+    catch (e) { parseError = e; }
+  }
+  if (parseError) {
+    console.error(
+      `[${contexto}] Resposta nao-JSON (status ${response.status}, content-type "${contentType}"): ${raw.slice(0, 300)}`
+    );
+  }
+  return { ok: response.ok, status: response.status, data, raw, contentType, parseError };
+}
+
 // ─── Config ───────────────────────────────────────────────
 export async function getConfig(req, res) {
   const token = getToken();
@@ -248,17 +276,20 @@ export async function enviarTexto(req, res, next) {
       headers: bearerHeaders(),
       body: JSON.stringify({ chat_id, body, instance_id }),
     });
-    const data = await response.json();
-    if (!response.ok) {
-      console.error('[3C+ Chat API] send_chat falhou:', response.status, data);
-      return res.status(response.status).json(data);
+    const parsed = await lerRespostaChat(response, '3C+ Chat API send_chat');
+    if (!parsed.ok || parsed.parseError) {
+      const msg = parsed.parseError
+        ? `3C Plus retornou resposta invalida (HTTP ${parsed.status}). Tente novamente em alguns instantes.`
+        : (parsed.data?.detail || parsed.data?.error || 'Erro ao enviar mensagem');
+      console.error('[3C+ Chat API] send_chat falhou:', parsed.status, parsed.data || parsed.raw?.slice(0, 200));
+      return res.status(parsed.parseError ? 502 : parsed.status).json({ error: msg, meta: parsed.data });
     }
 
-    await persistirMensagemEnviada(data, chat_id, 'chat', {
+    await persistirMensagemEnviada(parsed.data, chat_id, 'chat', {
       templateWhatsappId,
       instanciaTipoOverride: await lookupInstanciaTipo(instance_id),
     });
-    res.json(data);
+    res.json(parsed.data);
   } catch (error) {
     next(error);
   }
@@ -337,26 +368,30 @@ export async function enviarTemplate(req, res, next) {
       headers: bearerHeaders(),
       body: JSON.stringify(payload),
     });
-    const data = await response.json();
-    if (!response.ok) {
-      console.error('[3C+ Chat API] send_template falhou:', response.status, JSON.stringify(data));
-      // Se 3C/Meta retornar 401, mapear pra 502 pra nao deslogar (mesmo padrao
-      // do templatesMetaController).
-      const isAuthErr = response.status === 401 || response.status === 403;
-      const statusResp = isAuthErr ? 502 : response.status;
+    const parsed = await lerRespostaChat(response, '3C+ Chat API send_template');
+    if (!parsed.ok || parsed.parseError) {
+      console.error('[3C+ Chat API] send_template falhou:', parsed.status, parsed.data || parsed.raw?.slice(0, 200));
+      if (parsed.parseError) {
+        return res.status(502).json({
+          error: `3C Plus retornou resposta invalida (HTTP ${parsed.status}). Tente novamente em alguns instantes.`,
+        });
+      }
+      // 401/403 mapeados para 502 pra nao deslogar (mesmo padrao do templatesMetaController).
+      const isAuthErr = parsed.status === 401 || parsed.status === 403;
+      const statusResp = isAuthErr ? 502 : parsed.status;
       return res.status(statusResp).json({
-        error: data?.error?.error_user_msg || data?.error?.message || data?.detail || 'Erro ao enviar template',
-        meta: data,
+        error: parsed.data?.error?.error_user_msg || parsed.data?.error?.message || parsed.data?.detail || 'Erro ao enviar template',
+        meta: parsed.data,
       });
     }
 
-    await persistirMensagemEnviada(data, chat_id, 'template', {
+    await persistirMensagemEnviada(parsed.data, chat_id, 'template', {
       templateMetaId: tpl.id,
       templateMetaNomeOverride: tpl.name,
       instanciaTipoOverride: 'waba',
       corpoOverride: corpoResolvido,
     });
-    res.json(data);
+    res.json(parsed.data);
   } catch (error) {
     next(error);
   }
@@ -374,13 +409,16 @@ export async function enviarInterno(req, res, next) {
       headers: bearerHeaders(),
       body: JSON.stringify({ chat_id, body }),
     });
-    const data = await response.json();
-    if (!response.ok) {
-      console.error('[3C+ Chat API] send_internal falhou:', response.status, data);
-      return res.status(response.status).json(data);
+    const parsed = await lerRespostaChat(response, '3C+ Chat API send_internal');
+    if (!parsed.ok || parsed.parseError) {
+      console.error('[3C+ Chat API] send_internal falhou:', parsed.status, parsed.data || parsed.raw?.slice(0, 200));
+      const msg = parsed.parseError
+        ? `3C Plus retornou resposta invalida (HTTP ${parsed.status}). Tente novamente em alguns instantes.`
+        : (parsed.data?.detail || parsed.data?.error || 'Erro ao enviar nota interna');
+      return res.status(parsed.parseError ? 502 : parsed.status).json({ error: msg, meta: parsed.data });
     }
-    await persistirMensagemEnviada(data, chat_id, 'internal-message');
-    res.json(data);
+    await persistirMensagemEnviada(parsed.data, chat_id, 'internal-message');
+    res.json(parsed.data);
   } catch (error) {
     next(error);
   }
