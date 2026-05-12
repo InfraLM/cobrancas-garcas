@@ -393,7 +393,10 @@ export default function ConversasPage() {
       mediaNome: null,
       fromMe: true,
       agenteId: AGENTE_ID_LOGADO,
-      agenteNome: AGENTE_NOME_LOGADO,
+      // Usa o apelido da instancia 3C+ selecionada (= quem realmente envia, ex: "Eloi")
+      // em vez do usuario logado (Andre, gestor). Quando o echo do socket chega,
+      // o backend ja persistiu com sent.agent.name da 3C, evitando o "piscar" de nomes.
+      agenteNome: instanciasDisponiveis.find(i => i.instanciaId === inst)?.apelido || AGENTE_NOME_LOGADO,
       timestamp: Math.floor(Date.now() / 1000),
       ack: null,
       interno,
@@ -402,7 +405,7 @@ export default function ConversasPage() {
     setMensagens(prev => [...prev, optimistic]);
 
     promise.catch((err) => console.error('[ConversasPage] Erro ao enviar:', err));
-  }, [conversaAtiva, instanciaSelecionada]);
+  }, [conversaAtiva, instanciaSelecionada, instanciasDisponiveis]);
 
   const handleEnviarArquivo = useCallback((file: File, tipo: 'image' | 'document') => {
     if (!conversaAtiva) return;
@@ -420,7 +423,10 @@ export default function ConversasPage() {
       mediaNome: file.name,
       fromMe: true,
       agenteId: AGENTE_ID_LOGADO,
-      agenteNome: AGENTE_NOME_LOGADO,
+      // Usa o apelido da instancia 3C+ selecionada (= quem realmente envia, ex: "Eloi")
+      // em vez do usuario logado (Andre, gestor). Quando o echo do socket chega,
+      // o backend ja persistiu com sent.agent.name da 3C, evitando o "piscar" de nomes.
+      agenteNome: instanciasDisponiveis.find(i => i.instanciaId === inst)?.apelido || AGENTE_NOME_LOGADO,
       timestamp: Math.floor(Date.now() / 1000),
       ack: null,
       interno: false,
@@ -428,7 +434,7 @@ export default function ConversasPage() {
     };
     setMensagens(prev => [...prev, optimistic]);
     promise.catch((err) => console.error('[ConversasPage] Erro ao enviar arquivo:', err));
-  }, [conversaAtiva, instanciaSelecionada]);
+  }, [conversaAtiva, instanciaSelecionada, instanciasDisponiveis]);
 
   const handleEnviarAudio = useCallback((blob: Blob) => {
     if (!conversaAtiva) return;
@@ -442,7 +448,10 @@ export default function ConversasPage() {
       mediaNome: 'audio.ogg',
       fromMe: true,
       agenteId: AGENTE_ID_LOGADO,
-      agenteNome: AGENTE_NOME_LOGADO,
+      // Usa o apelido da instancia 3C+ selecionada (= quem realmente envia, ex: "Eloi")
+      // em vez do usuario logado (Andre, gestor). Quando o echo do socket chega,
+      // o backend ja persistiu com sent.agent.name da 3C, evitando o "piscar" de nomes.
+      agenteNome: instanciasDisponiveis.find(i => i.instanciaId === inst)?.apelido || AGENTE_NOME_LOGADO,
       timestamp: Math.floor(Date.now() / 1000),
       ack: null,
       interno: false,
@@ -451,7 +460,7 @@ export default function ConversasPage() {
     setMensagens(prev => [...prev, optimistic]);
     conversasService.enviarAudio(conversaAtiva.chatId, blob, inst)
       .catch((err) => console.error('[ConversasPage] Erro ao enviar áudio:', err));
-  }, [conversaAtiva, instanciaSelecionada]);
+  }, [conversaAtiva, instanciaSelecionada, instanciasDisponiveis]);
 
   return (
     <div className="flex h-[calc(100vh-3.5rem)] overflow-hidden -mx-6 -mb-6">

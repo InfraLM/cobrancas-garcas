@@ -107,7 +107,7 @@ export default function ConfigCampanha({ onConfirmar, onVoltar }: ConfigCampanha
           <p className="py-8 text-center text-[0.8125rem] text-gray-400">Nenhuma segmentacao criada. Crie em Segmentacao.</p>
         ) : null}
 
-        <div className="space-y-2 mb-4">
+        <div className="space-y-2 mb-4 max-h-[40vh] overflow-y-auto pr-1">
           {regras.map((regra) => {
             const isSelected = selecionadas.has(regra.id);
             const pct = percentuais.get(regra.id) || 0;

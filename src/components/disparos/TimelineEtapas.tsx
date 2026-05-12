@@ -41,16 +41,16 @@ export default function TimelineEtapas({ etapas, onClickEtapa, onAdicionar }: Pr
         {/* Linha base */}
         <div className="absolute left-[10%] right-[10%] top-1/2 h-px bg-gray-200" />
 
-        {/* Marco VENCIMENTO (0) */}
+        {/* Marco VENCIMENTO (0) — label ACIMA da linha pra nao colidir com "+Nd" das etapas */}
         {min <= 0 && max >= 0 && (
           <div
-            className="absolute top-1/2 -translate-y-1/2 flex flex-col items-center"
+            className="absolute top-1/2 flex flex-col items-center"
             style={{ left: `${posPct(0)}%`, transform: 'translate(-50%, -50%)' }}
           >
-            <div className="w-0.5 h-8 bg-red-400" />
-            <span className="mt-1 text-[0.625rem] font-semibold uppercase tracking-wider text-red-500">
+            <span className="mb-1 text-[0.625rem] font-semibold uppercase tracking-wider text-red-500">
               Vencimento
             </span>
+            <div className="w-0.5 h-8 bg-red-400" />
           </div>
         )}
 

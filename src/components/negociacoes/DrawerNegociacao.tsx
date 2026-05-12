@@ -507,18 +507,16 @@ export default function DrawerNegociacao({ acordoId, onClose }: Props) {
                   <th className="text-left py-1">Data</th>
                   <th className="text-left py-1">Agente</th>
                   <th className="text-right py-1">Duração</th>
-                  <th className="text-left py-1">Qualificação</th>
                 </tr>
               </thead>
               <tbody>
                 {contexto.ligacoesHistorico.map(l => (
                   <tr key={l.id} className="border-b border-gray-50">
-                    <td className="py-1">{fmtDataHora(l.dataHoraChamada)}</td>
-                    <td className="py-1 truncate max-w-[120px]">{l.agenteNome || '—'}</td>
-                    <td className={`py-1 text-right ${l.tempoFalando >= 4 ? 'font-semibold text-emerald-600' : 'text-on-surface-variant'}`}>
+                    <td className="py-1 whitespace-nowrap">{fmtDataHora(l.dataHoraChamada)}</td>
+                    <td className="py-1">{l.agenteNome || '—'}</td>
+                    <td className={`py-1 text-right whitespace-nowrap ${l.tempoFalando >= 4 ? 'font-semibold text-emerald-600' : 'text-on-surface-variant'}`}>
                       {l.tempoFalando}s
                     </td>
-                    <td className="py-1 text-[0.6875rem]">{l.qualificacaoNome || l.statusTexto || '—'}</td>
                   </tr>
                 ))}
               </tbody>
