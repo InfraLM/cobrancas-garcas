@@ -108,6 +108,14 @@ export interface PagamentoAcordo {
   valorPago?: number;
   valorLiquido?: number;           // netValue do Asaas
   taxaAsaas?: number;              // value - netValue
+  confirmadoEm?: string;
+  recebidoEm?: string;
+
+  // Cartão parcelado: limite capturado na 1a parcela.
+  // Quando true, o valor TOTAL deste pagamento já está garantido pelo banco
+  // (mesmo que situacao ainda esteja PENDENTE/CONFIRMADO de parcela 1).
+  creditCardCaptured?: boolean;
+  creditCardCapturedAt?: string;
 
   // Mensagem de erro do Asaas (presente quando situacao === 'ERRO')
   erroMensagem?: string | null;

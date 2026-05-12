@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { X, FileDown, ExternalLink, Phone, MessageCircle, CheckCircle2, Clock, FileSignature, ListChecks, Activity, History, Sparkles } from 'lucide-react';
-import { obterAcordoDetalhado, baixarDocumentoAssinado, type AcordoDetalhado } from '../../services/acordos';
+import { obterAcordoDetalhado, obterAcordoContexto, baixarDocumentoAssinado, type AcordoDetalhado, type AcordoContexto } from '../../services/acordos';
 import { etapaLabel, etapaCor, formaPagamentoLabel, situacaoPagamentoLabel } from '../../types/acordo';
 
 function fmtBRL(v: number | string | undefined | null) {
@@ -38,21 +38,38 @@ interface Props {
 
 export default function DrawerNegociacao({ acordoId, onClose }: Props) {
   const [data, setData] = useState<AcordoDetalhado | null>(null);
+  const [contexto, setContexto] = useState<AcordoContexto | null>(null);
   const [loading, setLoading] = useState(false);
+  const [loadingContexto, setLoadingContexto] = useState(false);
   const [tab, setTab] = useState<TabId>('resumo');
 
+  // Carrega o resumo rapido (aba "Resumo" abre instantaneamente).
   useEffect(() => {
     if (!acordoId) {
       setData(null);
+      setContexto(null);
       return;
     }
     setLoading(true);
     setTab('resumo');
+    setContexto(null);
     obterAcordoDetalhado(acordoId)
       .then(setData)
       .catch((e) => console.error('Erro ao carregar acordo:', e))
       .finally(() => setLoading(false));
   }, [acordoId]);
+
+  // Lazy-load do contexto quando o usuario abre uma aba que precisa dele.
+  // Carrega 1x e fica em cache enquanto o drawer estiver aberto pro mesmo acordo.
+  useEffect(() => {
+    if (!acordoId || contexto || loadingContexto) return;
+    if (tab !== 'comunicacao' && tab !== 'timeline' && tab !== 'historico') return;
+    setLoadingContexto(true);
+    obterAcordoContexto(acordoId)
+      .then(setContexto)
+      .catch((e) => console.error('Erro ao carregar contexto do acordo:', e))
+      .finally(() => setLoadingContexto(false));
+  }, [acordoId, tab, contexto, loadingContexto]);
 
   if (!acordoId) return null;
 
@@ -128,9 +145,18 @@ export default function DrawerNegociacao({ acordoId, onClose }: Props) {
               {tab === 'resumo' && <AbaResumo data={data} />}
               {tab === 'parcelas' && <AbaParcelas data={data} />}
               {tab === 'documento' && <AbaDocumento data={data} />}
-              {tab === 'comunicacao' && <AbaComunicacao data={data} />}
-              {tab === 'timeline' && <AbaTimeline data={data} />}
-              {tab === 'historico' && <AbaHistorico data={data} />}
+              {tab === 'comunicacao' && (
+                contexto ? <AbaComunicacao data={data} contexto={contexto} />
+                  : <div className="text-center py-8 text-on-surface-variant">Carregando comunicação…</div>
+              )}
+              {tab === 'timeline' && (
+                contexto ? <AbaTimeline contexto={contexto} />
+                  : <div className="text-center py-8 text-on-surface-variant">Carregando timeline…</div>
+              )}
+              {tab === 'historico' && (
+                contexto ? <AbaHistorico contexto={contexto} />
+                  : <div className="text-center py-8 text-on-surface-variant">Carregando histórico…</div>
+              )}
             </>
           )}
         </div>
@@ -141,10 +167,20 @@ export default function DrawerNegociacao({ acordoId, onClose }: Props) {
   // ----- Sub-componentes -----
   function AbaResumo({ data }: { data: AcordoDetalhado }) {
     const a = data.acordo;
-    const pagos = a.pagamentos?.filter(p => p.situacao === 'CONFIRMADO') || [];
-    const pendentes = a.pagamentos?.filter(p => p.situacao === 'PENDENTE' || p.situacao === 'VENCIDO') || [];
-    const valorPago = pagos.reduce((s, p) => s + Number(p.valorPago || p.valor || 0), 0);
-    const pct = Number(a.valorAcordo) > 0 ? (valorPago / Number(a.valorAcordo)) * 100 : 0;
+    const todos = a.pagamentos || [];
+    // "Pago" em CAIXA: parcelas confirmadas E o que efetivamente entrou (valorPago).
+    // Para cartao parcelado: 1a parcela tem valorPago < valor (resto vira mes a mes).
+    const valorPagoEfetivo = todos
+      .filter(p => p.situacao === 'CONFIRMADO')
+      .reduce((s, p) => s + Math.min(Number(p.valorPago || p.valor || 0), Number(p.valor || 0)), 0);
+    // "Pago" em COMPETENCIA: cartao parcelado conta inteiro porque limite ja foi capturado.
+    const valorPagoGarantido = todos
+      .filter(p => p.situacao === 'CONFIRMADO' || p.creditCardCaptured)
+      .reduce((s, p) => s + Number(p.valor || 0), 0);
+    const valorGarantidoFuturo = Math.max(0, valorPagoGarantido - valorPagoEfetivo);
+    const pagos = todos.filter(p => p.situacao === 'CONFIRMADO');
+    const pendentes = todos.filter(p => p.situacao === 'PENDENTE' || p.situacao === 'VENCIDO');
+    const pct = Number(a.valorAcordo) > 0 ? (valorPagoGarantido / Number(a.valorAcordo)) * 100 : 0;
     // Clamp em 0: alguns acordos antigos tem concluidoEm setado como UTC midnight da
     // dataPagamento (que vem do Asaas como "data do dia"), produzindo diff negativo.
     // Tratamos como "concluido no mesmo dia".
@@ -186,7 +222,17 @@ export default function DrawerNegociacao({ acordoId, onClose }: Props) {
         {/* KPIs */}
         <div className="grid grid-cols-2 gap-3">
           <KpiBox label="Valor acordo" valor={fmtBRL(a.valorAcordo)} />
-          <KpiBox label="Pago" valor={fmtBRL(valorPago)} cor={pct >= 99 ? 'text-emerald-600' : 'text-blue-600'} />
+          <KpiBox
+            label="Pago"
+            valor={fmtBRL(valorPagoGarantido)}
+            cor={pct >= 99 ? 'text-emerald-600' : 'text-blue-600'}
+            sub={valorGarantidoFuturo > 0
+              ? `${fmtBRL(valorPagoEfetivo)} em caixa + ${fmtBRL(valorGarantidoFuturo)} no cartão`
+              : undefined}
+            tooltip={valorGarantidoFuturo > 0
+              ? `${fmtBRL(valorPagoEfetivo)} já recebido em caixa.\n${fmtBRL(valorGarantidoFuturo)} garantido no cartão parcelado — limite capturado, Asaas libera mensalmente.`
+              : undefined}
+          />
           <KpiBox label="Desconto" valor={`${fmtBRL(a.descontoAcordo)} (${Math.round(Number(a.descontoAcordoPercentual || 0))}%)`} />
           <KpiBox label="Saldo devedor original" valor={fmtBRL(a.valorSaldoDevedor)} />
           <KpiBox label="Parcelas pagas" valor={`${pagos.length} / ${a.pagamentos?.length || 0}`} />
@@ -284,10 +330,20 @@ export default function DrawerNegociacao({ acordoId, onClose }: Props) {
               </thead>
               <tbody>
                 {a.pagamentos?.map(p => {
+                  // Cartao parcelado com captura confirmada: status "Garantido" se ainda
+                  // nao chegou a confirmacao individual da parcela (PENDENTE/VENCIDO).
+                  const garantidoCartao = p.creditCardCaptured && p.situacao !== 'CONFIRMADO';
                   const corStatus = p.situacao === 'CONFIRMADO' ? 'text-emerald-600' :
+                    garantidoCartao ? 'text-amber-600' :
                     p.situacao === 'VENCIDO' ? 'text-red-600' :
                     p.situacao === 'ERRO' ? 'text-red-700 font-bold' :
                     p.situacao === 'CANCELADO' ? 'text-gray-400' : 'text-amber-600';
+                  const labelStatus = garantidoCartao
+                    ? 'Garantido (cartão)'
+                    : (situacaoPagamentoLabel[p.situacao] || p.situacao);
+                  const tituloStatus = garantidoCartao
+                    ? 'Crédito já capturado pelo banco. Asaas libera mensalmente.'
+                    : undefined;
                   return (
                     <tr key={p.id} className="border-b border-gray-50">
                       <td className="py-1.5">{p.numeroPagamento}</td>
@@ -299,8 +355,8 @@ export default function DrawerNegociacao({ acordoId, onClose }: Props) {
                       <td className="py-1.5 text-right text-on-surface-variant">{p.valorLiquido ? fmtBRL(p.valorLiquido) : '—'}</td>
                       <td className="py-1.5 text-right">{fmtDataDia(p.dataVencimento)}</td>
                       <td className="py-1.5 text-right">{fmtDataDia(p.dataPagamento)}</td>
-                      <td className={`py-1.5 text-right text-[0.6875rem] font-semibold ${corStatus}`}>
-                        {situacaoPagamentoLabel[p.situacao] || p.situacao}
+                      <td className={`py-1.5 text-right text-[0.6875rem] font-semibold ${corStatus}`} title={tituloStatus}>
+                        {labelStatus}
                       </td>
                     </tr>
                   );
@@ -359,7 +415,7 @@ export default function DrawerNegociacao({ acordoId, onClose }: Props) {
     );
   }
 
-  function AbaComunicacao({ data }: { data: AcordoDetalhado }) {
+  function AbaComunicacao({ data, contexto }: { data: AcordoDetalhado; contexto: AcordoContexto }) {
     const canal = data.canal;
     const corCanal = canal.atribuido === 'ligacao' ? 'bg-blue-50 border-blue-200' :
       canal.atribuido === 'waba' ? 'bg-green-50 border-green-200' :
@@ -388,7 +444,7 @@ export default function DrawerNegociacao({ acordoId, onClose }: Props) {
           <h3 className="text-[0.6875rem] font-bold uppercase tracking-wide text-on-surface-variant mb-2">
             Templates enviados ao aluno (14d antes do acordo)
           </h3>
-          {data.templatesEnviados?.length === 0 ? (
+          {contexto.templatesEnviados?.length === 0 ? (
             <p className="text-[0.75rem] text-on-surface-variant py-1">Nenhum template enviado.</p>
           ) : (
             <table className="w-full text-[0.75rem]">
@@ -400,7 +456,7 @@ export default function DrawerNegociacao({ acordoId, onClose }: Props) {
                 </tr>
               </thead>
               <tbody>
-                {data.templatesEnviados?.map((t, i) => (
+                {contexto.templatesEnviados?.map((t, i) => (
                   <tr key={i} className="border-b border-gray-50">
                     <td className="py-1">{fmtDataHora(t.timestamp)}</td>
                     <td className="py-1 font-mono text-[0.6875rem]">{t.templateMetaNome || '—'}</td>
@@ -412,7 +468,7 @@ export default function DrawerNegociacao({ acordoId, onClose }: Props) {
           )}
         </div>
 
-        {data.disparosRegua?.length > 0 && (
+        {contexto.disparosRegua?.length > 0 && (
           <div>
             <h3 className="text-[0.6875rem] font-bold uppercase tracking-wide text-on-surface-variant mb-2">
               Disparos da régua (14d antes)
@@ -426,7 +482,7 @@ export default function DrawerNegociacao({ acordoId, onClose }: Props) {
                 </tr>
               </thead>
               <tbody>
-                {data.disparosRegua.map(d => (
+                {contexto.disparosRegua.map(d => (
                   <tr key={d.id} className="border-b border-gray-50">
                     <td className="py-1">{fmtDataHora(d.disparadoEm)}</td>
                     <td className="py-1 font-mono text-[0.6875rem]">{d.templateNomeBlip}</td>
@@ -442,7 +498,7 @@ export default function DrawerNegociacao({ acordoId, onClose }: Props) {
           <h3 className="text-[0.6875rem] font-bold uppercase tracking-wide text-on-surface-variant mb-2">
             Ligações (30d antes ao acordo)
           </h3>
-          {data.ligacoesHistorico?.length === 0 ? (
+          {contexto.ligacoesHistorico?.length === 0 ? (
             <p className="text-[0.75rem] text-on-surface-variant py-1">Nenhuma ligação registrada.</p>
           ) : (
             <table className="w-full text-[0.75rem]">
@@ -455,7 +511,7 @@ export default function DrawerNegociacao({ acordoId, onClose }: Props) {
                 </tr>
               </thead>
               <tbody>
-                {data.ligacoesHistorico.map(l => (
+                {contexto.ligacoesHistorico.map(l => (
                   <tr key={l.id} className="border-b border-gray-50">
                     <td className="py-1">{fmtDataHora(l.dataHoraChamada)}</td>
                     <td className="py-1 truncate max-w-[120px]">{l.agenteNome || '—'}</td>
@@ -473,13 +529,13 @@ export default function DrawerNegociacao({ acordoId, onClose }: Props) {
     );
   }
 
-  function AbaTimeline({ data }: { data: AcordoDetalhado }) {
-    if (data.ocorrencias?.length === 0) {
+  function AbaTimeline({ contexto }: { contexto: AcordoContexto }) {
+    if (contexto.ocorrencias?.length === 0) {
       return <p className="text-[0.75rem] text-on-surface-variant py-2">Nenhuma ocorrência registrada.</p>;
     }
     return (
       <div className="space-y-2">
-        {data.ocorrencias.map(o => {
+        {contexto.ocorrencias.map(o => {
           const icon = o.tipo.includes('LIGACAO') ? <Phone size={11} /> :
             o.tipo.includes('WHATSAPP') ? <MessageCircle size={11} /> :
             o.tipo.includes('TERMO') ? <FileSignature size={11} /> :
@@ -505,8 +561,8 @@ export default function DrawerNegociacao({ acordoId, onClose }: Props) {
     );
   }
 
-  function AbaHistorico({ data }: { data: AcordoDetalhado }) {
-    if (data.outrosAcordos?.length === 0) {
+  function AbaHistorico({ contexto }: { contexto: AcordoContexto }) {
+    if (contexto.outrosAcordos?.length === 0) {
       return (
         <div className="text-center py-6 text-[0.75rem] text-on-surface-variant">
           <Sparkles size={20} className="inline text-emerald-500 mb-2" />
@@ -517,9 +573,9 @@ export default function DrawerNegociacao({ acordoId, onClose }: Props) {
     return (
       <div className="space-y-2">
         <p className="text-[0.6875rem] text-on-surface-variant">
-          Este aluno tem mais {data.outrosAcordos.length} negociação(ões) no histórico:
+          Este aluno tem mais {contexto.outrosAcordos.length} negociação(ões) no histórico:
         </p>
-        {data.outrosAcordos.map(o => {
+        {contexto.outrosAcordos.map(o => {
           const cor = etapaCor[o.etapa as keyof typeof etapaCor] || etapaCor.SELECAO;
           return (
             <div key={o.id} className="border border-gray-100 rounded-lg p-3 hover:border-gray-200 transition-colors">
@@ -543,11 +599,18 @@ export default function DrawerNegociacao({ acordoId, onClose }: Props) {
   }
 }
 
-function KpiBox({ label, valor, cor = 'text-on-surface' }: { label: string; valor: string; cor?: string }) {
+function KpiBox({ label, valor, cor = 'text-on-surface', sub, tooltip }: {
+  label: string;
+  valor: string;
+  cor?: string;
+  sub?: string;
+  tooltip?: string;
+}) {
   return (
-    <div className="bg-gray-50 rounded-lg p-2.5">
+    <div className="bg-gray-50 rounded-lg p-2.5" title={tooltip}>
       <div className="text-[0.625rem] text-on-surface-variant uppercase tracking-wide">{label}</div>
       <div className={`text-[0.8125rem] font-bold mt-0.5 ${cor}`}>{valor}</div>
+      {sub && <div className="text-[0.625rem] text-amber-700 mt-0.5">💳 {sub}</div>}
     </div>
   );
 }

@@ -193,9 +193,17 @@ export async function listar(req, res, next) {
             THEN 'media'
           ELSE 'alta'
         END AS "_agingCategoria",
-        -- Valor pago (soma de pagamento_acordo CONFIRMADO)
+        -- Caixa real (auditoria fiscal): apenas o que efetivamente entrou.
+        -- Para cartao parcelado, valorPago da parcela 1 = uma das N parcelas (resto vira mes a mes).
+        COALESCE((SELECT SUM(COALESCE(pa."valorPago", pa.valor)) FROM cobranca.pagamento_acordo pa
+                  WHERE pa."acordoId" = a.id
+                    AND pa.situacao = 'CONFIRMADO'
+                    AND COALESCE(pa."valorPago", pa.valor) <= pa.valor), 0)::numeric AS "_valorPagoEfetivo",
+        -- Competencia (UX): cartao parcelado conta inteiro porque limite ja foi capturado.
+        -- pa.valor = total do pagamento (independente de quantas parcelas no cartao).
         COALESCE((SELECT SUM(pa.valor) FROM cobranca.pagamento_acordo pa
-                  WHERE pa."acordoId" = a.id AND pa.situacao = 'CONFIRMADO'), 0)::numeric AS "_valorPago",
+                  WHERE pa."acordoId" = a.id
+                    AND (pa.situacao = 'CONFIRMADO' OR pa."creditCardCaptured" = true)), 0)::numeric AS "_valorPagoGarantido",
         -- Canal precedente (heuristica nos 7d antes do criadoEm — prioridade: ligacao > waba > 3cplus > sem)
         CASE
           WHEN EXISTS (SELECT 1 FROM cobranca.registro_ligacao rl
@@ -247,11 +255,17 @@ export async function listar(req, res, next) {
         if (typeof acordo.documento.enviadoEm === 'string') acordo.documento.enviadoEm = parseTimestampUtc(acordo.documento.enviadoEm);
         if (typeof acordo.documento.assinadoEm === 'string') acordo.documento.assinadoEm = parseTimestampUtc(acordo.documento.assinadoEm);
       }
-      // Calcula percentual pago no client (mais simples que SQL)
+      // Calcula percentual pago no client (mais simples que SQL).
+      // Usa "garantido" como numero primario porque cartao parcelado tem credito
+      // capturado de uma vez (ver schema PagamentoAcordo.creditCardCaptured).
+      // _valorPago e alias retrocompativel pra callers antigos.
       const valorAcordo = Number(acordo.valorAcordo) || 0;
-      const valorPago = Number(acordo._valorPago) || 0;
-      acordo._percentualPago = valorAcordo > 0 ? (valorPago / valorAcordo) * 100 : 0;
-      acordo._valorPago = valorPago;
+      const valorPagoEfetivo = Number(acordo._valorPagoEfetivo) || 0;
+      const valorPagoGarantido = Number(acordo._valorPagoGarantido) || 0;
+      acordo._valorPagoEfetivo = valorPagoEfetivo;
+      acordo._valorPagoGarantido = valorPagoGarantido;
+      acordo._valorPago = valorPagoGarantido;
+      acordo._percentualPago = valorAcordo > 0 ? (valorPagoGarantido / valorAcordo) * 100 : 0;
       acordo._diasAteConcluir = acordo._diasAteConcluir != null ? Number(acordo._diasAteConcluir) : null;
       acordo._tipo = 'acordo';
       return acordo;
@@ -348,8 +362,10 @@ export async function obter(req, res, next) {
 }
 
 // -----------------------------------------------
-// GET /api/acordos/:id/detalhado — Detalhe completo (drawer)
-// Retorna: acordo + parcelas + pagamentos + doc + canal precedente + templates + ligacoes + timeline + outros acordos do aluno
+// GET /api/acordos/:id/detalhado — Detalhe rapido (1a aba do drawer)
+// Retorna: acordo + parcelas + pagamentos + doc + canal precedente.
+// Templates/disparos/ligacoes/outros acordos/ocorrencias migraram para
+// /:id/contexto (lazy-load quando o usuario abre essas abas).
 // -----------------------------------------------
 export async function detalhado(req, res, next) {
   try {
@@ -367,8 +383,8 @@ export async function detalhado(req, res, next) {
     const criadoEm = acordo.criadoEm;
     const pessoaCodigo = acordo.pessoaCodigo;
 
-    // Canal precedente — busca os 4 sinais nos 7d antes do criadoEm
-    const [ultimaLigacao, ultimaMsgWaba, ultimaMsg3cplus, disparosRegua, templatesEnviados, ligacoesHistorico, outrosAcordos, ocorrencias] = await Promise.all([
+    // Canal precedente — busca os 3 sinais nos 7d antes do criadoEm
+    const [ultimaLigacao, ultimaMsgWaba, ultimaMsg3cplus] = await Promise.all([
       // Ligacao atendida >4s nos 7d antes
       prisma.$queryRawUnsafe(`
         SELECT id, "dataHoraChamada", "dataHoraAtendida", "tempoFalando", "agenteNome",
@@ -397,7 +413,52 @@ export async function detalhado(req, res, next) {
           AND "fromMe" = true AND "instanciaTipo" = 'whatsapp-3c'
         ORDER BY timestamp DESC LIMIT 1
       `, pessoaCodigo, criadoEm),
-      // Disparos da regua nos 14d antes
+    ]);
+
+    // Determina canal atribuido pelo precedente (mesma heuristica da listagem)
+    let canalAtribuido = 'sem_contato';
+    let canalDetalhe = null;
+    if (ultimaLigacao[0]) {
+      canalAtribuido = 'ligacao';
+      canalDetalhe = ultimaLigacao[0];
+    } else if (ultimaMsgWaba[0]) {
+      canalAtribuido = 'waba';
+      canalDetalhe = ultimaMsgWaba[0];
+    } else if (ultimaMsg3cplus[0]) {
+      canalAtribuido = '3cplus';
+      canalDetalhe = ultimaMsg3cplus[0];
+    }
+
+    res.json({
+      acordo,
+      canal: {
+        atribuido: canalAtribuido,
+        detalhe: canalDetalhe,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
+// -----------------------------------------------
+// GET /api/acordos/:id/contexto — Dados auxiliares do drawer (abas secundarias)
+// Carregado sob demanda quando o usuario abre Comunicacao/Timeline/Historico.
+// Ocorrencias usa UNION (era OR) para permitir uso de indices individuais.
+// -----------------------------------------------
+export async function contexto(req, res, next) {
+  try {
+    const { id } = req.params;
+    // Busca minima do acordo so para ter pessoaCodigo + criadoEm
+    const acordo = await prisma.acordoFinanceiro.findUnique({
+      where: { id },
+      select: { id: true, pessoaCodigo: true, criadoEm: true },
+    });
+    if (!acordo) return res.status(404).json({ error: 'Acordo nao encontrado' });
+    const { pessoaCodigo, criadoEm } = acordo;
+
+    const [disparosRegua, templatesEnviados, ligacoesHistorico, outrosAcordos, ocorrencias] = await Promise.all([
+      // Disparos da regua nos 14d antes do criadoEm
       prisma.$queryRawUnsafe(`
         SELECT id, "disparadoEm", "templateNomeBlip", status
         FROM cobranca.disparo_mensagem
@@ -432,41 +493,28 @@ export async function detalhado(req, res, next) {
         WHERE "pessoaCodigo" = $1 AND id != $2
         ORDER BY "criadoEm" DESC LIMIT 20
       `, pessoaCodigo, id),
-      // Timeline de ocorrencias do acordo ou do aluno proximo ao acordo
+      // Timeline de ocorrencias: UNION evita OR de 2 paths no plan do PG.
+      // Ramo 1: tudo do acordo. Ramo 2: do aluno na janela ±30d, excluindo o ramo 1.
       prisma.$queryRawUnsafe(`
-        SELECT id, tipo, origem, descricao, "agenteNome", "criadoEm", metadados
-        FROM cobranca.ocorrencia
-        WHERE "acordoId" = $1
-          OR ("pessoaCodigo" = $2 AND "criadoEm" BETWEEN $3::timestamp - INTERVAL '30 days' AND $3::timestamp + INTERVAL '30 days')
+        (SELECT id, tipo, origem, descricao, "agenteNome", "criadoEm", metadados
+         FROM cobranca.ocorrencia
+         WHERE "acordoId" = $1)
+        UNION ALL
+        (SELECT id, tipo, origem, descricao, "agenteNome", "criadoEm", metadados
+         FROM cobranca.ocorrencia
+         WHERE "pessoaCodigo" = $2
+           AND "criadoEm" BETWEEN $3::timestamp - INTERVAL '30 days' AND $3::timestamp + INTERVAL '30 days'
+           AND ("acordoId" IS NULL OR "acordoId" != $1))
         ORDER BY "criadoEm" DESC LIMIT 50
       `, id, pessoaCodigo, criadoEm),
     ]);
 
-    // Determina canal atribuido pelo precedente (mesma heuristica da listagem)
-    let canalAtribuido = 'sem_contato';
-    let canalDetalhe = null;
-    if (ultimaLigacao[0]) {
-      canalAtribuido = 'ligacao';
-      canalDetalhe = ultimaLigacao[0];
-    } else if (ultimaMsgWaba[0]) {
-      canalAtribuido = 'waba';
-      canalDetalhe = ultimaMsgWaba[0];
-    } else if (ultimaMsg3cplus[0]) {
-      canalAtribuido = '3cplus';
-      canalDetalhe = ultimaMsg3cplus[0];
-    }
-
     res.json({
-      acordo,
-      canal: {
-        atribuido: canalAtribuido,
-        detalhe: canalDetalhe,
-      },
-      templatesEnviados: templatesEnviados,
-      disparosRegua: disparosRegua,
-      ligacoesHistorico: ligacoesHistorico,
-      outrosAcordos: outrosAcordos,
-      ocorrencias: ocorrencias,
+      templatesEnviados,
+      disparosRegua,
+      ligacoesHistorico,
+      outrosAcordos,
+      ocorrencias,
     });
   } catch (error) {
     next(error);
@@ -511,10 +559,16 @@ export async function resumo(req, res, next) {
         ${whereSql}
       ),
       pagos AS (
-        SELECT ROUND(COALESCE(SUM(pa.valor), 0)::numeric, 2) AS valor_pago
+        -- Competencia: cartao parcelado conta inteiro (limite capturado).
+        SELECT ROUND(COALESCE(SUM(pa.valor), 0)::numeric, 2) AS valor_pago_garantido,
+               ROUND(COALESCE(SUM(CASE
+                 WHEN pa.situacao = 'CONFIRMADO' AND COALESCE(pa."valorPago", pa.valor) <= pa.valor
+                   THEN COALESCE(pa."valorPago", pa.valor) ELSE 0
+               END), 0)::numeric, 2) AS valor_pago_efetivo
         FROM cobranca.pagamento_acordo pa
         JOIN cobranca.acordo_financeiro a ON a.id = pa."acordoId"
-        WHERE pa.situacao = 'CONFIRMADO' ${whereSql ? `AND ${where.join(' AND ')}` : ''}
+        WHERE (pa.situacao = 'CONFIRMADO' OR pa."creditCardCaptured" = true)
+          ${whereSql ? `AND ${where.join(' AND ')}` : ''}
       ),
       por_agente AS (
         SELECT "criadoPorNome" AS agente, COUNT(*)::int AS qtd,
@@ -537,7 +591,9 @@ export async function resumo(req, res, next) {
       abertos: r.stats?.abertos || 0,
       valorAcordoTotal: Number(r.stats?.valor_acordo_total || 0),
       descontoTotal: Number(r.stats?.desconto_total || 0),
-      valorPago: Number(r.pagos?.valor_pago || 0),
+      valorPago: Number(r.pagos?.valor_pago_garantido || 0),
+      valorPagoEfetivo: Number(r.pagos?.valor_pago_efetivo || 0),
+      valorPagoGarantido: Number(r.pagos?.valor_pago_garantido || 0),
       diasMedioConcluir: r.stats?.dias_medio_concluir != null ? Number(r.stats.dias_medio_concluir) : null,
       porAgente: r.porAgente || [],
     });

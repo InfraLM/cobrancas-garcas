@@ -4,6 +4,7 @@ import {
   listar,
   obter,
   detalhado,
+  contexto,
   resumo,
   listarAgentes,
   criar,
@@ -29,6 +30,7 @@ router.get('/resumo', requireAuth, resumo);
 router.get('/agentes', requireAuth, listarAgentes);
 router.get('/por-aluno/:codigo', requireAuth, listarPorAluno);
 router.get('/:id/detalhado', requireAuth, detalhado);
+router.get('/:id/contexto', requireAuth, contexto);
 router.get('/:id/preview-cancelamento', requireAuth, previewCancelamento);
 router.get('/:id/documento-assinado', requireAuth, documentoAssinado);
 router.get('/:id', requireAuth, obter);

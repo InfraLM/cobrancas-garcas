@@ -8,6 +8,11 @@ export type TipoNegociacao = 'acordo' | 'ficou_facil';
 export interface AcordoEnriquecido extends AcordoFinanceiro {
   _agingCategoria: AgingCategoria;
   _canalPrecedente: CanalPrecedente;
+  // Caixa real (auditoria): SUM(valorPago) das parcelas CONFIRMADO
+  _valorPagoEfetivo: number;
+  // Competencia (UX): cartao parcelado conta inteiro (creditCardCaptured)
+  _valorPagoGarantido: number;
+  // Alias de _valorPagoGarantido, mantido para retrocompat
   _valorPago: number;
   _percentualPago: number;
   _diasAteConcluir: number | null;
@@ -59,6 +64,8 @@ export interface ResumoAcordos {
   valorAcordoTotal: number;
   descontoTotal: number;
   valorPago: number;
+  valorPagoEfetivo: number;
+  valorPagoGarantido: number;
   diasMedioConcluir: number | null;
   porAgente: Array<{ agente: string; qtd: number; valor: number }>;
 }
@@ -89,9 +96,15 @@ export interface CanalAtribuido {
   detalhe: Record<string, unknown> | null;
 }
 
+// Resposta rapida de /:id/detalhado: acordo + canal precedente.
+// Templates/disparos/ligacoes/outrosAcordos/ocorrencias agora chegam via /:id/contexto
+// quando o usuario abre as abas Comunicacao/Timeline/Historico.
 export interface AcordoDetalhado {
   acordo: AcordoFinanceiro;
   canal: CanalAtribuido;
+}
+
+export interface AcordoContexto {
   templatesEnviados: Array<{
     timestamp: string;
     templateMetaNome: string | null;
@@ -138,6 +151,10 @@ export interface AcordoDetalhado {
 
 export async function obterAcordoDetalhado(id: string): Promise<AcordoDetalhado> {
   return api.get<AcordoDetalhado>(`/acordos/${id}/detalhado`);
+}
+
+export async function obterAcordoContexto(id: string): Promise<AcordoContexto> {
+  return api.get<AcordoContexto>(`/acordos/${id}/contexto`);
 }
 
 export async function obterAcordo(id: string): Promise<AcordoFinanceiro> {
