@@ -15,6 +15,30 @@ function maskToken(user) {
   };
 }
 
+/**
+ * Verifica se a extension SIP ja esta em uso por outro user ativo (excluindo
+ * ADMINs — que podem compartilhar a extension do .env como fallback).
+ *
+ * Retorna o user conflitante (se houver), ou null se OK.
+ * Nao lanca — caller decide o que fazer.
+ *
+ * Motivacao: com 4 agentes simultaneos, dois usando a mesma extension causa
+ * SIP register conflict — o 2o registra e desloga o 1o silenciosamente.
+ */
+async function buscarConflitoExtension(extension, ignorarUserId) {
+  if (!extension) return null;
+  const conflito = await prisma.user.findFirst({
+    where: {
+      threecplusExtension: String(extension),
+      ativo: true,
+      role: { not: 'ADMIN' },
+      ...(ignorarUserId ? { id: { not: ignorarUserId } } : {}),
+    },
+    select: { id: true, nome: true, email: true, role: true },
+  });
+  return conflito;
+}
+
 export async function listar(req, res, next) {
   try {
     const users = await prisma.user.findMany({
@@ -230,6 +254,18 @@ export async function criarAgente(req, res, next) {
 
     const resultado = await criarAgente3CPlus(user);
 
+    // Defesa multi-agente: nao deixa 2 users nao-admin com a mesma extension.
+    // 2 SIP registers no mesmo ramal = o 2o desloga o 1o silenciosamente.
+    if (user.role !== 'ADMIN') {
+      const conflito = await buscarConflitoExtension(resultado.extension, id);
+      if (conflito) {
+        return res.status(409).json({
+          error: `A extension ${resultado.extension} ja esta em uso por ${conflito.nome} (${conflito.email}). Cada agente precisa de um ramal SIP unico.`,
+          conflito,
+        });
+      }
+    }
+
     const updated = await prisma.user.update({
       where: { id },
       data: {
@@ -396,6 +432,16 @@ export async function vincularAgente(req, res, next) {
     };
     // Nao zerar extension com valor falsy (gestor sem extension na 3C Plus retorna null).
     if (agente.extension) {
+      // Defesa multi-agente: bloqueia se essa extension ja pertence a outro nao-ADMIN
+      if (user.role !== 'ADMIN') {
+        const conflito = await buscarConflitoExtension(agente.extension, id);
+        if (conflito) {
+          return res.status(409).json({
+            error: `A extension ${agente.extension} ja esta em uso por ${conflito.nome} (${conflito.email}). Cada agente precisa de um ramal SIP unico.`,
+            conflito,
+          });
+        }
+      }
       updateData.threecplusExtension = agente.extension;
     }
     // ADMIN nao armazena token no DB — getConfig/hangup usam env.
@@ -618,6 +664,28 @@ export async function removerInstancia(req, res, next) {
     });
     invalidarWhitelist();
     res.status(204).send();
+  } catch (error) {
+    next(error);
+  }
+}
+
+/**
+ * POST /api/users/whitelist/refresh
+ *
+ * Forca recarga da whitelist em memoria do Worker Socket.io. Normalmente a whitelist
+ * eh invalidada automaticamente sempre que um user ou instancia eh criado/editado/removido
+ * (8 pontos no codigo). Este endpoint existe como escape-hatch para debug ou quando
+ * algo no fluxo automatico falhar.
+ *
+ * Apenas para admins.
+ */
+export async function refreshWhitelist(req, res, next) {
+  try {
+    if (req.user?.role !== 'ADMIN') {
+      return res.status(403).json({ error: 'Apenas administradores podem forcar refresh da whitelist' });
+    }
+    await invalidarWhitelist();
+    res.json({ ok: true, refreshedAt: new Date().toISOString() });
   } catch (error) {
     next(error);
   }

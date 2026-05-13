@@ -119,24 +119,84 @@ export async function obter(req, res, next) {
 }
 
 // ─── Assumir (AGUARDANDO → EM_ATENDIMENTO) ─────────────────
+// Lock pessimista (SELECT FOR UPDATE) dentro de transacao para evitar que 2 agentes
+// "assumam" simultaneamente — o ultimo UPDATE venceria silenciosamente.
+// Idempotente: se ja for do mesmo agente, retorna 200 sem alteracao.
+// Conflito: se outro agente ja assumiu, retorna 409 com info de quem assumiu.
 export async function assumir(req, res, next) {
   try {
     const { id } = req.params;
     const { agenteId, agenteNome } = req.body;
 
     if (!agenteId) return res.status(400).json({ error: 'agenteId obrigatorio' });
+    const agenteIdNum = Number(agenteId);
 
-    const conversa = await prisma.conversaCobranca.update({
-      where: { id },
-      data: {
-        status: 'EM_ATENDIMENTO',
-        agenteId: Number(agenteId),
-        agenteNome: agenteNome || null,
-        assumidoEm: new Date(),
-      },
+    const resultado = await prisma.$transaction(async (tx) => {
+      // SELECT ... FOR UPDATE trava a linha ate fim da transacao.
+      const linhas = await tx.$queryRawUnsafe(
+        `SELECT id, "agenteId", "agenteNome", status FROM cobranca.conversa_cobranca WHERE id = $1 FOR UPDATE`,
+        id
+      );
+      if (linhas.length === 0) return { tipo: 'NAO_ENCONTRADA' };
+      const atual = linhas[0];
+
+      // Idempotencia: mesmo agente "re-assumindo" — nao reescreve, nao rebroadcast
+      if (atual.agenteId === agenteIdNum && atual.status === 'EM_ATENDIMENTO') {
+        return { tipo: 'JA_ERA_SEU', conversa: atual };
+      }
+      // Conflito: outro agente ja esta atendendo
+      if (atual.agenteId && atual.agenteId !== agenteIdNum && atual.status === 'EM_ATENDIMENTO') {
+        return { tipo: 'CONFLITO', donoAtual: { agenteId: atual.agenteId, agenteNome: atual.agenteNome } };
+      }
+
+      // Caminho normal: atribui ao agente
+      const conversa = await tx.conversaCobranca.update({
+        where: { id },
+        data: {
+          status: 'EM_ATENDIMENTO',
+          agenteId: agenteIdNum,
+          agenteNome: agenteNome || null,
+          assumidoEm: new Date(),
+        },
+      });
+
+      // Auditoria — best effort. Se falhar, nao impede a operacao principal.
+      try {
+        await tx.ocorrencia.create({
+          data: {
+            tipo: 'CONVERSA_ASSUMIDA',
+            descricao: `Conversa assumida por ${agenteNome || `agente ${agenteIdNum}`}`,
+            origem: 'AGENTE',
+            pessoaCodigo: conversa.pessoaCodigo ?? 0,
+            pessoaNome: conversa.pessoaNome || null,
+            agenteCodigo: String(agenteIdNum),
+            agenteNome: agenteNome || null,
+            metadados: { conversaId: conversa.id, chatId: conversa.chatId, instanciaId: conversa.instanciaId },
+          },
+        });
+      } catch (err) {
+        console.warn('[assumir] Falha ao registrar ocorrencia (ignorada):', err.message);
+      }
+
+      return { tipo: 'OK', conversa };
     });
-    broadcastAtualizacao(conversa);
-    res.json(conversa);
+
+    if (resultado.tipo === 'NAO_ENCONTRADA') {
+      return res.status(404).json({ error: 'Conversa nao encontrada' });
+    }
+    if (resultado.tipo === 'CONFLITO') {
+      return res.status(409).json({
+        error: `Conversa ja esta sendo atendida por ${resultado.donoAtual.agenteNome || `agente ${resultado.donoAtual.agenteId}`}.`,
+        donoAtual: resultado.donoAtual,
+      });
+    }
+    if (resultado.tipo === 'JA_ERA_SEU') {
+      // Idempotente: retorna a conversa atual sem broadcast desnecessario
+      const conversa = await prisma.conversaCobranca.findUnique({ where: { id } });
+      return res.json(conversa);
+    }
+    broadcastAtualizacao(resultado.conversa);
+    res.json(resultado.conversa);
   } catch (error) {
     next(error);
   }
@@ -165,6 +225,23 @@ export async function encerrar(req, res, next) {
         encerradoEm: new Date(),
       },
     });
+    // Auditoria — best effort, nao bloqueia a resposta
+    try {
+      await prisma.ocorrencia.create({
+        data: {
+          tipo: 'CONVERSA_ENCERRADA',
+          descricao: `Conversa encerrada (${motivo})${observacao ? `: ${observacao}` : ''}`,
+          origem: 'AGENTE',
+          pessoaCodigo: conversa.pessoaCodigo ?? 0,
+          pessoaNome: conversa.pessoaNome || null,
+          agenteCodigo: conversa.agenteId != null ? String(conversa.agenteId) : null,
+          agenteNome: conversa.agenteNome || null,
+          metadados: { conversaId: conversa.id, chatId: conversa.chatId, motivo, observacao: observacao || null },
+        },
+      });
+    } catch (err) {
+      console.warn('[encerrar] Falha ao registrar ocorrencia (ignorada):', err.message);
+    }
     broadcastAtualizacao(conversa);
     res.json(conversa);
   } catch (error) {
@@ -180,6 +257,12 @@ export async function transferir(req, res, next) {
 
     if (!agenteId) return res.status(400).json({ error: 'agenteId obrigatorio' });
 
+    // Captura o dono anterior antes do update — para registrar "de quem -> pra quem"
+    const anterior = await prisma.conversaCobranca.findUnique({
+      where: { id },
+      select: { agenteId: true, agenteNome: true },
+    });
+
     const conversa = await prisma.conversaCobranca.update({
       where: { id },
       data: {
@@ -189,6 +272,30 @@ export async function transferir(req, res, next) {
         assumidoEm: new Date(),
       },
     });
+    // Auditoria — best effort
+    try {
+      await prisma.ocorrencia.create({
+        data: {
+          tipo: 'CONVERSA_TRANSFERIDA',
+          descricao: `Conversa transferida ${anterior?.agenteNome ? `de ${anterior.agenteNome}` : ''} para ${agenteNome || `agente ${agenteId}`}`,
+          origem: 'AGENTE',
+          pessoaCodigo: conversa.pessoaCodigo ?? 0,
+          pessoaNome: conversa.pessoaNome || null,
+          agenteCodigo: String(agenteId),
+          agenteNome: agenteNome || null,
+          metadados: {
+            conversaId: conversa.id,
+            chatId: conversa.chatId,
+            deAgenteId: anterior?.agenteId ?? null,
+            deAgenteNome: anterior?.agenteNome ?? null,
+            paraAgenteId: Number(agenteId),
+            paraAgenteNome: agenteNome || null,
+          },
+        },
+      });
+    } catch (err) {
+      console.warn('[transferir] Falha ao registrar ocorrencia (ignorada):', err.message);
+    }
     broadcastAtualizacao(conversa);
     res.json(conversa);
   } catch (error) {
@@ -211,6 +318,23 @@ export async function snooze(req, res, next) {
         reativarEm: new Date(reativarEm),
       },
     });
+    // Auditoria — best effort
+    try {
+      await prisma.ocorrencia.create({
+        data: {
+          tipo: 'CONVERSA_SNOOZE',
+          descricao: `Conversa em snooze ate ${new Date(reativarEm).toISOString().slice(0, 16).replace('T', ' ')}`,
+          origem: 'AGENTE',
+          pessoaCodigo: conversa.pessoaCodigo ?? 0,
+          pessoaNome: conversa.pessoaNome || null,
+          agenteCodigo: conversa.agenteId != null ? String(conversa.agenteId) : null,
+          agenteNome: conversa.agenteNome || null,
+          metadados: { conversaId: conversa.id, chatId: conversa.chatId, reativarEm },
+        },
+      });
+    } catch (err) {
+      console.warn('[snooze] Falha ao registrar ocorrencia (ignorada):', err.message);
+    }
     broadcastAtualizacao(conversa);
     res.json(conversa);
   } catch (error) {

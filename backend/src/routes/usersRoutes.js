@@ -7,11 +7,13 @@ import {
   getCampanhasVinculadas, syncCampanhas,
   getEquipesVinculadas, syncEquipes,
   listarInstanciasUser, adicionarInstancia, editarInstancia, removerInstancia,
+  refreshWhitelist,
 } from '../controllers/usersController.js';
 
 const router = Router();
 
 router.get('/', requireAuth, listar);
+router.post('/whitelist/refresh', requireAuth, refreshWhitelist);
 router.get('/instancias-whatsapp', requireAuth, getInstanciasWhatsapp);
 router.get('/grupos-canais', requireAuth, getGruposCanais);
 router.get('/campanhas', requireAuth, getCampanhas);
