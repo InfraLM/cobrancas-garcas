@@ -320,6 +320,23 @@ export async function enviarTemplate(req, res, next) {
       return res.status(400).json({ error: 'Template nao tem metaTemplateId — precisa ser sincronizado com Meta' });
     }
 
+    // Validacao critica: templates Meta so funcionam em instancias WABA oficiais.
+    // Se o frontend mandar uma instancia whatsapp-3c (canal nao oficial), a 3C Plus
+    // retorna 400 com "O recurso solicitado nao foi processado" — mensagem inutil.
+    // Aqui rejeitamos antes com mensagem clara.
+    const instancia = await prisma.instanciaWhatsappUser.findFirst({
+      where: { instanciaId: instance_id },
+      select: { tipo: true, apelido: true },
+    });
+    if (!instancia) {
+      return res.status(400).json({ error: `Instancia ${instance_id} nao encontrada` });
+    }
+    if (instancia.tipo !== 'waba') {
+      return res.status(400).json({
+        error: `Instancia "${instancia.apelido}" eh do tipo ${instancia.tipo}. Templates Meta WABA so podem ser enviados por instancias oficiais (tipo=waba).`,
+      });
+    }
+
     // Identifica quantas variaveis o body tem ({{1}}, {{2}}, ...) na ordem.
     // A 3C Plus nao aceita "body" com texto resolvido — exige body_variables
     // (array ordenado pelos indices), e ela mesma resolve antes de mandar pra Meta.
@@ -370,19 +387,32 @@ export async function enviarTemplate(req, res, next) {
     });
     const parsed = await lerRespostaChat(response, '3C+ Chat API send_template');
     if (!parsed.ok || parsed.parseError) {
-      console.error('[3C+ Chat API] send_template falhou:', parsed.status, parsed.data || parsed.raw?.slice(0, 200));
+      // Log RICO: inclui o nome/id do template + chat + instancia para investigar
+      // falhas especificas (ex: template nao registrado no banco interno da 3C Plus).
+      console.error('[3C+ Chat API] send_template falhou:',
+        `template="${tpl.name}" (metaId=${tpl.metaTemplateId}) chat=${chatIdNum} instancia=${instance_id} status=${parsed.status}`,
+        parsed.data || parsed.raw?.slice(0, 400));
+
       if (parsed.parseError) {
         return res.status(502).json({
           error: `3C Plus retornou resposta invalida (HTTP ${parsed.status}). Tente novamente em alguns instantes.`,
         });
       }
-      // 401/403 mapeados para 502 pra nao deslogar (mesmo padrao do templatesMetaController).
+
+      // A 3C Plus retorna detail="O recurso solicitado nao foi processado" para 404
+      // disfarcado de 400 — geralmente quando o template nao esta cadastrado no
+      // banco interno da 3C Plus, mesmo que aprovado na Meta. Damos hint pro user.
+      const detalheGenerico = parsed.data?.detail === 'O recurso solicitado não foi processado.';
       const isAuthErr = parsed.status === 401 || parsed.status === 403;
       const statusResp = isAuthErr ? 502 : parsed.status;
-      return res.status(statusResp).json({
-        error: parsed.data?.error?.error_user_msg || parsed.data?.error?.message || parsed.data?.detail || 'Erro ao enviar template',
-        meta: parsed.data,
-      });
+      const erroBase = parsed.data?.error?.error_user_msg
+        || parsed.data?.error?.message
+        || parsed.data?.detail
+        || 'Erro ao enviar template';
+      const erroFinal = detalheGenerico
+        ? `O template "${tpl.name}" nao foi reconhecido pela 3C Plus. Verifique se ele esta sincronizado no painel da 3C Plus para a instancia selecionada. (HTTP ${parsed.status})`
+        : erroBase;
+      return res.status(statusResp).json({ error: erroFinal, meta: parsed.data });
     }
 
     await persistirMensagemEnviada(parsed.data, chat_id, 'template', {

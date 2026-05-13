@@ -237,11 +237,21 @@ export default function InputMensagem({
   }
 
   // ─── Modo WABA com janela 24h fechada — só template aprovado ──
-  // Usa irma WABA quando existe; senao usa chat primario + instancia selecionada.
-  // A 3C Plus aceita send_template em chat existente roteando pela instance_id no body.
+  // Templates Meta exigem instancia WABA oficial (tipo='waba'). Se a `instanciaSelecionada`
+  // for whatsapp-3c (canal nao oficial), o send_template falha na 3C Plus com 400 generico.
+  // Solucao: aqui sempre forcamos uma instancia WABA disponivel, mesmo que o user
+  // tenha selecionado whatsapp-3c para texto livre.
   if (podeEnviarTemplate && !gravando) {
-    const chatIdParaTemplate = irmaSelecionada?.chatId ?? chatId!;
-    const instanciaIdParaTemplate = irmaSelecionada?.instanciaId ?? instanciaSelecionada!;
+    const irmaEhWaba = irmaSelecionada?.instanciaId
+      ? instanciasDisponiveis.find(i => i.instanciaId === irmaSelecionada.instanciaId)?.tipo === 'waba'
+      : false;
+    const wabaDisponivel = instanciasDisponiveis.find(i => i.tipo === 'waba');
+    const chatIdParaTemplate = irmaEhWaba ? irmaSelecionada!.chatId : chatId!;
+    // Prioridade: irma WABA (mesmo numero, instancia oficial) > qualquer WABA disponivel
+    // > fallback para instanciaSelecionada (backend rejeita se nao for waba).
+    const instanciaIdParaTemplate = irmaEhWaba
+      ? irmaSelecionada!.instanciaId
+      : (wabaDisponivel?.instanciaId ?? instanciaSelecionada!);
     return (
       <>
         <div className="bg-white border-t border-gray-100 px-4 py-3">
