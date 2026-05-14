@@ -48,12 +48,27 @@ httpServer.listen(PORT, () => {
   // Cobre casos onde o webhook Meta nao chegou (rede, deploy, etc.).
   // Nao roda imediatamente — primeiro tick em 30min para nao competir com
   // o sync inicial que o user pode disparar manualmente apos deploy.
+  //
+  // Lock de reentrancia (metaSyncEmAndamento): se o tick anterior ainda
+  // executa quando o intervalo dispara, pula. Padrao identico aos outros
+  // daemons (reguaScheduler, snapshot, deltaSync).
   if (process.env.META_ACCESS_TOKEN && process.env.META_WABA_ID) {
     console.log(`[MetaTemplatesSync] Agendado a cada ${META_TEMPLATES_SYNC_INTERVAL / 60000} minutos`);
-    setInterval(() => {
-      sincronizarTemplatesMeta()
-        .then(r => console.log('[MetaTemplatesSync] OK:', r))
-        .catch(err => console.error('[MetaTemplatesSync] Erro:', err.message));
+    let metaSyncEmAndamento = false;
+    setInterval(async () => {
+      if (metaSyncEmAndamento) {
+        console.warn('[MetaTemplatesSync] Sync anterior ainda em andamento — pulando este ciclo');
+        return;
+      }
+      metaSyncEmAndamento = true;
+      try {
+        const r = await sincronizarTemplatesMeta();
+        console.log('[MetaTemplatesSync] OK:', r);
+      } catch (err) {
+        console.error('[MetaTemplatesSync] Erro:', err.message);
+      } finally {
+        metaSyncEmAndamento = false;
+      }
     }, META_TEMPLATES_SYNC_INTERVAL);
   } else {
     console.log('[MetaTemplatesSync] Desativado (META_ACCESS_TOKEN ou META_WABA_ID nao configurados)');

@@ -52,14 +52,26 @@ export async function drenarUm() {
 
   const candidatos = await prisma.disparoMensagem.findMany({
     where: { status: 'PENDENTE' },
-    include: {
-      // nao tem include porque reguaId e etapaReguaId sao soltos — faz queries separadas
-    },
     orderBy: { criadoEm: 'asc' },
     take: 20, // pega os 20 mais antigos e filtra por horario em memoria
   });
 
   if (candidatos.length === 0) return false;
+
+  // Batch fetch: 1 query traz todas as etapas (+ regua) dos candidatos.
+  // EtapaRegua tem @relation com ReguaCobranca, entao include funciona.
+  // DisparoMensagem.etapaReguaId nao tem @relation declarada — por isso
+  // o fetch e externo (e nao via include na findMany acima).
+  const etapaIds = [...new Set(
+    candidatos.map(c => c.etapaReguaId).filter(Boolean)
+  )];
+  const etapas = etapaIds.length > 0
+    ? await prisma.etapaRegua.findMany({
+        where: { id: { in: etapaIds } },
+        include: { regua: true },
+      })
+    : [];
+  const etapaMap = new Map(etapas.map(e => [e.id, e]));
 
   // Filtra por horario: precisa buscar etapa+regua de cada candidato pra checar horario
   let selecionado = null;
@@ -70,10 +82,7 @@ export async function drenarUm() {
       break;
     }
     if (!d.etapaReguaId) continue;
-    const etapa = await prisma.etapaRegua.findUnique({
-      where: { id: d.etapaReguaId },
-      include: { regua: true },
-    });
+    const etapa = etapaMap.get(d.etapaReguaId);
     if (!etapa || !etapa.regua) continue;
     if (!etapa.regua.ativo) continue; // regua desativada — sera cancelado no proximo loop
     const horarioAlvo = parseHHMM(etapa.horario) ?? parseHHMM(etapa.regua.horarioPadrao) ?? 9 * 60;

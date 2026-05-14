@@ -300,6 +300,11 @@ model Contareceber {
   pagoiesempresafinanceira                                       Boolean?
 
   @@unique([nossonumero, contacorrente])
+  @@index([situacao, datavencimento])
+  @@index([pessoa])
+  @@index([matriculaaluno])
+  @@index([tipoorigem])
+  @@index([turma])
   @@map("contareceber")
 }
 
@@ -518,6 +523,8 @@ model Pessoa {
   codigootm                                                      Int?
   codigoprotheus                                                 String?
 
+  @@index([aluno])
+  @@index([funcionario])
   @@map("pessoa")
 }
 
@@ -670,6 +677,8 @@ model Matricula {
   motivobloqueiorenovacaomatricula                               String?
   bloquearrenovacaomatricula                                     Boolean?
 
+  @@index([aluno])
+  @@index([curso])
   @@map("matricula")
 }
 
@@ -1032,6 +1041,8 @@ model Negociacaocontareceber {
   codigoprotheus                                                 String?
   codigoprocessoprotheus                                         String?
 
+  @@index([matriculaaluno])
+  @@index([data])
   @@map("negociacaocontareceber")
 }
 
@@ -1062,6 +1073,8 @@ model Contarecebernegociado {
   codigoupdated                                                  Int?
   nomeupdated                                                    String?
 
+  @@index([negociacaocontareceber])
+  @@index([contareceber])
   @@map("contarecebernegociado")
 }
 
@@ -1244,6 +1257,7 @@ model Cartaocreditodebitorecorrenciapessoa {
   inativadoviarecorrencia                                        Boolean?
   transacaocartaoonline                                          Int?
 
+  @@index([pessoa])
   @@map("cartaocreditodebitorecorrenciapessoa")
 }
 

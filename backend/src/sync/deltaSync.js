@@ -288,54 +288,70 @@ function calcularDataDMenos1() {
 
 // -----------------------------------------------
 // Funcao principal exportavel (usada pelo worker)
+//
+// Lock de reentrancia (syncEmAndamento): se um sync anterior ainda esta
+// executando quando o setInterval dispara o proximo, pula. Padrao identico
+// ao usado em reguaSchedulerService e snapshotService.
 // -----------------------------------------------
+let syncEmAndamento = false;
+
 export async function runDeltaSync(dataOverride) {
   if (!SEI_API_URL || !SEI_AUTH_KEY) {
     console.error('[DeltaSync] SEI_API_URL e SEI_AUTH_KEY nao definidos, pulando sync');
     return;
   }
 
-  const dataUltimaSync = dataOverride || calcularDataDMenos1();
-
-  const memAntes = process.memoryUsage().heapUsed / 1024 / 1024;
-  console.log(`[DeltaSync] Inicio — delta desde ${dataUltimaSync} (${DELTA_TABLES.length} tabelas) | heap ${memAntes.toFixed(0)} MB`);
-
-  // Processa tabelas SEQUENCIALMENTE — evita carregar todas na memoria ao mesmo tempo.
-  // Com contareceber (~50k registros) + outras grandes rodando em paralelo o heap
-  // chegava a 2GB. Sequencial mantem o pico controlado (~1 tabela grande por vez).
-  let totalRecords = 0;
-  const errors = [];
-
-  for (let i = 0; i < DELTA_TABLES.length; i++) {
-    const config = DELTA_TABLES[i];
-    try {
-      const result = await syncTableDelta(config, dataUltimaSync);
-      totalRecords += result.count;
-    } catch (err) {
-      const msg = err?.message || String(err);
-      errors.push({ table: config.model, error: msg });
-      console.error(`  [${config.model}] ERRO: ${msg}\n`);
-    }
-    // Sugere garbage collection entre tabelas (so roda se Node foi iniciado com --expose-gc)
-    if (global.gc) global.gc();
+  if (syncEmAndamento) {
+    console.warn('[DeltaSync] Sync anterior ainda em andamento — pulando este ciclo');
+    return { totalRecords: 0, errors: [], skipped: true };
   }
+  syncEmAndamento = true;
 
-  const memDepois = process.memoryUsage().heapUsed / 1024 / 1024;
-  console.log(`[DeltaSync] Concluido — ${totalRecords} registros upserted, ${errors.length} erros | heap ${memDepois.toFixed(0)} MB (delta +${(memDepois - memAntes).toFixed(0)} MB)`);
-
-  // aluno_resumo agora e sincronizado diretamente do WebService SEI (seiviewalunoresumo)
-  // Nao precisa mais de refresh local — o delta sync ja trata via DELTA_TABLES
-
-  // Verificar recorrencias apos sync
   try {
-    await verificarRecorrencias();
-    await detectarDesativacoes();
-    await detectarAtivacoes();
-  } catch (err) {
-    console.warn('[DeltaSync] Erro verificacao recorrencias:', err.message?.slice(0, 100));
-  }
+    const dataUltimaSync = dataOverride || calcularDataDMenos1();
 
-  return { totalRecords, errors };
+    const memAntes = process.memoryUsage().heapUsed / 1024 / 1024;
+    console.log(`[DeltaSync] Inicio — delta desde ${dataUltimaSync} (${DELTA_TABLES.length} tabelas) | heap ${memAntes.toFixed(0)} MB`);
+
+    // Processa tabelas SEQUENCIALMENTE — evita carregar todas na memoria ao mesmo tempo.
+    // Com contareceber (~50k registros) + outras grandes rodando em paralelo o heap
+    // chegava a 2GB. Sequencial mantem o pico controlado (~1 tabela grande por vez).
+    let totalRecords = 0;
+    const errors = [];
+
+    for (let i = 0; i < DELTA_TABLES.length; i++) {
+      const config = DELTA_TABLES[i];
+      try {
+        const result = await syncTableDelta(config, dataUltimaSync);
+        totalRecords += result.count;
+      } catch (err) {
+        const msg = err?.message || String(err);
+        errors.push({ table: config.model, error: msg });
+        console.error(`  [${config.model}] ERRO: ${msg}\n`);
+      }
+      // Sugere garbage collection entre tabelas (so roda se Node foi iniciado com --expose-gc)
+      if (global.gc) global.gc();
+    }
+
+    const memDepois = process.memoryUsage().heapUsed / 1024 / 1024;
+    console.log(`[DeltaSync] Concluido — ${totalRecords} registros upserted, ${errors.length} erros | heap ${memDepois.toFixed(0)} MB (delta +${(memDepois - memAntes).toFixed(0)} MB)`);
+
+    // aluno_resumo agora e sincronizado diretamente do WebService SEI (seiviewalunoresumo)
+    // Nao precisa mais de refresh local — o delta sync ja trata via DELTA_TABLES
+
+    // Verificar recorrencias apos sync
+    try {
+      await verificarRecorrencias();
+      await detectarDesativacoes();
+      await detectarAtivacoes();
+    } catch (err) {
+      console.warn('[DeltaSync] Erro verificacao recorrencias:', err.message?.slice(0, 100));
+    }
+
+    return { totalRecords, errors };
+  } finally {
+    syncEmAndamento = false;
+  }
 }
 
 // -----------------------------------------------
