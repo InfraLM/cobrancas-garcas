@@ -1,5 +1,6 @@
 import { useNavigate } from 'react-router-dom';
 import { Users, UserCircle, Plug, ListChecks, FileText, MessageSquareQuote, Tags, type LucideIcon } from 'lucide-react';
+import { useAuth } from '../contexts/AuthContext';
 
 interface ConfigCard {
   label: string;
@@ -7,6 +8,7 @@ interface ConfigCard {
   icone: LucideIcon;
   path: string;
   ativo: boolean;
+  somenteAdmin?: boolean;
 }
 
 interface ConfigSection {
@@ -18,7 +20,7 @@ const sections: ConfigSection[] = [
   {
     titulo: 'Geral',
     cards: [
-      { label: 'Usuários', descricao: 'Cadastre e gerencie usuários', icone: Users, path: '/configuracoes/usuarios', ativo: true },
+      { label: 'Usuários', descricao: 'Cadastre e gerencie usuários', icone: Users, path: '/configuracoes/usuarios', ativo: true, somenteAdmin: true },
       { label: 'Meu Perfil', descricao: 'Seus dados e preferências', icone: UserCircle, path: '/configuracoes/perfil', ativo: false },
       { label: 'Integrações', descricao: '3C Plus, Asaas, ClickSign', icone: Plug, path: '/configuracoes/integracoes', ativo: false },
     ],
@@ -36,11 +38,18 @@ const sections: ConfigSection[] = [
 
 export default function ConfiguracoesPage() {
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'ADMIN';
+
+  const sectionsVisiveis = sections.map((section) => ({
+    ...section,
+    cards: section.cards.filter((c) => !c.somenteAdmin || isAdmin),
+  })).filter((s) => s.cards.length > 0);
 
   return (
     <div className="max-w-5xl mx-auto pt-2">
       <div className="flex flex-col gap-8">
-        {sections.map((section) => (
+        {sectionsVisiveis.map((section) => (
           <div key={section.titulo} className="bg-white rounded-2xl shadow-sm shadow-black/[0.04] overflow-hidden">
             <div className="px-6 pt-5 pb-3">
               <h2 className="text-[0.9375rem] font-semibold text-on-surface">{section.titulo}</h2>

@@ -15,9 +15,10 @@ interface RegrasTableProps {
   onSelecionar: (regra: RegraSegmentacao) => void;
   onEditar?: (regra: RegraSegmentacao) => void;
   onExcluir?: (regra: RegraSegmentacao) => void;
+  podeEditar?: (regra: RegraSegmentacao) => boolean;
 }
 
-export default function RegrasTable({ regras, onSelecionar, onEditar, onExcluir }: RegrasTableProps) {
+export default function RegrasTable({ regras, onSelecionar, onEditar, onExcluir, podeEditar }: RegrasTableProps) {
   return (
     <div className="bg-white rounded-xl border border-gray-100">
       {/* Header */}
@@ -61,16 +62,34 @@ export default function RegrasTable({ regras, onSelecionar, onEditar, onExcluir 
 
           {/* Acoes */}
           <div className="flex items-center gap-1">
-            {onEditar && (
-              <button onClick={(e) => { e.stopPropagation(); onEditar(regra); }} className="p-1 rounded text-gray-300 hover:text-gray-600 transition-colors">
-                <Pencil size={13} />
-              </button>
-            )}
-            {onExcluir && (
-              <button onClick={(e) => { e.stopPropagation(); onExcluir(regra); }} className="p-1 rounded text-gray-300 hover:text-red-500 transition-colors">
-                <Trash2 size={13} />
-              </button>
-            )}
+            {(() => {
+              const habilitado = podeEditar ? podeEditar(regra) : true;
+              const titulo = habilitado ? undefined : 'Apenas o criador ou um administrador pode editar';
+              return (
+                <>
+                  {onEditar && (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); if (habilitado) onEditar(regra); }}
+                      disabled={!habilitado}
+                      title={titulo}
+                      className={`p-1 rounded transition-colors ${habilitado ? 'text-gray-300 hover:text-gray-600' : 'text-gray-100 cursor-not-allowed'}`}
+                    >
+                      <Pencil size={13} />
+                    </button>
+                  )}
+                  {onExcluir && (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); if (habilitado) onExcluir(regra); }}
+                      disabled={!habilitado}
+                      title={titulo}
+                      className={`p-1 rounded transition-colors ${habilitado ? 'text-gray-300 hover:text-red-500' : 'text-gray-100 cursor-not-allowed'}`}
+                    >
+                      <Trash2 size={13} />
+                    </button>
+                  )}
+                </>
+              );
+            })()}
             <ChevronRight size={14} className="text-gray-200" />
           </div>
         </div>

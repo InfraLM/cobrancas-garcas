@@ -1,9 +1,10 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Plus, Search, MoreVertical, Shield, ShieldCheck, Headset, Pencil, Trash2, Key, Bot, Link2 } from 'lucide-react';
+import { Plus, Search, MoreVertical, Shield, ShieldCheck, Headset, Pencil, Trash2, Key, Bot, Link2, Lock } from 'lucide-react';
 import type { User, UserRole } from '../types';
 import { ROLE_LABELS } from '../types';
 import { listarUsuarios, excluirUsuario, criarAgente3CPlus, coletarToken3CPlus, vincularAgente3CPlus } from '../services/users';
 import UsuarioDrawer from '../components/configuracoes/UsuarioDrawer';
+import { useAuth } from '../contexts/AuthContext';
 
 const ROLE_ICONS: Record<UserRole, typeof Shield> = {
   ADMIN: ShieldCheck,
@@ -18,6 +19,8 @@ const ROLE_COLORS: Record<UserRole, string> = {
 };
 
 export default function UsuariosPage() {
+  const { user: currentUser } = useAuth();
+  const isAdmin = currentUser?.role === 'ADMIN';
   const [usuarios, setUsuarios] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -42,7 +45,9 @@ export default function UsuariosPage() {
     }
   }, []);
 
-  useEffect(() => { carregarUsuarios(); }, [carregarUsuarios]);
+  useEffect(() => {
+    if (isAdmin) carregarUsuarios();
+  }, [isAdmin, carregarUsuarios]);
 
   const usuariosFiltrados = usuarios.filter((u) => {
     const termo = busca.toLowerCase();
@@ -114,6 +119,22 @@ export default function UsuariosPage() {
   function handleSalvo() {
     setDrawerAberto(false);
     carregarUsuarios();
+  }
+
+  if (!isAdmin) {
+    return (
+      <div className="max-w-2xl mx-auto pt-16 px-6">
+        <div className="flex flex-col items-center text-center gap-3 p-10 rounded-2xl bg-white border border-gray-100">
+          <div className="w-12 h-12 rounded-full bg-gray-50 flex items-center justify-center">
+            <Lock size={20} className="text-gray-400" />
+          </div>
+          <h2 className="text-lg font-semibold text-on-surface">Acesso restrito</h2>
+          <p className="text-[0.8125rem] text-on-surface-variant max-w-md">
+            A gestão de usuários é uma área exclusiva de administradores. Se você precisa de acesso, fale com o administrador do sistema.
+          </p>
+        </div>
+      </div>
+    );
   }
 
   return (

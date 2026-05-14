@@ -1,5 +1,4 @@
 import { Router } from 'express';
-import exampleRoutes from './exampleRoutes.js';
 import blipWebhookRoutes from './blipWebhookRoutes.js';
 import ligacoesRoutes from './ligacoesRoutes.js';
 import conversasRoutes from './conversasRoutes.js';
@@ -31,7 +30,6 @@ const router = Router();
 router.use('/auth', authRoutes);
 
 // Registre novas rotas aqui:
-router.use('/examples', exampleRoutes);
 router.use('/webhooks/blip', blipWebhookRoutes);
 router.use('/ligacoes', ligacoesRoutes);
 router.use('/conversas', conversasRoutes);

@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useAuth } from '../contexts/AuthContext';
 import type { RegraSegmentacao } from '../types/segmentacao';
 import { listarRegras, listarRegrasComFiltros, excluirRegra, executarRegra, subirParaCampanha } from '../services/segmentacao';
 import type { SubirCampanhaResult, TituloDaSegmentacao } from '../services/segmentacao';
@@ -13,6 +14,11 @@ import type { AlunoListItem } from '../services/alunos';
 import ExportarSegmentacaoModal from '../components/segmentacao/ExportarSegmentacaoModal';
 
 export default function SegmentacaoPage() {
+  const { user } = useAuth();
+  const podeEditarRegra = useCallback(
+    (regra: RegraSegmentacao) => user?.role === 'ADMIN' || regra.criadoPor === user?.id,
+    [user]
+  );
   const [regras, setRegras] = useState<RegraSegmentacao[]>([]);
   const [loading, setLoading] = useState(true);
   const [busca, setBusca] = useState('');
@@ -142,10 +148,12 @@ export default function SegmentacaoPage() {
             {isTitulo ? <Receipt size={11} /> : <User size={11} />}
             {isTitulo ? 'Por título' : 'Por aluno'}
           </span>
-          <button onClick={() => { setRegraEditando(regraAtiva); setNovaRegraAberta(true); }}
-            className="flex items-center gap-1 text-[0.75rem] text-gray-400 hover:text-gray-700 transition-colors ml-2">
-            <Pencil size={13} /> Editar
-          </button>
+          {podeEditarRegra(regraAtiva) && (
+            <button onClick={() => { setRegraEditando(regraAtiva); setNovaRegraAberta(true); }}
+              className="flex items-center gap-1 text-[0.75rem] text-gray-400 hover:text-gray-700 transition-colors ml-2">
+              <Pencil size={13} /> Editar
+            </button>
+          )}
           <button
             onClick={async () => {
               const msg = isTitulo
@@ -337,7 +345,7 @@ export default function SegmentacaoPage() {
           <Loader2 size={24} className="animate-spin text-primary" />
         </div>
       ) : (
-        <RegrasTable regras={regrasFiltradas} onSelecionar={handleExecutar} onEditar={(r) => { setRegraEditando(r); setNovaRegraAberta(true); }} onExcluir={handleExcluir} />
+        <RegrasTable regras={regrasFiltradas} onSelecionar={handleExecutar} onEditar={(r) => { setRegraEditando(r); setNovaRegraAberta(true); }} onExcluir={handleExcluir} podeEditar={podeEditarRegra} />
       )}
 
       <NovaRegraModal aberto={novaRegraAberta} onFechar={() => { setNovaRegraAberta(false); setRegraEditando(null); }} onSalva={handleSalva} regraEditando={regraEditando} />

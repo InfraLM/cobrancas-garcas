@@ -25,6 +25,24 @@ async function anexarPausaAtiva(registros) {
 
 const TURMAS_EXCLUIDAS_SQL = '1,10,14,19,22,27,29';
 
+async function autorizarMutacao(id, req, res) {
+  const existente = await prisma.regraSegmentacao.findUnique({
+    where: { id },
+    select: { criadoPor: true },
+  });
+  if (!existente) {
+    res.status(404).json({ error: 'Regra nao encontrada' });
+    return null;
+  }
+  const isOwner = existente.criadoPor === req.user?.id;
+  const isAdmin = req.user?.role === 'ADMIN';
+  if (!isOwner && !isAdmin) {
+    res.status(403).json({ error: 'Voce so pode editar regras criadas por voce' });
+    return null;
+  }
+  return existente;
+}
+
 export async function listar(req, res, next) {
   try {
     const { incluirEmbutidas, reguaOwnerId, tipo } = req.query;
@@ -96,6 +114,7 @@ export async function criar(req, res, next) {
 
 export async function atualizar(req, res, next) {
   try {
+    if (!(await autorizarMutacao(req.params.id, req, res))) return;
     const { nome, descricao, condicoes, ativa, tipo } = req.body;
     const regra = await prisma.regraSegmentacao.update({
       where: { id: req.params.id },
@@ -115,6 +134,7 @@ export async function atualizar(req, res, next) {
 
 export async function remover(req, res, next) {
   try {
+    if (!(await autorizarMutacao(req.params.id, req, res))) return;
     await prisma.regraSegmentacao.delete({ where: { id: req.params.id } });
     res.status(204).send();
   } catch (error) {
@@ -128,8 +148,8 @@ export async function remover(req, res, next) {
  */
 export async function promoverGlobal(req, res, next) {
   try {
+    if (!(await autorizarMutacao(req.params.id, req, res))) return;
     const existente = await prisma.regraSegmentacao.findUnique({ where: { id: req.params.id } });
-    if (!existente) return res.status(404).json({ error: 'Regra nao encontrada' });
     if (existente.escopoUso === 'GLOBAL') {
       return res.status(400).json({ error: 'Regra ja e global' });
     }
