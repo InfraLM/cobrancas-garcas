@@ -265,8 +265,9 @@ async function calcularAgingHistorico(opts = {}) {
       WHERE cr.datavencimento::date <= s.fim
         AND cr.situacao IN ('AR', 'RE', 'CF')
         AND COALESCE(cr.tipoorigem, '') NOT IN ('MAT', 'OUT')
-        -- Whitelist alinhada com a query original do "aging empilhado" (curso=1 garantido)
-        AND cr.turma IN (2, 4, 8, 11, 21, 28, 35)
+        -- Whitelist alinhada com a query original do "aging empilhado" (curso=1 garantido).
+        -- Filtravel via opts.turmas — default = whitelist canonica.
+        AND cr.turma IN ${turmasIN(opts.turmas)}
         AND p.aluno = true
         AND (COALESCE(p.funcionario, false) = false OR p.codigo = 589)
         -- Nao havia sido pago ate o fim do bucket
@@ -363,6 +364,11 @@ function gerarCteBuckets(granularidade, inicio, fim) {
     )`;
 }
 
+// Whitelist canonica de turmas para os 3 graficos cohort de medicina ativa.
+// 2=TURMA 3, 4=TURMA 3-V2, 8=TURMA 4, 11=TURMA 4-V2, 21=TURMA 5A, 28=TURMA 5B,
+// 35=TURMA 6 PRESENCIAL PADRAO. Frontend pode filtrar via ?turmas=2,35 etc.
+const TURMAS_COHORT_WHITELIST = [2, 4, 8, 11, 21, 28, 35];
+
 function parsearOptsBucket(req) {
   const granularidade = req.query.granularidade === 'mes' ? 'mes' : 'semana';
   const re = /^\d{4}-\d{2}-\d{2}$/;
@@ -372,7 +378,24 @@ function parsearOptsBucket(req) {
   // Default fim: hoje (CURRENT_DATE) — formatado como YYYY-MM-DD em BRT
   const hojeBrt = new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString().slice(0, 10);
   const fim = re.test(fimParam) ? fimParam : hojeBrt;
-  return { granularidade, inicio, fim };
+  // Turmas: CSV de int (?turmas=2,35). Validamos contra a whitelist para evitar
+  // injecao em SQL. Default (sem filtro) = whitelist inteira.
+  const turmasParam = String(req.query.turmas || '').trim();
+  let turmas = TURMAS_COHORT_WHITELIST;
+  if (turmasParam) {
+    const arr = turmasParam.split(',')
+      .map(s => parseInt(s.trim(), 10))
+      .filter(n => !isNaN(n) && TURMAS_COHORT_WHITELIST.includes(n));
+    if (arr.length > 0) turmas = arr;
+  }
+  return { granularidade, inicio, fim, turmas };
+}
+
+// Constroi a clausula SQL "IN (...)" para turmas. Valores ja sao ints validados
+// (whitelist) — seguro contra SQL injection.
+function turmasIN(turmas) {
+  const lista = (turmas && turmas.length > 0) ? turmas : TURMAS_COHORT_WHITELIST;
+  return `(${lista.join(',')})`;
 }
 
 function formatarLabelBucket(granularidade, inicioISO, fimISO) {
@@ -391,7 +414,7 @@ function formatarLabelBucket(granularidade, inicioISO, fimISO) {
 // dashboard/query-recorrentes-vs-outros.txt
 //
 // Logica preservada:
-//   - Whitelist turma IN (2,4,8,11,21,28,35) — TURMA 6 PRESENCIAL PADRAO adicionada
+//   - Whitelist turma IN (2,4,8,11,21,28,35) — filtravel via opts.turmas (subset)
 //   - Exclui tipoorigem OUT (e MAT em CTEs de data-base/gap)
 //   - Funcionario = false
 //   - Trata cancelamento (com override 2025-02-04)
@@ -411,7 +434,7 @@ async function calcularRecorrentesHistorico(opts = {}) {
     base_matriculas AS (
       SELECT DISTINCT cr.matriculaaluno AS matricula, cr.turma AS turma_codigo
       FROM cobranca.contareceber cr
-      WHERE cr.turma IN (2,4,8,11,21,28,35) AND COALESCE(cr.tipoorigem, '') <> 'OUT'
+      WHERE cr.turma IN ${turmasIN(opts.turmas)} AND COALESCE(cr.tipoorigem, '') <> 'OUT'
     ),
     cadastro AS (
       SELECT bm.matricula, mt."data"::date AS data_matricula, p.codigo AS pessoa_id
@@ -430,7 +453,7 @@ async function calcularRecorrentesHistorico(opts = {}) {
     primeiro_venc_nao_mat AS (
       SELECT cr.matriculaaluno AS matricula, MIN(cr.datavencimento::date) AS data_base_fallback
       FROM cobranca.contareceber cr
-      WHERE cr.turma IN (2,4,8,11,21,28,35) AND COALESCE(cr.tipoorigem, '') NOT IN ('MAT','OUT')
+      WHERE cr.turma IN ${turmasIN(opts.turmas)} AND COALESCE(cr.tipoorigem, '') NOT IN ('MAT','OUT')
       GROUP BY cr.matriculaaluno
     ),
     data_base AS (
@@ -444,7 +467,7 @@ async function calcularRecorrentesHistorico(opts = {}) {
     cancelamento AS (
       SELECT cr.matriculaaluno AS matricula, MIN(cr.datacancelamento::date) AS data_cancelamento
       FROM cobranca.contareceber cr
-      WHERE cr.turma IN (2,4,8,11,21,28,35) AND cr.datacancelamento IS NOT NULL AND COALESCE(cr.tipoorigem, '') <> 'OUT'
+      WHERE cr.turma IN ${turmasIN(opts.turmas)} AND cr.datacancelamento IS NOT NULL AND COALESCE(cr.tipoorigem, '') <> 'OUT'
       GROUP BY cr.matriculaaluno
     ),
     trancamento AS (
@@ -459,7 +482,7 @@ async function calcularRecorrentesHistorico(opts = {}) {
       FROM trancamento t
       JOIN cobranca.contareceber cr ON cr.matriculaaluno = t.matricula
         AND cr.tipoorigem = 'NCR' AND TRIM(cr.codorigem) = t.codigo_trancamento::text
-      WHERE cr.turma IN (2,4,8,11,21,28,35) AND COALESCE(cr.tipoorigem, '') <> 'OUT'
+      WHERE cr.turma IN ${turmasIN(opts.turmas)} AND COALESCE(cr.tipoorigem, '') <> 'OUT'
       GROUP BY t.matricula
     ),
     trancamento_gap_base AS (
@@ -467,7 +490,7 @@ async function calcularRecorrentesHistorico(opts = {}) {
         LAG(cr.datavencimento::date) OVER (PARTITION BY cr.matriculaaluno ORDER BY cr.datavencimento::date, cr.codigo) AS data_trancamento,
         cr.datavencimento::date AS data_retorno_trancamento
       FROM cobranca.contareceber cr
-      WHERE cr.turma IN (2,4,8,11,21,28,35) AND cr.situacao IN ('AR','RE','CF')
+      WHERE cr.turma IN ${turmasIN(opts.turmas)} AND cr.situacao IN ('AR','RE','CF')
         AND COALESCE(cr.tipoorigem, '') NOT IN ('MAT','OUT')
     ),
     trancamento_gap AS (
@@ -491,10 +514,14 @@ async function calcularRecorrentesHistorico(opts = {}) {
       LEFT JOIN trancamento_gap tg ON tg.matricula = c.matricula
     ),
     recorrencia AS (
+      -- Restringe aos alunos da base_matricula (que ja respeita o filtro de turmas).
+      -- Sem isso, recorrentes_por_semana contaria TODA a base de cartoes do banco,
+      -- gerando percentuais > 100% quando o subset selecionado eh pequeno.
       SELECT cc.pessoa AS pessoa_id,
         cc.datacadastro::date AS datacadastro,
         cc.datainativacao::date AS datainativacao
       FROM cobranca.cartaocreditodebitorecorrenciapessoa cc
+      WHERE cc.pessoa IN (SELECT pessoa_id FROM base_matricula)
     ),
     ${cteBuckets},
     ativos_por_semana AS (
@@ -564,7 +591,7 @@ async function calcularAcumuladoAlunos(opts = {}) {
     base_matriculas AS (
       SELECT DISTINCT cr.matriculaaluno AS matricula, cr.turma AS turma_codigo
       FROM cobranca.contareceber cr
-      WHERE cr.turma IN (2,4,8,11,21,28,35)
+      WHERE cr.turma IN ${turmasIN(opts.turmas)}
         AND COALESCE(cr.tipoorigem, '') <> 'OUT'
     ),
     cadastro AS (
@@ -586,7 +613,7 @@ async function calcularAcumuladoAlunos(opts = {}) {
     primeiro_venc_nao_mat AS (
       SELECT cr.matriculaaluno AS matricula, MIN(cr.datavencimento::date) AS data_base_fallback
       FROM cobranca.contareceber cr
-      WHERE cr.turma IN (2,4,8,11,21,28,35) AND COALESCE(cr.tipoorigem, '') NOT IN ('MAT','OUT')
+      WHERE cr.turma IN ${turmasIN(opts.turmas)} AND COALESCE(cr.tipoorigem, '') NOT IN ('MAT','OUT')
       GROUP BY cr.matriculaaluno
     ),
     data_base AS (
@@ -600,7 +627,7 @@ async function calcularAcumuladoAlunos(opts = {}) {
     cancelamento AS (
       SELECT cr.matriculaaluno AS matricula, MIN(cr.datacancelamento::date) AS data_cancelamento
       FROM cobranca.contareceber cr
-      WHERE cr.turma IN (2,4,8,11,21,28,35) AND cr.datacancelamento IS NOT NULL AND COALESCE(cr.tipoorigem, '') <> 'OUT'
+      WHERE cr.turma IN ${turmasIN(opts.turmas)} AND cr.datacancelamento IS NOT NULL AND COALESCE(cr.tipoorigem, '') <> 'OUT'
       GROUP BY cr.matriculaaluno
     ),
     trancamento AS (
@@ -615,7 +642,7 @@ async function calcularAcumuladoAlunos(opts = {}) {
       FROM trancamento t
       JOIN cobranca.contareceber cr ON cr.matriculaaluno = t.matricula
         AND cr.tipoorigem = 'NCR' AND TRIM(cr.codorigem) = t.codigo_trancamento::text
-      WHERE cr.turma IN (2,4,8,11,21,28,35) AND COALESCE(cr.tipoorigem, '') <> 'OUT'
+      WHERE cr.turma IN ${turmasIN(opts.turmas)} AND COALESCE(cr.tipoorigem, '') <> 'OUT'
       GROUP BY t.matricula
     ),
     trancamento_gap_base AS (
@@ -623,7 +650,7 @@ async function calcularAcumuladoAlunos(opts = {}) {
         LAG(cr.datavencimento::date) OVER (PARTITION BY cr.matriculaaluno ORDER BY cr.datavencimento::date, cr.codigo) AS data_trancamento,
         cr.datavencimento::date AS data_retorno_trancamento
       FROM cobranca.contareceber cr
-      WHERE cr.turma IN (2,4,8,11,21,28,35) AND cr.situacao IN ('AR','RE','CF')
+      WHERE cr.turma IN ${turmasIN(opts.turmas)} AND cr.situacao IN ('AR','RE','CF')
         AND COALESCE(cr.tipoorigem, '') NOT IN ('MAT','OUT')
     ),
     trancamento_gap AS (
@@ -676,31 +703,67 @@ async function calcularAcumuladoAlunos(opts = {}) {
         AND NOT (bm.data_trancamento IS NOT NULL AND bm.data_trancamento <= s.fim
           AND (bm.data_retorno_trancamento IS NULL OR bm.data_retorno_trancamento > s.fim))
       GROUP BY s.semana, s.inicio, s.fim
+    ),
+    -- COORTE SEMANAL: dos alunos que matricularam NA semana X, quantos cadastraram
+    -- recorrencia tambem DENTRO da mesma semana X (adesao imediata).
+    -- Diferente de novos_alunos_recorrentes_semana, que conta cadastros DA semana de
+    -- QUALQUER aluno da janela. Aqui exigimos que MATRICULA E CADASTRO_RECORRENCIA
+    -- ambos ocorram dentro do mesmo bucket.
+    -- Aplica os mesmos filtros do denominador (novos_alunos_semana) para consistencia visual.
+    coorte_semana AS (
+      SELECT s.semana, s.inicio, s.fim,
+        COUNT(*) FILTER (
+          WHERE bm.data_cadastro_recorrencia IS NOT NULL
+            AND bm.data_cadastro_recorrencia >= s.inicio
+            AND bm.data_cadastro_recorrencia <= s.fim
+        ) AS rec_coorte
+      FROM base_matricula bm CROSS JOIN semanas s
+      WHERE bm.data_matricula >= s.inicio AND bm.data_matricula <= s.fim
+        AND (bm.data_cancelamento IS NULL OR bm.data_cancelamento > s.fim)
+        AND NOT (bm.data_trancamento IS NOT NULL AND bm.data_trancamento <= s.fim
+          AND (bm.data_retorno_trancamento IS NULL OR bm.data_retorno_trancamento > s.fim))
+      GROUP BY s.semana, s.inicio, s.fim
     )
     SELECT s.semana, s.inicio, s.fim,
       COALESCE(n.novos_alunos_semana, 0)::int AS novos_semana,
       SUM(COALESCE(n.novos_alunos_semana, 0)) OVER (ORDER BY s.semana ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)::int AS novos_acumulado,
       COALESCE(r.novos_alunos_recorrentes_semana, 0)::int AS rec_semana,
-      SUM(COALESCE(r.novos_alunos_recorrentes_semana, 0)) OVER (ORDER BY s.semana ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)::int AS rec_acumulado
+      SUM(COALESCE(r.novos_alunos_recorrentes_semana, 0)) OVER (ORDER BY s.semana ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)::int AS rec_acumulado,
+      COALESCE(c.rec_coorte, 0)::int AS rec_coorte
     FROM semanas s
-    LEFT JOIN novos_alunos_semana n ON n.semana = s.semana
     LEFT JOIN novos_alunos_recorrentes_semana r ON r.semana = s.semana
+    LEFT JOIN novos_alunos_semana n ON n.semana = s.semana
+    LEFT JOIN coorte_semana c ON c.semana = s.semana
     ORDER BY s.semana
   `);
 
+  const hojeMs = Date.now();
   return rows.map(r => {
     const acumulado = Number(r.novos_acumulado);
     const acumuladoRec = Number(r.rec_acumulado);
+    const novos = Number(r.novos_semana);
+    const recCoorte = Number(r.rec_coorte);
+    // Maturacao: na visao de coorte estrita (cadastro dentro do mesmo bucket da matricula),
+    // somente a semana ATUAL ainda pode receber cadastros — semanas passadas ja tem
+    // o numero definitivo. gerarCteBuckets trunca o fim da ultima semana em hoje,
+    // entao a "semana atual" eh aquela cujo fim eh hoje ou ate ~1 dia atras.
+    const fimDate = new Date(r.fim);
+    const diasAteHoje = Math.floor((hojeMs - fimDate.getTime()) / 86400000);
+    const emMaturacao = diasAteHoje <= 1;
     return {
       semana: Number(r.semana),
       inicio: r.inicio,
       fim: r.fim,
       label: formatarLabelBucket(granularidade, r.inicio, r.fim),
-      novos: Number(r.novos_semana),
+      novos,
       acumulado,
       recorrentesSemana: Number(r.rec_semana),
       acumuladoRecorrentes: acumuladoRec,
       percentualRecorrentes: acumulado > 0 ? Number((acumuladoRec / acumulado * 100).toFixed(1)) : 0,
+      // Visao de coorte: dos alunos que matricularam NESTA semana, quantos cadastraram recorrencia
+      recCoorte,
+      percentualCoorte: novos > 0 ? Number((recCoorte / novos * 100).toFixed(1)) : null,
+      emMaturacao,
     };
   });
 }

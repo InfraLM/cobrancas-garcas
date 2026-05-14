@@ -29,6 +29,9 @@ export interface OptsBucket {
   granularidade: Granularidade;
   inicio: string; // YYYY-MM-DD
   fim: string;    // YYYY-MM-DD
+  // Subset opcional da whitelist canonica de turmas (2,4,8,11,21,28,35).
+  // Vazio ou undefined = todas as turmas (sem filtro).
+  turmas?: number[];
 }
 
 export interface BucketRecorrentes {
@@ -52,6 +55,11 @@ export interface BucketAcumulado {
   recorrentesSemana: number;
   acumuladoRecorrentes: number;
   percentualRecorrentes: number;
+  // Visao de coorte semanal: alunos matriculados NESTA semana que ja
+  // cadastraram recorrencia (em qualquer momento depois).
+  recCoorte: number;
+  percentualCoorte: number | null;
+  emMaturacao: boolean;
 }
 
 interface BucketResponse<T> extends OptsBucket {
@@ -63,6 +71,7 @@ function qsBucket(opts: OptsBucket) {
   qs.set('granularidade', opts.granularidade);
   qs.set('inicio', opts.inicio);
   qs.set('fim', opts.fim);
+  if (opts.turmas && opts.turmas.length > 0) qs.set('turmas', opts.turmas.join(','));
   return qs.toString();
 }
 

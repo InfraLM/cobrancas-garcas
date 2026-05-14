@@ -10,9 +10,11 @@ import {
   type FormaPagamento,
 } from '../services/dashboard';
 import FiltroAgentes from '../components/dashboard/FiltroAgentes';
+import FiltroTurmas from '../components/dashboard/FiltroTurmas';
 import MatrizRecuperacao from '../components/dashboard/MatrizRecuperacao';
 
 const LS_KEY_AGENTES = 'dashboard:agenteIdsFiltro';
+const LS_KEY_TURMAS = 'dashboard:turmaIdsFiltro';
 
 function carregarAgentesLS(): number[] {
   try {
@@ -27,6 +29,22 @@ function salvarAgentesLS(ids: number[]) {
   try {
     if (ids.length === 0) localStorage.removeItem(LS_KEY_AGENTES);
     else localStorage.setItem(LS_KEY_AGENTES, JSON.stringify(ids));
+  } catch { /* ignora quota/disabled */ }
+}
+
+function carregarTurmasLS(): number[] {
+  try {
+    const raw = localStorage.getItem(LS_KEY_TURMAS);
+    if (!raw) return [];
+    const arr = JSON.parse(raw);
+    return Array.isArray(arr) ? arr.filter((n) => typeof n === 'number') : [];
+  } catch { return []; }
+}
+
+function salvarTurmasLS(ids: number[]) {
+  try {
+    if (ids.length === 0) localStorage.removeItem(LS_KEY_TURMAS);
+    else localStorage.setItem(LS_KEY_TURMAS, JSON.stringify(ids));
   } catch { /* ignora quota/disabled */ }
 }
 import {
@@ -128,6 +146,8 @@ export default function DashboardPage() {
   const [fimAcum, setFimAcum] = useState(hojeBrtISO());
   const [acumuladoAlunos, setAcumuladoAlunos] = useState<BucketAcumulado[]>([]);
   const [loadingAcum, setLoadingAcum] = useState(false);
+  // Toggle de visao do card "Novos Alunos": false = acumulado (default), true = por coorte semanal
+  const [modoCoorte, setModoCoorte] = useState(false);
 
   // Matriz de Recuperacao: aging do acordo x metodo de pagamento. Periodo proprio.
   const [inicioMatriz, setInicioMatriz] = useState(hoje30atras);
@@ -177,6 +197,15 @@ export default function DashboardPage() {
     salvarAgentesLS(ids);
   }
 
+  // Filtro de turma: afeta os 3 graficos cohort (Aging Empilhado,
+  // Outros vs Recorrencia, Acumulado Novos Alunos). Vazio = todas as
+  // turmas da whitelist canonica. Persiste em localStorage.
+  const [turmaIdsFiltro, setTurmaIdsFiltro] = useState<number[]>(carregarTurmasLS());
+  function aplicarFiltroTurmas(ids: number[]) {
+    setTurmaIdsFiltro(ids);
+    salvarTurmasLS(ids);
+  }
+
   const carregar = useCallback(async (forcar = false) => {
     try {
       if (forcar) setRefreshing(true); else setLoading(true);
@@ -209,31 +238,31 @@ export default function DashboardPage() {
     obterAging().then(r => setAging(r.data)).catch(e => console.error('Erro aging:', e));
   }, [refreshing]);
 
-  // Aging Historico — re-fetch quando granularidade ou periodo mudam.
+  // Aging Historico — re-fetch quando granularidade, periodo ou filtro de turmas mudam.
   useEffect(() => {
     setLoadingAging(true);
-    obterAgingHistorico({ granularidade: granAging, inicio: inicioAging, fim: fimAging })
+    obterAgingHistorico({ granularidade: granAging, inicio: inicioAging, fim: fimAging, turmas: turmaIdsFiltro })
       .then(r => setAgingHistorico(r.data))
       .catch(e => console.error('Erro aging-historico:', e))
       .finally(() => setLoadingAging(false));
-  }, [granAging, inicioAging, fimAging, refreshing]);
+  }, [granAging, inicioAging, fimAging, refreshing, turmaIdsFiltro]);
 
   // Fetchs dos graficos de recorrencia
   useEffect(() => {
     setLoadingRec(true);
-    obterRecorrentesHistorico({ granularidade: granRec, inicio: inicioRec, fim: fimRec })
+    obterRecorrentesHistorico({ granularidade: granRec, inicio: inicioRec, fim: fimRec, turmas: turmaIdsFiltro })
       .then(r => setRecorrentesHistorico(r.data))
       .catch(e => console.error('Erro recorrentes-historico:', e))
       .finally(() => setLoadingRec(false));
-  }, [granRec, inicioRec, fimRec]);
+  }, [granRec, inicioRec, fimRec, turmaIdsFiltro]);
 
   useEffect(() => {
     setLoadingAcum(true);
-    obterAcumuladoAlunos({ granularidade: granAcum, inicio: inicioAcum, fim: fimAcum })
+    obterAcumuladoAlunos({ granularidade: granAcum, inicio: inicioAcum, fim: fimAcum, turmas: turmaIdsFiltro })
       .then(r => setAcumuladoAlunos(r.data))
       .catch(e => console.error('Erro acumulado-alunos:', e))
       .finally(() => setLoadingAcum(false));
-  }, [granAcum, inicioAcum, fimAcum]);
+  }, [granAcum, inicioAcum, fimAcum, turmaIdsFiltro]);
 
   // Pago por Forma — endpoint proprio, com filtro de periodo + agente.
   useEffect(() => {
@@ -258,6 +287,7 @@ export default function DashboardPage() {
         </div>
         <div className="flex items-center gap-3 text-[0.75rem] text-on-surface-variant">
           <FiltroAgentes agenteIds={agenteIdsFiltro} onChange={aplicarFiltroAgentes} />
+          <FiltroTurmas turmaIds={turmaIdsFiltro} onChange={aplicarFiltroTurmas} />
           <span>Atualizado {new Date(data.atualizadoEm).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</span>
           <button onClick={() => carregar(true)} disabled={refreshing}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white hover:bg-gray-50 shadow-sm disabled:opacity-40 transition-colors">
@@ -563,24 +593,60 @@ export default function DashboardPage() {
 
         <div className="bg-white rounded-2xl p-5 shadow-sm">
           <div className="flex items-start justify-between gap-3 mb-1">
-            <h3 className="text-[0.8125rem] font-bold" title="Cohort: turmas ativas de medicina (2, 4, 8, 11, 21, 28, 35).">Novos Alunos Acumulados + % com Recorrência</h3>
-            <ControlesGrafico
-              loading={loadingAcum}
-              granularidade={granAcum} setGranularidade={setGranAcum}
-              inicio={inicioAcum} setInicio={setInicioAcum}
-              fim={fimAcum} setFim={setFimAcum}
-            />
+            <h3 className="text-[0.8125rem] font-bold" title="Cohort: turmas ativas de medicina (2, 4, 8, 11, 21, 28, 35).">
+              {modoCoorte ? 'Matrículas por semana + % de adesão imediata ao cartão' : 'Novos Alunos Acumulados + % com Recorrência'}
+            </h3>
+            <div className="flex items-center gap-2">
+              <div className="inline-flex bg-gray-100 rounded-md p-0.5">
+                <button
+                  onClick={() => setModoCoorte(false)}
+                  className={`text-[0.6875rem] px-2 py-1 rounded transition-colors ${!modoCoorte ? 'bg-white text-blue-700 font-semibold shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                >Acumulado</button>
+                <button
+                  onClick={() => setModoCoorte(true)}
+                  className={`text-[0.6875rem] px-2 py-1 rounded transition-colors ${modoCoorte ? 'bg-white text-blue-700 font-semibold shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                >Por coorte</button>
+              </div>
+              <ControlesGrafico
+                loading={loadingAcum}
+                granularidade={granAcum} setGranularidade={setGranAcum}
+                inicio={inicioAcum} setInicio={setInicioAcum}
+                fim={fimAcum} setFim={setFimAcum}
+              />
+            </div>
           </div>
-          <p className="text-[0.6875rem] text-on-surface-variant mb-3">Novas matrículas acumuladas na janela × % que cadastrou cartão recorrente</p>
+          <p className="text-[0.6875rem] text-on-surface-variant mb-3">
+            {modoCoorte
+              ? 'Adesão imediata — barra = matrículas da semana, linha = % dessa coorte que cadastrou cartão DENTRO da mesma semana. A semana atual (em curso) aparece com opacidade reduzida pois ainda pode receber cadastros.'
+              : 'Novas matrículas acumuladas na janela × % que cadastrou cartão recorrente'}
+          </p>
           <ResponsiveContainer width="100%" height={250}>
             <ComposedChart data={acumuladoAlunos} margin={{ top: 5, right: 10, left: 5, bottom: 5 }}>
               <XAxis dataKey="label" tick={{ fontSize: 10, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
               <YAxis yAxisId="left" tick={{ fontSize: 10, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
-              <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 10, fill: '#94a3b8' }} tickFormatter={(v: number) => `${v}%`} domain={[10, 40]} ticks={[10, 20, 30, 40]} axisLine={false} tickLine={false} />
+              <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 10, fill: '#94a3b8' }} tickFormatter={(v: number) => `${v}%`}
+                domain={modoCoorte ? ['auto', 'auto'] : [10, 40]}
+                ticks={modoCoorte ? undefined : [10, 20, 30, 40]}
+                axisLine={false} tickLine={false} />
               <Tooltip content={<CustomTooltip />} />
               <Legend wrapperStyle={{ fontSize: 10, paddingTop: 8 }} iconType="square" iconSize={8} />
-              <Bar yAxisId="left" dataKey="acumulado" name="Novos alunos (acumulado)" fill="#1e5a8a" radius={[3, 3, 0, 0]} />
-              <Line yAxisId="right" type="monotone" dataKey="percentualRecorrentes" name="% recorrência" stroke="#ea580c" strokeWidth={2.5} dot={false} unit="%" />
+              <Bar yAxisId="left"
+                dataKey={modoCoorte ? 'novos' : 'acumulado'}
+                name={modoCoorte ? 'Matrículas na semana' : 'Novos alunos (acumulado)'}
+                radius={[3, 3, 0, 0]}
+              >
+                {acumuladoAlunos.map((entry, i) => (
+                  <Cell key={i}
+                    fill="#1e5a8a"
+                    fillOpacity={modoCoorte && entry.emMaturacao ? 0.45 : 1}
+                  />
+                ))}
+              </Bar>
+              <Line yAxisId="right" type="monotone"
+                dataKey={modoCoorte ? 'percentualCoorte' : 'percentualRecorrentes'}
+                name={modoCoorte ? '% adesão imediata' : '% recorrência'}
+                stroke="#ea580c" strokeWidth={2.5} dot={false} unit="%"
+                connectNulls={false} />
             </ComposedChart>
           </ResponsiveContainer>
         </div>
