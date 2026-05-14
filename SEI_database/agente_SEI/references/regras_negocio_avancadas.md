@@ -44,13 +44,14 @@ Para determinar quando o financeiro começou a gerar parcelas para um vínculo, 
 
 Para o curso principal (código 1), nem todas as turmas devem ser analisadas financeiramente. O filtro padrão inclui apenas turmas regulares e exclui turmas de teste, financiamento ou sem lançamento de mensalidades.
 
-**Turmas Válidas para Análise (Filtro `IN (2,4,8,11,21,28)`):**
+**Turmas Válidas para Análise (Filtro `IN (2,4,8,11,21,28,35)`):**
 - TURMA 3 (código 2)
 - TURMA 3 -V2 (código 4)
 - TURMA 4 (código 8)
 - TURMA 4-V2 (com desconto pontualidade) (código 11)
 - TURMA 5 A - COM DESCONTO DE PONTUALIDADE (código 21)
 - TURMA 5 B - COM DESCONTO DE PONTUALIDADE (código 28)
+- TURMA 6 - PRESENCIAL - PADRÃO (código 35)
 
 **Turmas Excluídas (Não Analisar):**
 - TURMA 1 E 2 (código 1): Alunos não pagam pelo sistema.

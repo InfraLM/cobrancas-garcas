@@ -385,7 +385,7 @@ export default function DashboardPage() {
             <div>
               <h3 className="text-[0.8125rem] font-bold mb-1 flex items-center gap-1.5">
                 Inadimplência por {granAging === 'mes' ? 'Mês' : 'Semana'}
-                <span title="Cohort = ano da matrícula vinculada ao título (turmas 2, 4, 8, 11, 21, 28 — pós-graduação medicina presencial). Cada cobrança nasce de uma matrícula específica — um aluno que renovou pode ter cobranças em cohorts diferentes.">
+                <span title="Cohort = ano da matrícula vinculada ao título (turmas 2, 4, 8, 11, 21, 28, 35 — pós-graduação medicina presencial). Cada cobrança nasce de uma matrícula específica — um aluno que renovou pode ter cobranças em cohorts diferentes.">
                   <Info size={11} className="text-gray-400 cursor-help" />
                 </span>
               </h3>
@@ -538,7 +538,7 @@ export default function DashboardPage() {
       <div className="grid grid-cols-2 gap-4">
         <div className="bg-white rounded-2xl p-5 shadow-sm">
           <div className="flex items-start justify-between gap-3 mb-1">
-            <h3 className="text-[0.8125rem] font-bold" title="Cohort: turmas ativas de medicina (2, 4, 8, 11, 21, 28). Diferente da blacklist usada nos outros gráficos — aqui é whitelist intencional para medir recorrência apenas no público de medicina ativa.">Composição: Recorrentes vs Outros</h3>
+            <h3 className="text-[0.8125rem] font-bold" title="Cohort: turmas ativas de medicina (2, 4, 8, 11, 21, 28, 35). Diferente da blacklist usada nos outros gráficos — aqui é whitelist intencional para medir recorrência apenas no público de medicina ativa.">Composição: Recorrentes vs Outros</h3>
             <ControlesGrafico
               loading={loadingRec}
               granularidade={granRec} setGranularidade={setGranRec}
@@ -563,7 +563,7 @@ export default function DashboardPage() {
 
         <div className="bg-white rounded-2xl p-5 shadow-sm">
           <div className="flex items-start justify-between gap-3 mb-1">
-            <h3 className="text-[0.8125rem] font-bold" title="Cohort: turmas ativas de medicina (2, 4, 8, 11, 21, 28).">Novos Alunos Acumulados + % com Recorrência</h3>
+            <h3 className="text-[0.8125rem] font-bold" title="Cohort: turmas ativas de medicina (2, 4, 8, 11, 21, 28, 35).">Novos Alunos Acumulados + % com Recorrência</h3>
             <ControlesGrafico
               loading={loadingAcum}
               granularidade={granAcum} setGranularidade={setGranAcum}

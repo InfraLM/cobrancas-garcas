@@ -7,7 +7,7 @@ base_matriculas AS (
     cr.matriculaaluno AS matricula,
     cr.turma          AS turma_codigo
   FROM contareceber cr
-  WHERE cr.turma IN (2,4,8,11,21,28)
+  WHERE cr.turma IN (2,4,8,11,21,28,35)
     AND COALESCE(cr.tipoorigem, '') <> 'OUT'
 ),
 
@@ -48,7 +48,7 @@ primeiro_venc_nao_mat AS (
     cr.matriculaaluno AS matricula,
     MIN(date(cr.datavencimento)) AS data_base_fallback
   FROM contareceber cr
-  WHERE cr.turma IN (2,4,8,11,21,28)
+  WHERE cr.turma IN (2,4,8,11,21,28,35)
     AND COALESCE(cr.tipoorigem, '') NOT IN ('MAT','OUT')
   GROUP BY cr.matriculaaluno
 ),
@@ -117,7 +117,7 @@ retorno_trancamento AS (
     ON cr.matriculaaluno = t.matricula
    AND cr.tipoorigem = 'NCR'
    AND TRIM(cr.codorigem) = CAST(t.codigo_trancamento AS TEXT)
-  WHERE cr.turma IN (2,4,8,11,21,28)
+  WHERE cr.turma IN (2,4,8,11,21,28,35)
     AND COALESCE(cr.tipoorigem, '') <> 'OUT'
   GROUP BY t.matricula
 ),
@@ -131,7 +131,7 @@ trancamento_gap_base AS (
     ) AS data_trancamento,
     date(cr.datavencimento) AS data_retorno_trancamento
   FROM contareceber cr
-  WHERE cr.turma IN (2,4,8,11,21,28)
+  WHERE cr.turma IN (2,4,8,11,21,28,35)
     AND cr.situacao IN ('AR','RE','CF')
     AND COALESCE(cr.tipoorigem, '') NOT IN ('MAT','OUT')
 ),
@@ -268,7 +268,7 @@ LEFT JOIN retorno_trancamento rt
 LEFT JOIN trancamento_gap tg
   ON tg.matricula = c.matricula
 
-WHERE cr.turma IN (2,4,8,11,21,28)
+WHERE cr.turma IN (2,4,8,11,21,28,35)
   AND cr.situacao IN ('AR','RE','CF')
   AND COALESCE(cr.tipoorigem, '') NOT IN ('MAT','OUT')
 

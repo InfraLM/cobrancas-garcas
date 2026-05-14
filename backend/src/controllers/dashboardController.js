@@ -253,7 +253,7 @@ async function calcularAgingHistorico(opts = {}) {
         (s.fim - cr.datavencimento::date) AS dias_atraso,
         -- Cohort de matricula: classificado por TITULO (matricula vinculada ao proprio
         -- contareceber). m.curso=1 e redundancia de seguranca pois a whitelist de turmas
-        -- (2,4,8,11,21,28) ja garante que sao todas turmas de curso=1. NULL em m.data
+        -- (2,4,8,11,21,28,35) ja garante que sao todas turmas de curso=1. NULL em m.data
         -- (raro) cai em 'antes2026' (false).
         (m.data IS NOT NULL AND m.data >= DATE '2026-01-01') AS cohort_2026
       FROM cobranca.contareceber cr
@@ -266,7 +266,7 @@ async function calcularAgingHistorico(opts = {}) {
         AND cr.situacao IN ('AR', 'RE', 'CF')
         AND COALESCE(cr.tipoorigem, '') NOT IN ('MAT', 'OUT')
         -- Whitelist alinhada com a query original do "aging empilhado" (curso=1 garantido)
-        AND cr.turma IN (2, 4, 8, 11, 21, 28)
+        AND cr.turma IN (2, 4, 8, 11, 21, 28, 35)
         AND p.aluno = true
         AND (COALESCE(p.funcionario, false) = false OR p.codigo = 589)
         -- Nao havia sido pago ate o fim do bucket
@@ -391,7 +391,7 @@ function formatarLabelBucket(granularidade, inicioISO, fimISO) {
 // dashboard/query-recorrentes-vs-outros.txt
 //
 // Logica preservada:
-//   - Whitelist turma IN (2,4,8,11,21,28)
+//   - Whitelist turma IN (2,4,8,11,21,28,35) — TURMA 6 PRESENCIAL PADRAO adicionada
 //   - Exclui tipoorigem OUT (e MAT em CTEs de data-base/gap)
 //   - Funcionario = false
 //   - Trata cancelamento (com override 2025-02-04)
@@ -411,7 +411,7 @@ async function calcularRecorrentesHistorico(opts = {}) {
     base_matriculas AS (
       SELECT DISTINCT cr.matriculaaluno AS matricula, cr.turma AS turma_codigo
       FROM cobranca.contareceber cr
-      WHERE cr.turma IN (2,4,8,11,21,28) AND COALESCE(cr.tipoorigem, '') <> 'OUT'
+      WHERE cr.turma IN (2,4,8,11,21,28,35) AND COALESCE(cr.tipoorigem, '') <> 'OUT'
     ),
     cadastro AS (
       SELECT bm.matricula, mt."data"::date AS data_matricula, p.codigo AS pessoa_id
@@ -430,7 +430,7 @@ async function calcularRecorrentesHistorico(opts = {}) {
     primeiro_venc_nao_mat AS (
       SELECT cr.matriculaaluno AS matricula, MIN(cr.datavencimento::date) AS data_base_fallback
       FROM cobranca.contareceber cr
-      WHERE cr.turma IN (2,4,8,11,21,28) AND COALESCE(cr.tipoorigem, '') NOT IN ('MAT','OUT')
+      WHERE cr.turma IN (2,4,8,11,21,28,35) AND COALESCE(cr.tipoorigem, '') NOT IN ('MAT','OUT')
       GROUP BY cr.matriculaaluno
     ),
     data_base AS (
@@ -444,7 +444,7 @@ async function calcularRecorrentesHistorico(opts = {}) {
     cancelamento AS (
       SELECT cr.matriculaaluno AS matricula, MIN(cr.datacancelamento::date) AS data_cancelamento
       FROM cobranca.contareceber cr
-      WHERE cr.turma IN (2,4,8,11,21,28) AND cr.datacancelamento IS NOT NULL AND COALESCE(cr.tipoorigem, '') <> 'OUT'
+      WHERE cr.turma IN (2,4,8,11,21,28,35) AND cr.datacancelamento IS NOT NULL AND COALESCE(cr.tipoorigem, '') <> 'OUT'
       GROUP BY cr.matriculaaluno
     ),
     trancamento AS (
@@ -459,7 +459,7 @@ async function calcularRecorrentesHistorico(opts = {}) {
       FROM trancamento t
       JOIN cobranca.contareceber cr ON cr.matriculaaluno = t.matricula
         AND cr.tipoorigem = 'NCR' AND TRIM(cr.codorigem) = t.codigo_trancamento::text
-      WHERE cr.turma IN (2,4,8,11,21,28) AND COALESCE(cr.tipoorigem, '') <> 'OUT'
+      WHERE cr.turma IN (2,4,8,11,21,28,35) AND COALESCE(cr.tipoorigem, '') <> 'OUT'
       GROUP BY t.matricula
     ),
     trancamento_gap_base AS (
@@ -467,7 +467,7 @@ async function calcularRecorrentesHistorico(opts = {}) {
         LAG(cr.datavencimento::date) OVER (PARTITION BY cr.matriculaaluno ORDER BY cr.datavencimento::date, cr.codigo) AS data_trancamento,
         cr.datavencimento::date AS data_retorno_trancamento
       FROM cobranca.contareceber cr
-      WHERE cr.turma IN (2,4,8,11,21,28) AND cr.situacao IN ('AR','RE','CF')
+      WHERE cr.turma IN (2,4,8,11,21,28,35) AND cr.situacao IN ('AR','RE','CF')
         AND COALESCE(cr.tipoorigem, '') NOT IN ('MAT','OUT')
     ),
     trancamento_gap AS (
@@ -542,7 +542,7 @@ async function calcularRecorrentesHistorico(opts = {}) {
 // arquivo dashboard/query-acumulado-alunos-recorrencia.txt)
 //
 // Logica preservada:
-//   - Whitelist de turmas (2,4,8,11,21,28) — cohort de medicina ativa
+//   - Whitelist de turmas (2,4,8,11,21,28,35) — cohort de medicina ativa (35 = TURMA 6 PRESENCIAL PADRAO)
 //   - Exclui tipoorigem OUT (e MAT em CTEs de data-base/gap)
 //   - Funcionario = false
 //   - Trata cancelamento (com override da data magica 2025-02-04)
@@ -564,7 +564,7 @@ async function calcularAcumuladoAlunos(opts = {}) {
     base_matriculas AS (
       SELECT DISTINCT cr.matriculaaluno AS matricula, cr.turma AS turma_codigo
       FROM cobranca.contareceber cr
-      WHERE cr.turma IN (2,4,8,11,21,28)
+      WHERE cr.turma IN (2,4,8,11,21,28,35)
         AND COALESCE(cr.tipoorigem, '') <> 'OUT'
     ),
     cadastro AS (
@@ -586,7 +586,7 @@ async function calcularAcumuladoAlunos(opts = {}) {
     primeiro_venc_nao_mat AS (
       SELECT cr.matriculaaluno AS matricula, MIN(cr.datavencimento::date) AS data_base_fallback
       FROM cobranca.contareceber cr
-      WHERE cr.turma IN (2,4,8,11,21,28) AND COALESCE(cr.tipoorigem, '') NOT IN ('MAT','OUT')
+      WHERE cr.turma IN (2,4,8,11,21,28,35) AND COALESCE(cr.tipoorigem, '') NOT IN ('MAT','OUT')
       GROUP BY cr.matriculaaluno
     ),
     data_base AS (
@@ -600,7 +600,7 @@ async function calcularAcumuladoAlunos(opts = {}) {
     cancelamento AS (
       SELECT cr.matriculaaluno AS matricula, MIN(cr.datacancelamento::date) AS data_cancelamento
       FROM cobranca.contareceber cr
-      WHERE cr.turma IN (2,4,8,11,21,28) AND cr.datacancelamento IS NOT NULL AND COALESCE(cr.tipoorigem, '') <> 'OUT'
+      WHERE cr.turma IN (2,4,8,11,21,28,35) AND cr.datacancelamento IS NOT NULL AND COALESCE(cr.tipoorigem, '') <> 'OUT'
       GROUP BY cr.matriculaaluno
     ),
     trancamento AS (
@@ -615,7 +615,7 @@ async function calcularAcumuladoAlunos(opts = {}) {
       FROM trancamento t
       JOIN cobranca.contareceber cr ON cr.matriculaaluno = t.matricula
         AND cr.tipoorigem = 'NCR' AND TRIM(cr.codorigem) = t.codigo_trancamento::text
-      WHERE cr.turma IN (2,4,8,11,21,28) AND COALESCE(cr.tipoorigem, '') <> 'OUT'
+      WHERE cr.turma IN (2,4,8,11,21,28,35) AND COALESCE(cr.tipoorigem, '') <> 'OUT'
       GROUP BY t.matricula
     ),
     trancamento_gap_base AS (
@@ -623,7 +623,7 @@ async function calcularAcumuladoAlunos(opts = {}) {
         LAG(cr.datavencimento::date) OVER (PARTITION BY cr.matriculaaluno ORDER BY cr.datavencimento::date, cr.codigo) AS data_trancamento,
         cr.datavencimento::date AS data_retorno_trancamento
       FROM cobranca.contareceber cr
-      WHERE cr.turma IN (2,4,8,11,21,28) AND cr.situacao IN ('AR','RE','CF')
+      WHERE cr.turma IN (2,4,8,11,21,28,35) AND cr.situacao IN ('AR','RE','CF')
         AND COALESCE(cr.tipoorigem, '') NOT IN ('MAT','OUT')
     ),
     trancamento_gap AS (
